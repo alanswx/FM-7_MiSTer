@@ -443,6 +443,10 @@ always @(posedge clk_sys) begin
 						// WD179x would also abort the run there; this one reads
 						// on to the end of the track.
 						if(~write & ~format) s_crcerr <= s_crcerr | (|edsk_crc);
+`ifdef DEBUG_FDC_SCAN
+						$display("WDMATCH want trk=%0d side=%0d sec=%0d -> entry trk=%0d side=%0d sec=%0d off=%0d",
+									disk_track, side, wdreg_sector, edsk_track, edsk_side, edsk_sector, edsk_offset);
+`endif
 						state <= STATE_WAIT_READ;
 					end
 					else
@@ -779,8 +783,18 @@ always @(posedge clk_sys) begin
 						end
 					end
 
-				A_TRACK:  if (!s_busy) wdreg_track <= din;
-				A_SECTOR: if (!s_busy) {ra_sector, wdreg_sector} <= {din,din};
+				A_TRACK:  begin
+					if (!s_busy) wdreg_track <= din;
+`ifdef DEBUG_FDC_SCAN
+					else $display("WDDROP TRACK  <- $%02x while BUSY", din);
+`endif
+				end
+				A_SECTOR: begin
+					if (!s_busy) {ra_sector, wdreg_sector} <= {din,din};
+`ifdef DEBUG_FDC_SCAN
+					else $display("WDDROP SECTOR <- $%02x while BUSY (kept $%02x)", din, wdreg_sector);
+`endif
+				end
 				A_DATA:   wdreg_data <= din;
 			endcase
 		end

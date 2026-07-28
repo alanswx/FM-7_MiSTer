@@ -78,6 +78,20 @@ ifeq ($(DEBUG_FDC),1)
 V_DEFINE += +define+DEBUG_FDC_SCAN
 endif
 
+# `make DEBUG_SRAM=1` instruments the main/sub shared-RAM aperture in rtl/SRAM.v:
+#
+#   SRAMBAD main write $<addr> <- $<byte> with SHALTACn HIGH ...
+#         a main-side write into $fc80-$fcff issued while the sub CPU has not
+#         acknowledged the halt. The write still happens -- `wr_n` is gated by
+#         SUBSELn/WTQEn, not by SHALTACn -- but the address/data mux is still
+#         pointed at the sub, so it lands on whatever the sub is addressing.
+#   SRAMSUM accepted=<n> misdirected=<n>
+#         printed at the end. Both references discard a main-side write unless
+#         the sub is halted (MAME `main_shared_w`, CSP `mainmem_writeseq.cpp:32`).
+ifeq ($(DEBUG_SRAM),1)
+V_DEFINE += +define+DEBUG_SRAM
+endif
+
 UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S), Darwin)

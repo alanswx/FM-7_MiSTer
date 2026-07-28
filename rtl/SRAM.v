@@ -34,6 +34,29 @@ wire ce_n = SUBSELn & SSMEMn;
 wire wr_n = (SSMEMn | SWTQEn) & (SUBSELn | WTQEn);
 wire rd_n = RDQEn & SRDQEn;
 
+`ifdef DEBUG_SRAM
+// Is a main-side write into the shared window actually landing where it should?
+// The write enable and the address/data mux are gated by different things, so a
+// write issued before the sub acknowledges the halt still fires -- at the sub's
+// address, with the sub's data.
+integer sram_ok = 0, sram_bad = 0;
+reg mw_d = 1'b0;
+wire mw = ~SUBSELn & ~WTQEn;
+always @(posedge CLKSYS) begin
+  mw_d <= mw;
+  if (mw & ~mw_d) begin
+    if (~SHALTACn) sram_ok <= sram_ok + 1;
+    else begin
+      sram_bad <= sram_bad + 1;
+      if (sram_bad < 12)
+        $display("SRAMBAD main write $%04x <- $%02x with SHALTACn HIGH (goes to sub addr $%04x)",
+                 MADDRBUS, MDATA_in, SADDRBUS);
+    end
+  end
+end
+final $display("SRAMSUM accepted=%0d misdirected=%0d", sram_ok, sram_bad);
+`endif
+
 ram #(10,8) sram(
   .clk  ( CLKSYS     ),
   .addr ( SAB        ),

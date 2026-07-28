@@ -140,28 +140,92 @@ wire rd_stb   = ~FD_REn & ren_d;          // falling edge of FD_REn
 // The latched address feeds the core's read mux too, so it stays pointed at the
 // register being read for the whole bus cycle rather than following the bus.
 //
-// Two accesses inside one ce period would collide, but they cannot happen: one
-// 6809 bus cycle at 1.2288 MHz is 814 ns and consecutive accesses to the FDC
-// are several cycles apart, so a ce tick always falls between them.
+// LOCAL CHANGE: an earlier version of this comment claimed two accesses could
+// not land inside one ce period, because consecutive FDC accesses are "several
+// bus cycles apart". That holds for the boot ROM's driver and is false in
+// general -- see the write-strobe discussion below, which is where the real
+// constraint lives.
+//
+// Reads are deliberately NOT held back: `dout` is combinational and the CPU
+// latches it inside the same bus cycle, so a read strobe has to take effect on
+// the bus edge. `acc_addr` is a single "address of the last access" register
+// shared by both directions, as it always was.
 //----------------------------------------------------------------------------
 
+// What actually gets lost, and why it is not simply "two writes at once".
+//
+// The core only accepts a write on a rising edge *as it samples it*, on ce
+// ticks: `if (!old_wr & wre)`. A held-high strobe is therefore not the problem
+// by itself -- the problem is a strobe that goes low and back high entirely
+// *between* two ce ticks. The core samples high at tick N, high again at tick
+// N+1, and never observes the low in between, so the second write is not an
+// edge and is silently discarded.
+//
+// That is exactly what Ys's driver produces: it sets track and sector with one
+// 16-bit store to $fd19, so the two writes are one bus cycle (814 ns) apart --
+// shorter than a ce period. The track write ($00 over an already-zero register)
+// landed, the sector write vanished, and every later READ SECTOR reused the
+// previous sector number. Ys asked for side 1 sectors 1, 2 and 3 and got sector
+// 3 three times, into three different buffers, each read completing with status
+// $00 and byte-perfect data. Nothing downstream could see it was wrong.
+//
+// Testing `acc_wr` at the bus edge does NOT detect this: by then a ce tick has
+// usually already cleared it. The condition that matters is whether the core
+// has *sampled* the strobe low since the last write was handed over, which is
+// what `gap_done` tracks.
+//
+// Isolated writes must keep their original timing. Delaying every write by a ce
+// tick leaves the FDC provably correct -- measured: no lost writes, no rejected
+// commands, no register writes dropped on BUSY -- and still blanks Thexder,
+// whose main/sub byte pump is timing-marginal. So the held slot engages only
+// when a write really would be lost.
 reg [1:0] acc_addr = 2'd0;
 reg [7:0] acc_din  = 8'd0;
 reg       acc_wr   = 1'b0;
 reg       acc_rd   = 1'b0;
 
+reg [1:0] pnd_addr = 2'd0;
+reg [7:0] pnd_din  = 8'd0;
+reg       pnd      = 1'b0;
+reg       gap_done = 1'b1;   // the core has sampled `wr` low since the last write
+
 always @(posedge CLKSYS) begin
   if (reset) begin
-    acc_wr <= 1'b0;
-    acc_rd <= 1'b0;
+    acc_wr   <= 1'b0;
+    acc_rd   <= 1'b0;
+    pnd      <= 1'b0;
+    gap_done <= 1'b1;
   end
   else begin
     if (core_sel & wr_stb) begin
-      acc_addr <= FD_RS[1:0];
-      acc_din  <= FD_Din;
-      acc_wr   <= 1'b1;
+      if (gap_done & ~acc_wr & ~pnd) begin
+        acc_addr <= FD_RS[1:0];
+        acc_din  <= FD_Din;
+        acc_wr   <= 1'b1;
+        gap_done <= 1'b0;
+      end
+      else begin
+        pnd_addr <= FD_RS[1:0];
+        pnd_din  <= FD_Din;
+        pnd      <= 1'b1;
+`ifdef DEBUG_FDC_SCAN
+        $display("FDCP  reg%0d <- %02x held (would have been lost)", FD_RS[1:0], FD_Din);
+`endif
+      end
     end
-    else if (ce_wd) acc_wr <= 1'b0;
+    else if (ce_wd) begin
+      if (acc_wr) acc_wr <= 1'b0;   // the core sampled it high this tick
+      else begin
+        gap_done <= 1'b1;           // the core sampled it low this tick
+        if (pnd) begin              // safe to raise again: the low was observed
+          acc_addr <= pnd_addr;
+          acc_din  <= pnd_din;
+          acc_wr   <= 1'b1;
+          pnd      <= 1'b0;
+          gap_done <= 1'b0;
+        end
+      end
+    end
 
     if (core_sel & rd_stb) begin
       acc_addr <= FD_RS[1:0];

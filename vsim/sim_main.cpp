@@ -683,6 +683,18 @@ static uint8_t  pre_m_mmap = 0, pre_m_romdata = 0;
 // Address of the instruction currently executing, for the I/O trace.
 static uint16_t m_cur_pc = 0;
 
+// Both --trace-mem and --trace-mem-sub honour --trace-from/--trace-until, the
+// same as --trace-cpu. They did not originally, which is a good way to reach a
+// confident wrong conclusion: the line cap truncates from the *start* of the
+// run, so asking for a late window and hitting the cap silently hands back the
+// earliest frames instead. A sub-CPU window requested at frame 760 came back
+// full of frame 1-124 data and looked like a stuck handshake.
+static bool in_trace_window() {
+	if (video.count_frame < trace_from) return false;
+	if (trace_until >= 0 && video.count_frame > trace_until) return false;
+	return true;
+}
+
 // One trace line per retired instruction, when --trace-cpu/--trace-sub-cpu is
 // on and the frame is inside the requested window.
 static void emit_cpu_trace(bool sub, uint16_t pc) {
@@ -924,7 +936,7 @@ static void sim_cycle() {
 		// memory-map selects. This is how you tell "the CPU read $00" apart
 		// from "the decoder never enabled the ROM".
 		if (pre_m_addr >= trace_mem_lo && pre_m_addr <= trace_mem_hi &&
-		    mem_trace_lines < trace_max) {
+		    in_trace_window() && mem_trace_lines < trace_max) {
 			FILE* o = trace_cpu_file ? trace_cpu_file : stdout;
 			fprintf(o, "%7d mem  %c $%04x %s $%02x   rom=$%02x mmap=%c%c%c%c%c%c%c%c"
 			           " (RDQE MIOS SUBSEL BTRDY BTROM RAM1HB2 RAM1HB1 FCXX)  pc=$%04x\n",
@@ -946,7 +958,7 @@ static void sim_cycle() {
 		// No mmap column here: the sub CPU's selects come from SDECODE.v and are
 		// not the same set. The shared-RAM window is what this is usually for.
 		if (pre_s_addr >= trace_smem_lo && pre_s_addr <= trace_smem_hi &&
-		    mem_trace_lines < trace_max) {
+		    in_trace_window() && mem_trace_lines < trace_max) {
 			FILE* o = trace_cpu_file ? trace_cpu_file : stdout;
 			fprintf(o, "%7d smem %c $%04x %s $%02x   pc=$%04x\n",
 			        video.count_frame, pre_s_rw ? 'R' : 'W', pre_s_addr,

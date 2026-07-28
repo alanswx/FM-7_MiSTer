@@ -118,6 +118,7 @@ selection, and following Thexder past its load.
 | **P0-6** | **Sub CPU ran at half speed.** `SCPUCLK` took `SCLK2` (4 MHz, E = 1 MHz) in FM-7 mode; MAME has the FM-7 sub at `16.128MHz/2` = 8.064 MHz, E = 2.016 MHz — the sub is meant to be the FASTER of the two CPUs. `SCLK2` is the keyboard MCU's clock, per `MB60H010.v`'s own label. Sub rate 2001 → 3820 instructions/frame. **P0-5 again, on the other CPU** (`CLKCTRL.v`) |
 | **P0-7** | **Sub CPU lost ~55% of its cycles to a blanket VRAM halt.** `FLAGS.v` asserted `SHALTn` for the whole display period whenever the `$d409` mode flag was set, whether or not the sub was touching VRAM — because `MB60H010.v` only hands it the VRAM address bus during blanking (`SVRADRS = SCASSEL ? sub : raster`), so an access mid-display lands at the raster's address. Replaced with a real wait state on the access itself (`sub_vram_wait` in `core.v`, stalling `SCPUCLK`); neither `nHALT` nor `nDMABREQ` could express one, as mc6809i samples both at `CPUSTATE_FETCH_I1`. Sub rate 3976 → 8538 instructions/frame **with the display still clean** |
 | **P1-4** | **`$fd37` was not writable at all.** The `x74138_m93` driving `WFD37n` is enabled by `FD0Xn` (`$fd00-$fd0f`), so with `G2A = MADDRBUS[3]` its `Y7` is `$fd07`, not `$fd37`. The multi-page register read back `$00` for ever and every game's VRAM plane selection was silently ignored. Decoded directly from `m22_q8` now, qualified by `WTQEn` (`MDECODE.v`), and latched on the leading edge (`FLAGS.v`) |
+| **P4-1j** | Two FDC register writes one bus cycle apart lost one of the pair. The core accepts a write only on a rising edge *as it samples it* on a `ce` tick, so a strobe that goes low and high again entirely between two ticks is never seen as an edge. Ys sets track+sector with one 16-bit store to `$fd19`, lost every sector write, and re-read one sector into three different buffers — status `$00` and byte-perfect data each time. A write is now held back only when the core has not yet *sampled* the strobe low (`gap_done`), so isolated writes keep their exact original timing (`FDC.v`) |
 | **P4-1i** | `SEEK` set the head position but not the TRACK REGISTER. A real WD179x steps until the two agree (MAME `wd_fdc.cpp:412`, stepping at `:439`), so after a seek they always match; here `$fd19` read back stale. RESTORE and STEP already maintained it — SEEK was the odd one out (`wd1793.sv`) |
 | **harness** | `sim.v` treated `ce_pix` as a one-cycle enable when it is a 2/3-duty clock, doubling every pixel |
 
@@ -785,8 +786,67 @@ cd vsim && ./obj_dir/Vemu --headless --bootrom 1 --stop-at-frame 300 \
    logical.find(bytes.fromhex('10ced000ced383'))   # -> offset 207299
    ```
 
-3. **[NEXT] Ys deadlocks in the same shared-window byte pump.** A second title
-   to chase, and it points at the same machinery as Thexder's residual defect.
+3. **[FIXED — see P4-1j] Ys deadlocked on a swallowed sector-register write.**
+   Kept here because the *method* is the reusable part: the bug was invisible to
+   every check that asked "did the read work?", because the read always worked.
+
+   The fix is in `FDC.v` (P4-1j). Ys now streams content off the disk — tracks
+   37, 38 and beyond, both sides, sequential sectors — instead of wedging on
+   track 0, and requests the sectors it actually wants.
+
+   **It still does not boot**, so there is a further bug past the FDC — but the
+   loading path itself is now demonstrably correct:
+
+   - Ys drives the ROM/RAM switch exactly as CSP describes (read `$fd0f` → ROM,
+     write → RAM, `fm7_mainio.cpp:771`): it reads at frame 128, **writes at
+     frame 140** to open the RAM window, and reads back at 265 and 323.
+   - With that window open it writes **256 bytes to every page from `$8000`
+     through `$dfff`** — a clean contiguous 24 KB program load, no gaps, no
+     double-writes. Our `$fd0f` handling in `ROMS.v` matches CSP, and `MRAM.v`
+     backs the full 64 K, so this whole path is working.
+
+   **It is not deadlocked — it is waiting for a keypress.** Main sits in
+
+   ```
+   $1026  LDA  $11a4      ; Ys's last-key variable
+   $1029  CMPA #$20       ; SPACE?
+   $102b  BEQ  $1031
+   $102d  CMPA #$0d       ; RETURN?
+   $102f  BNE  $1026
+   ```
+
+   and `--key '820:@SPACE'` moves it on: by frame 1600 main is in a counted
+   accumulate loop at `$1471 ADDD ,S / LEAY -1,Y / BNE $1471` instead. Screen
+   still blank, so there is more to find, but the "hang" was a prompt.
+
+   **The main/sub machinery is exonerated too**, by measurement rather than
+   argument:
+
+   - Ys halts the sub properly: `$fd05 <- $80` and `<- $00` **4987 times each,
+     perfectly paired**, polling until bit 7 reads back set.
+   - Every main-side write into the aperture happens with `SHALTACn` low —
+     `DEBUG_SRAM` counts **526337 accepted, 0 misdirected** for Ys and 156699/0
+     for Thexder. (Worth knowing: `wr_n` is gated by `SUBSELn`/`WTQEn` but the
+     address/data mux by `SHALTACn`, so a write outside a halt would not be
+     dropped, it would land on whatever the sub is addressing. It never happens.)
+   - The sub sees what main writes: it reads `$d380 -> $0f`, exactly the `$0f`
+     main put in `$fc80`. `$d382` reads `$00` because **the sub itself clears it**
+     after consuming a command (`smem W $d382 <- $00 pc=$e038`) — that is the
+     handshake working, not a lost byte.
+
+   The sub's `$e13e` loop is therefore correct behaviour: it is idling with no
+   command pending. `$e13e` is *sub* address space, not the main CPU falling into
+   F-BASIC.
+
+   > **Trap, now fixed in the harness:** `--trace-mem`/`--trace-mem-sub` ignored
+   > `--trace-from`, and the line cap truncates from the *start* of the run. A
+   > sub-CPU window requested at frame 760 came back full of frame 1-124 data and
+   > read exactly like a stuck handshake. `in_trace_window()` in `sim_main.cpp`
+   > now applies the window to the memory traces too. **Always check the frame
+   > range and whether the line count equals `--trace-max`** before believing a
+   > trace — an exact match means it was truncated.
+
+   The chase below is what it took to find the FDC bug.
 
    `Ys (FM7) (Disk A).d77` mounts and parses perfectly (see below), issues 6
    RESTOREs, a SEEK and 19 READ SECTORs, then both CPUs wedge:
@@ -796,13 +856,115 @@ cd vsim && ./obj_dir/Vemu --headless --bootrom 1 --stop-at-frame 300 \
    sub   $c03e  LDB -1,U / BEQ $c03e  <- waiting for the next byte
    ```
 
-   That sub-CPU loop is **the same byte-pump stub idiom Thexder uses** (compare
-   `$d3b9` there), so whatever still costs Thexder its last 3 bytes is the prime
-   suspect. The main CPU hanging rather than waiting says its loader took an
-   error path.
+   **What the FDC actually does, measured (not inferred):**
+
+   - All **19 sector matches are exact** — a `WDMATCH` probe in `STATE_SEARCH_1`
+     printing requested vs. matched `(track, side, sector)` shows `want ==
+     entry` every single time, including on side 1.
+   - The three side-1 reads transfer **1024 bytes each, byte-for-byte identical
+     to the image at offset 7136**, and end with **status `$00`** — no CRC error,
+     no lost data, no seek error.
+   - Ys's inner loop is `LDA <$1f / BPL / LDA <$1b / STA ,U+` with `DP=$fd`, i.e.
+     poll `$fd1f` for DRQ then read `$fd1b`. It runs correctly to completion.
+
+   So the drive returns perfect data and the game still fails.
+
+   > **Correction to an earlier entry here:** a previous pass claimed two side-1
+   > sectors returned side-0 data. That was wrong — a bug in the *Python trace
+   > analyser*, which mis-attributed `(track, side, sector)` to data reads. There
+   > was never a side-select defect. The `WDMATCH` probe above is the reliable
+   > way to ask this question, because it reports the RTL's own match decision
+   > rather than reconstructing it from the bus log.
+
+   **Where it really goes wrong.** The failing code is a directory search:
+
+   ```
+   $020e  LDY  $ffee        ; -> $01d0, the 6-byte filename to match
+   $0212  LDB  #$06
+   $0214  LDX  $fff0        ; walks $1780, $1790 ... $17f0 in $10 steps
+   $021d  LDA  ,X+          ; a=00 EVERY iteration
+   $021f  CMPA ,Y+          ; never equal
+   $0228  DEC  $ffe9        ; entry counter
+   $022d  LDA  #$ff / RTS   ; not found -> error code 1 -> hang at $01c9
+   ```
+
+   `LDA ,X+` returns `$00` on every entry because **`$1780-$17ff` is never
+   written**: a `--trace-mem 1780-17ff` window over frames 130-156 records 8
+   reads and **0 writes**. Ys is searching a directory buffer nothing ever
+   loaded.
+
+   A write map of `$0800-$17ff` explains the layout — pages `$08`-`$0f` take 512
+   writes each and `$10` takes 256, i.e. two overlapping loads:
+
+   | region | source | size |
+   |---|---|---|
+   | `$0100-$10ff` | boot ROM's 16-sector load of track 0 side 0 | 4096 |
+   | `$0800-$0bff` | one 1024-byte side-1 sector read | 1024 |
+   | `$0c00-$0fff` | another 1024-byte side-1 sector read (retried) | 1024 |
+
+   **`$1100-$17ff` is untouched**, and the directory is expected at `$1780`.
+
+   **Boot ROM bank is settled: bank 0 is the only one that works.** Banks 1, 2
+   and 3 never reach Ys's code at all — 2 sector matches and stuck in ROM at
+   `$f20c`, versus bank 0's 19 matches and Ys's own loader running. So this is
+   not a `--bootrom` selection problem.
+
+   **The tell, and the actual bug.** The three 1024-byte reads went to three
+   *different* destinations (`$6000`, `$0800`, `$0c00`), which is not what a
+   retry looks like — a retry rereads into the same buffer. Ys was asking for
+   three different sectors and being handed the same one. Cross-checking the bus
+   log against `WDMATCH` showed the sector register writes going out and never
+   arriving:
+
+   ```
+   fd19 = $00   (pc=$02a8)      <- track,  accepted
+   fd1a = $01   (pc=$02a8)      <- sector, SWALLOWED
+   fd18 = $80   (pc=$02b1)      -> WDMATCH want sec=3, not 1
+   ```
+
+   Both writes come from the same instruction — a 16-bit store to `$fd19` — so
+   they land in consecutive bus cycles, 814 ns apart, shorter than a `ce`
+   period. The ROM's driver at `pc=$ff6d` spaces its writes out, which is why
+   the first 16 sectors always read correctly and only Ys's own driver was hurt.
+
+   **The mechanism is subtler than "two writes at once", and getting it wrong
+   cost two failed fixes.** The core accepts a write on a rising edge *as it
+   samples it*, on `ce` ticks. The strobe does not have to still be high when
+   the second write arrives — it only has to have gone low and back high
+   *between* two ticks. The core then samples high at tick N, high again at
+   N+1, never observes the low, and the second write is not an edge.
+
+   - **Attempt 1** — queue every write, release one per `ce` with a gap tick.
+     Fixed Ys, **blanked Thexder**. The FDC was provably fine under it (all bus
+     writes delivered in order, no rejected commands, no register writes dropped
+     on BUSY); the extra latency on *every* write was enough to break Thexder's
+     already-marginal main/sub byte pump.
+   - **Attempt 2** — engage the queue only when `acc_wr` is still high at the
+     bus edge. Thexder came back, **Ys broke again, and the collision counter
+     read zero**: by the time the second write arrives a `ce` tick has usually
+     already cleared the strobe, so this test cannot see the failure at all.
+   - **What works** — track whether the core has *sampled* the strobe low since
+     the last write was handed over (`gap_done`). Isolated writes keep their
+     exact original timing; a write is held only when it genuinely would be
+     lost. Ys now requests side 1 sectors 3, 1, 2 correctly (25 writes rescued),
+     Thexder's title screen renders, and all 8 rows of `run_tests.sh` are
+     unchanged — `boot-basic` is identical to baseline at 5189/9380.
+
+   Worth generalising: a strobe crossing into a slower `ce` domain has to be
+   held until the consumer has sampled **both** levels, not just the active one.
+   Counting collisions at the producer's edge measures the wrong thing.
+
+   **Two dead ends worth not repeating**, both eliminated by direct measurement
+   rather than reasoning: the core's `if (!s_busy)` gate on TRACK/SECTOR writes
+   (instrumented — it never once fired), and boot-ROM bank selection (banks 1, 2
+   and 3 never reach Ys's code at all; bank 0 is correct).
 
    Ruled out already: the SEEK track-register bug (P4-1i) was found while
    chasing this and is genuinely fixed, but it did not change Ys's behaviour.
+   Also ruled out: **no copy protection is involved** — every one of Ys's 411
+   sectors has density `$00`, deleted-mark `$00` and status `$00`, so the
+   deleted-data and CRC-status paths are not being exercised. (Thexder, by
+   contrast, has exactly one sector with `deleted=$10`/`status=$b0`.)
 
    **Ys is a much better parser test than Thexder** and it passes: 411 sectors
    over 80 tracks, **395 of them `N=3` (1024-byte) mixed with 16 `N=1`**, all 411
