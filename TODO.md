@@ -100,9 +100,36 @@ which is the right shape.
 which is a useful independent check: it is the reference emulator author's own
 image, not a commercial title.
 
-### P4-4 [verified] A disk read stalls forever in `STATE_WAIT_READ_2`
+### P4-6 [FIXED] The Quartus build could not have compiled the FDC
 
-**[NEXT]** Reproduces on the compilation disk, loading a machine-language game
+`files.qip` did not list `rtl/wd1793.sv`, so the FPGA build had no definition for
+the module `FDC.v` instantiates. `vsim` has its own file list in
+`vsim/Makefile`, which is why this never showed up in simulation. Fixed.
+
+**`files.qip` is the canonical list**, and the header of `FM-7_MiSTer.qsf` says
+so: *"Do not add files to project in Quartus IDE! It will mess this file! Add
+the files manually to files.qip file."* The qsf `source files.qip` at line 78.
+
+The qsf had also accumulated a duplicate per-file list -- 39 assignments the
+Quartus IDE injects back in whenever the project is opened in the GUI. Removed.
+If it reappears, delete it again; it is not the list to maintain. Nothing was
+lost: every entry was already in `files.qip`, including `rtl/pll.v -library pll`,
+which `rtl/pll.qip` supplies properly with the library qualifier anyway.
+
+**`rtl/wd1793_dpram.v` is deliberately NOT in `files.qip`.** The name is
+misleading: it defines a module called `dpram`, an `altsyncram` wrapper that
+nothing instantiates. The `wd1793_dpram` that `wd1793.sv` actually uses is
+defined at the bottom of `wd1793.sv` itself as inferred dual-port RAM, so the
+file is self-contained. Listing the stray file would only drag an unused Altera
+primitive into synthesis. It is still in the `vsim` file list, harmlessly, since
+Verilator never elaborates an uninstantiated module.
+
+Verified both tops connect every one of `core`'s 28 ports, with none left over.
+
+### P4-5 [verified] A disk read stalls forever in `STATE_WAIT_READ_2`
+
+**[NEXT]** (P4-4 was already taken by the tape item below.) Reproduces on the
+compilation disk, loading a machine-language game
 out of Disk BASIC:
 
 ```sh
@@ -142,12 +169,25 @@ matching `bitclear(*sd_ack, i)` never runs. `sd_ack` therefore falls only when
 the *next* request starts — but the FDC will not start one until it has seen
 that fall.
 
-Not yet proven, because it cannot be the whole story: thousands of sectors read
-correctly before this one, so something normally does break the cycle. Next step
-is to instrument `sd_ack` transitions directly rather than reason about them —
-and note this may be a `vsim`-only defect in the block-device model rather than
-an RTL bug, since real MiSTer hardware runs the HPS side. Determine which before
-changing `wd1793.sv`.
+A `WDACK` edge tracer settles which side is at fault: after the controller
+enters state 5 with `sd_rd=1`, **`sd_ack` never rises again — not once**. So this
+is not a missed falling edge or an edge-detect width problem in the RTL; the
+block device simply stops servicing a request it has already accepted (it prints
+`FLOPPY DMA: LBA=418 ... reading=1` for it).
+
+That points at `sim_blkdevice.cpp`, not `wd1793.sv`. During a read `ack_delay`
+is decremented in exactly one place — inside `if (current_disk == i)` — and
+`sd_ack` is asserted only when it reaches 1, so anything that leaves
+`current_disk` out of step with the pending request stalls the transfer
+permanently. The suspicious sequence is the end of the *previous* block: the
+call that transfers the last byte clears `reading` while `ack_delay` is still 1,
+so `sd_ack` is left set, and the same call drops `ack_delay` to 0 and releases
+`current_disk` to -1 — after which the clearing branch is skipped entirely.
+
+**So this is very likely a `vsim`-only defect and not an RTL bug.** Real MiSTer
+runs the HPS block-device side, which is a different implementation. Confirm on
+hardware before changing `wd1793.sv` — the RTL waiting on a falling `sd_ack`
+(`ack[5:4] == 'b10`) is the upstream behaviour and is probably correct.
 
 **A second game title now loads.** `Ys (FM7) (Disk A).d77` reads the sectors it
 actually asks for, streams tracks off both sides, and loads a clean contiguous

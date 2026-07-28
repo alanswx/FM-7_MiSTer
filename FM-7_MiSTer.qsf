@@ -80,45 +80,9 @@ set_global_assignment -name ENABLE_SIGNALTAP ON
 set_global_assignment -name USE_SIGNALTAP_FILE output_files/stp1.stp
 set_global_assignment -name CDF_FILE jtag.cdf
 set_global_assignment -name QIP_FILE sys/sys.qip
-set_global_assignment -name SYSTEMVERILOG_FILE "FM-7_MiSTer.sv"
-set_global_assignment -name VERILOG_FILE rtl/CLKCTRL.v
-set_global_assignment -name VERILOG_FILE rtl/clk_en.v
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/clocks.svh
-set_global_assignment -name VERILOG_FILE rtl/core.v
-set_global_assignment -name VERILOG_FILE rtl/CRTRAM.v
-set_global_assignment -name VERILOG_FILE rtl/FDC.v
-set_global_assignment -name VERILOG_FILE rtl/FLAGS.v
-set_global_assignment -name VERILOG_FILE rtl/KEYBOARD.v
-set_global_assignment -name VERILOG_FILE rtl/m139.v
-set_global_assignment -name VERILOG_FILE rtl/MB60H010.v
-set_global_assignment -name VERILOG_FILE rtl/mc6809i.v
-set_global_assignment -name VERILOG_FILE rtl/mc6809s.v
-set_global_assignment -name VERILOG_FILE rtl/MCPU.v
-set_global_assignment -name VERILOG_FILE rtl/MDECODE.v
-set_global_assignment -name VERILOG_FILE rtl/MFD.v
-set_global_assignment -name VERILOG_FILE rtl/MRAM.v
-set_global_assignment -name VERILOG_FILE rtl/PAL.v
-set_global_assignment -name VERILOG_FILE rtl/PERIPHERAL.v
-set_global_assignment -name QIP_FILE rtl/pll.qip
-set_global_assignment -name VERILOG_FILE rtl/pll.v -library pll
-set_global_assignment -name VERILOG_FILE rtl/ram.v
-set_global_assignment -name VERILOG_FILE rtl/rom.v
-set_global_assignment -name VERILOG_FILE rtl/ROMS.v
-set_global_assignment -name VERILOG_FILE rtl/RS232.v
-set_global_assignment -name VERILOG_FILE rtl/SCPU.v
-set_global_assignment -name VERILOG_FILE rtl/SDECODE.v
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram.sv
-set_global_assignment -name VERILOG_FILE rtl/SMEM.v
-set_global_assignment -name VERILOG_FILE rtl/SOUND.v
-set_global_assignment -name VERILOG_FILE rtl/SRAM.v
-set_global_assignment -name VERILOG_FILE rtl/SUBCRTADDR.v
-set_global_assignment -name VERILOG_FILE rtl/t77_decode.v
-set_global_assignment -name VERILOG_FILE rtl/TIMER.v
-set_global_assignment -name VERILOG_FILE rtl/x74138.v
-set_global_assignment -name VERILOG_FILE rtl/x74139.v
-set_global_assignment -name VERILOG_FILE rtl/x74244.v
-set_global_assignment -name VERILOG_FILE rtl/ym2149_audio.v
-set_global_assignment -name QIP_FILE rtl/pll/pll_0002_q13.qip
+# NOTE: the per-file list that used to sit here was added by the Quartus IDE.
+# It duplicated files.qip, which is sourced above and is the canonical list.
+# If Quartus puts it back, delete it again -- see the warning at the top.
 set_global_assignment -name SIGNALTAP_FILE output_files/stp1.stp
 set_global_assignment -name SLD_NODE_CREATOR_ID 110 -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_ENTITY_NAME sld_signaltap -section_id auto_signaltap_0

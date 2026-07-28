@@ -802,6 +802,20 @@ always @(posedge clk_sys) begin
 end
 
 `ifdef DEBUG_FDC_SCAN
+// sd_ack edge tracer. STATE_WAIT_READ_2 waits on sd_busy, and sd_busy clears
+// only on the FALLING edge of sd_ack (ack[5:4] == 'b10 above), so a sd_ack that
+// goes high and never comes back down stalls the controller with the command
+// still open -- no DRQ, no INTRQ, and the CPU spinning on $fd1f. See P4-4.
+reg sd_ack_dbg = 1'b0;
+always @(posedge clk_sys) begin
+	sd_ack_dbg <= sd_ack;
+	if (sd_ack != sd_ack_dbg)
+		$display("WDACK %b -> %b  state=%0d sd_rd=%b sd_wr=%b lba=%0d",
+		         sd_ack_dbg, sd_ack, state, sd_rd, sd_wr, sd_lba);
+end
+`endif
+
+`ifdef DEBUG_FDC_SCAN
 // State-machine tracer. The CPU spinning on $fd1f with neither DRQ nor INTRQ
 // means the controller stopped somewhere without ending the command; this shows
 // which state it stopped in and whether it is waiting on the SD handshake.
