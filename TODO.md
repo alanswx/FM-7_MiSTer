@@ -113,6 +113,7 @@ selection, and following Thexder past its load.
 | **P4-1g** | `$fd05` bit 7 reported only `BUSY`, and `FLAGS.v` holds `BUSY` asynchronously cleared *while the sub CPU is halted* — so software that requests a halt and polls for it to take effect hung forever. Now `BUSY \| ~SHALTACn`, matching MAME's `sub_busy \|\| sub_halt` (`TIMER.v`) |
 | **P0-6** | **Sub CPU ran at half speed.** `SCPUCLK` took `SCLK2` (4 MHz, E = 1 MHz) in FM-7 mode; MAME has the FM-7 sub at `16.128MHz/2` = 8.064 MHz, E = 2.016 MHz — the sub is meant to be the FASTER of the two CPUs. `SCLK2` is the keyboard MCU's clock, per `MB60H010.v`'s own label. Sub rate 2001 → 3820 instructions/frame. **P0-5 again, on the other CPU** (`CLKCTRL.v`) |
 | **P0-7** | **Sub CPU lost ~55% of its cycles to a blanket VRAM halt.** `FLAGS.v` asserted `SHALTn` for the whole display period whenever the `$d409` mode flag was set, whether or not the sub was touching VRAM — because `MB60H010.v` only hands it the VRAM address bus during blanking (`SVRADRS = SCASSEL ? sub : raster`), so an access mid-display lands at the raster's address. Replaced with a real wait state on the access itself (`sub_vram_wait` in `core.v`, stalling `SCPUCLK`); neither `nHALT` nor `nDMABREQ` could express one, as mc6809i samples both at `CPUSTATE_FETCH_I1`. Sub rate 3976 → 8538 instructions/frame **with the display still clean** |
+| **P1-4** | **`$fd37` was not writable at all.** The `x74138_m93` driving `WFD37n` is enabled by `FD0Xn` (`$fd00-$fd0f`), so with `G2A = MADDRBUS[3]` its `Y7` is `$fd07`, not `$fd37`. The multi-page register read back `$00` for ever and every game's VRAM plane selection was silently ignored. Decoded directly from `m22_q8` now, qualified by `WTQEn` (`MDECODE.v`), and latched on the leading edge (`FLAGS.v`) |
 | **harness** | `sim.v` treated `ce_pix` as a one-cycle enable when it is a 2/3-duty clock, doubling every pixel |
 
 ---
@@ -263,7 +264,41 @@ cd vsim && make && ./obj_dir/Vemu --headless --stop-at-frame 260 \
     --screenshot 255 --screenshot-name shots/boot.png
 ```
 
-### P1-2 [read] 320x200 / 40-column mode is not modelled as a mode
+### P1-5 [verified] The reference emulators disagree on VRAM plane order — MAME is the odd one out
+
+Worth recording before someone "fixes" the display to match MAME.
+
+| VRAM plane | MAME | CSP | 77AVEMU | this core |
+|---|---|---|---|---|
+| `$0000` | blue | blue | plane 0 | blue |
+| `$4000` | **green** | **red** | plane 1 | **red** |
+| `$8000` | **red** | **green** | plane 2 | **green** |
+
+MAME's `fm7_v.cpp:1173-1178` reads `code_g` from `+0x4000` and `code_r` from
+`+0x8000`. CSP's `vram.cpp:512-514` does the opposite, and 77AVEMU's
+`srcColor` builds its index from plane 0/1/2 in the order that agrees with CSP.
+**This core follows CSP** (`SDECODE.v`: `SDRAMBn`=$0000, `SDRAMRn`=$4000,
+`SDRAMGn`=$8000) and is believed correct. Changing it to match MAME would swap
+red and green over the whole display.
+
+The palette byte layout is NOT in dispute — MAME and CSP agree it is
+`b`=bit0, `r`=bit1, `g`=bit2, and the top levels match
+(`VGA_R=grb[1]`, `VGA_G=grb[2]`, `VGA_B=grb[0]`).
+
+**General lesson: prefer CSP as the primary reference for FM-7 behaviour, with
+77AVEMU as the tiebreaker** — it carries notes from experiments on real
+hardware. MAME's FM-7 driver is useful mainly for the I/O map; it is littered
+with `BAD_DUMP` and disabled code (its VRAM-access halt is commented out at
+`fm7_v.cpp:643`).
+
+### P1-2 [RESOLVED - not applicable] 320x200 / 40-column mode
+
+Checked: the width bit lives in `$fd12`, which `fm7_v.cpp` documents as the
+"Sub mode status register (FM-77AV or later)" and which is only implemented in
+`fm77_state`. It does not exist on an FM-7, so no FM-7 title can select it and
+there is nothing to model here. Original note below.
+
+### P1-2-orig [read] 320x200 / 40-column mode is not modelled as a mode
 
 MAME has an explicit width bit (`fm7_v.cpp:828`: "bit 6 (R/W) - Video mode
 width 0=640 (default) 1=320", used at `:499` and `:1129`). The core has no
@@ -272,12 +307,13 @@ equivalent — it always generates a 640-wide raster.
 F-BASIC's own 80-column output renders correctly without it, so this is not
 urgent, but any title that sets the width bit will be wrong.
 
-### P1-3 [read] `$fd37` bit layout unverified
+### P1-3 [VERIFIED] `$fd37` bit layout — confirmed against two references
 
 `FLAGS.v` splits `m46` into `VPAGE1n/2n/3n` (bits 0-2, CPU access) and
-`DPAGE1/2/3` (bits 4-6, display). MAME masks with `0x77`, which agrees on the
-bit positions. Worth confirming polarity against CSP `fm7_mainio.cpp` once
-P0-3 is fixed and the register actually receives real data.
+`DPAGE1/2/3` (bits 4-6, display). Confirmed: MAME masks with `0x77`, and CSP
+(`display.cpp:444`) does `accessmask = val & 0x07; dispmask = (val & 0x70) >> 4`.
+Both agree with the split here, and the bit-to-plane order matches CSP too.
+The register itself is only actually writable as of P1-4.
 
 ---
 

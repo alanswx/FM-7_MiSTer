@@ -111,8 +111,23 @@ always @(negedge SBUSYSETn or negedge s3)
   if (~s3) m44_8 <= 1'b0;
   else m44_8 <= SRWBn;
 
+// $fd37, the multi-page register: bits 0-2 mask CPU access to the three VRAM
+// planes, bits 4-6 mask their display. Both MAME (`data & 0x77`) and CSP
+// (`accessmask = val & 0x07; dispmask = (val & 0x70) >> 4`) agree on that split.
+//
+// This was clocked on `posedge WFD37n` -- the TRAILING edge of the write strobe.
+// A 74LS374 on the schematic latches there and the 6809's data-hold window
+// covers it, but in zero-delay RTL the CPU has already released the bus, so the
+// register captured whatever the bus had decayed to and $fd37 read back $00
+// forever. Games that select which planes are displayed had the selection
+// silently ignored; Thexder writes $30 here and got all three planes drawn.
+//
+// And it could not have worked regardless, because nothing decoded a write to
+// $fd37 at all until MDECODE.v was fixed -- see the WFD37n comment there. With a
+// real write strobe, latch on its leading edge where the data is valid. Same
+// family as P0-1/P0-3.
 wire s4 = ~RESETBn;
-always @(posedge WFD37n or posedge s4)
+always @(negedge WFD37n or posedge s4)
   if (s4) m46 <= 8'h0;
   else m46 <= MDATABUS_in;
 

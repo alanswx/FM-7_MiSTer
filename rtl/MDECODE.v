@@ -80,15 +80,20 @@ x74138 x74138_m52 (
   .Y5  ( RFD05n       )
 );
 
-x74138 x74138_m93 (
-  .G2B ( m54_q8       ),
-  .G2A ( MADDRBUS[3]  ),
-  .G1  ( m22_q8       ),
-  .A   ( MADDRBUS[0]  ),
-  .B   ( MADDRBUS[1]  ),
-  .C   ( MADDRBUS[2]  ),
-  .Y7  ( WFD37n       )
-);
+// $fd37 write strobe (the multi-page register: which VRAM planes the CPU can
+// reach, and which of them are displayed).
+//
+// This used to come from an x74138 enabled by m54_q8, which is FD0Xn -- the
+// $fd00-$fd0f decode. With G2A tied to MADDRBUS[3], that decoder's Y7 is $fd07,
+// NOT $fd37, so it could never assert for this register: $fd37 was not writable
+// at all, read back $00 for ever, and every game's plane selection was silently
+// ignored.
+//
+// m22_q8 is the $fd30-$fd3f decode (bits 7:6 = 00, bits 5:4 = 11, inside IOSn) --
+// the same term PLTREGn uses. MADDRBUS[3] separates the palette at $fd38-$fd3f
+// from $fd30-$fd37, MADDRBUS[2:0] == 7 picks $fd37, and WTQEn qualifies it as a
+// write so the strobe is asserted only while the CPU is driving data.
+assign WFD37n = ~(m22_q8 & ~MADDRBUS[3] & (&MADDRBUS[2:0]) & ~WTQEn);
 
 // This part was supposed to be implemented in the SOUND page if we follow schematics.
 
