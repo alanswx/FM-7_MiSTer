@@ -169,36 +169,41 @@ matching `bitclear(*sd_ack, i)` never runs. `sd_ack` therefore falls only when
 the *next* request starts — but the FDC will not start one until it has seen
 that fall.
 
-**Both sides are clean at the point of the stall, which is the puzzle.** Two
-rounds of instrumentation, and both of my hypotheses were wrong:
+**A waveform settles what three rounds of printf could not.** `--vcd` now exists
+(see below); dumping frames 2667-2669 shows the stall onset exactly:
 
-- *"The sim leaves `sd_ack` stuck high."* Wrong. A periodic snapshot of the
-  block device during the stall shows it **completely idle and consistent**:
-  `sd_rd=0 sd_wr=0 sd_ack=0 current_disk=-1 ack_delay=0 reading=0 writing=0
-  bytecnt=512`. It finished its transfer and released everything. The sim is not
-  hanging on to anything.
-- *"Stale bits in the `ack` shift register clear `sd_rd` before the block device
-  sees it."* Wrong. Flushing `ack` on every new request (`ack <= 0` in
-  `STATE_WAIT_READ_1`) changed **nothing** — the instruction counts came back
-  byte-identical, 19088384 main / 32418615 sub, so the race never fires.
-  Reverted.
+```
+t=2148123649  sd_rd   -> 1
+t=2148123649  state   -> 5      (STATE_WAIT_READ_2)
+t=2148123649  sd_busy -> 1
+                        ... and nothing ever changes again
+```
 
-So: the block device completed the transfer and dropped `sd_ack`, `sd_rd` is
-low, and the controller still never left `STATE_WAIT_READ_2`. `sd_busy` clears
-5 `ce` ticks after `sd_ack` falls (`ack[5:4] == 'b10`), the `case (state)` is
-unguarded inside `else if(ce)`, and `ce` is a free-running divide-by-48 inside
-`FDC.v` that cannot stop. Every link in that chain checks out individually,
-which means the fault is in how they line up in time.
+`sd_ack` never rises, `sd_rd` stays asserted, `ack` stays `000000` — while `ce`
+toggles 100607 times in the same window, so the clock enable is alive and the
+state machine is being evaluated. **The controller is behaving correctly: it
+asked for a block and is waiting.** Nothing responds.
 
-**This now looks like an RTL problem, not a `vsim` one** — the opposite of what
-an earlier version of this entry said. Correcting that here so the wrong lead is
-not inherited.
+That puts it back on `sim_blkdevice.cpp` after all. Three of my own conclusions
+along the way were wrong, and the reasons are worth keeping:
 
-Next step is a waveform, not another guess: `--trace` a window around the stall
-and look at `ce`, `sd_rd`, `sd_ack`, `ack`, `sd_busy` and `state` together.
-Reasoning about this state machine from printfs has now produced two confident
-wrong answers, and each printf round costs a full 3000-frame run. One `.vcd`
-answers it directly.
+- *"The sim leaves `sd_ack` stuck high."* Not shown either way.
+- *"Stale bits in `ack` clear `sd_rd` before the block device sees it."* Wrong —
+  flushing `ack` on each request changed nothing at all (instruction counts came
+  back byte-identical, 19088384 main / 32418615 sub). Reverted.
+- *"The block device is idle and consistent at the stall."* **Wrong, and the
+  mistake is instructive**: that came from a `BLKSNAP` printf whose run hit its
+  3000-second timeout at `n=2147200000`, before the stall at `t=2148123649`. It
+  was reporting the quiet period *before* the failure and looked like proof of
+  innocence. Always check a long run actually reached the event.
+
+**Next:** the request is asserted and unserved, so the fault is in the guard
+chain that decides to service it — `(current_disk==-1 || current_disk==i)` and
+`if (!ack_delay)`. `ack_delay` is decremented in two different places, one of
+which only runs when `current_disk == i` and the other only when
+`!reading && !writing`; any state where those disagree freezes the counter and
+`sd_ack` is only ever asserted when it reaches 1. Instrument `current_disk`,
+`ack_delay` and `reading` *at the stall* — with a run that provably reaches it.
 
 **A second game title now loads.** `Ys (FM7) (Disk A).d77` reads the sectors it
 actually asks for, streams tracks off both sides, and loads a clean contiguous

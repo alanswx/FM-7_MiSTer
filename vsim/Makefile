@@ -36,8 +36,23 @@ V_DEFINE = +define+SIMULATION=1 \
 	--no-timing --converge-limit 6000 \
 	-I$(RTL)
 
-# VCD tracing: `make TRACE=1`, then look at obj_dir/*.vcd. Costs runtime even
-# when not dumping, so it is opt-in.
+# VCD tracing: `make clean && make TRACE=1`, then run with --vcd <file>.
+#
+# The clean matters. These flags are baked in when Verilator generates the
+# model, so a plain `make TRACE=1` over an existing build silently keeps the
+# old ones and --vcd reports that it needs a TRACE=1 build.
+#
+# The dump obeys --trace-from/--trace-until, and you want a window: two frames
+# of a 48 MHz design is about 700 MB, so a whole run is unusable. Find the frame
+# of interest with the text traces first, then dump a few frames around it.
+#
+#   make clean && make TRACE=1
+#   ./obj_dir/Vemu --headless --disk foo.d77 --stop-at-frame 2680 \
+#       --trace-from 2667 --trace-until 2669 --vcd /tmp/stall.vcd
+#
+# Worth reaching for once a bug has survived two rounds of $display: three
+# rounds of printf on TODO.md P4-5 produced two confident wrong answers, and one
+# waveform settled it. Costs runtime even when not dumping, so it is opt-in.
 ifeq ($(TRACE),1)
 V_DEFINE += --trace
 CXX_DEFINE += -DVM_TRACE_VCD=1

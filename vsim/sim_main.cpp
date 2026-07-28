@@ -16,6 +16,9 @@
 
 #include <verilated.h>
 #include "Vemu.h"
+#if VM_TRACE_VCD
+#include <verilated_vcd_c.h>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -64,6 +67,14 @@ static const double FRAME_HZ = 16000000.0 / (1024.0 * 262.0);
 
 static Vemu*        top = nullptr;
 static vluint64_t   main_time = 0;
+// Windowed VCD. Dumping a whole run is unusable -- a few thousand frames is
+// tens of GB -- so the dump is gated on the same --trace-from/--trace-until
+// window as the text traces. Without a window it would be useless for the
+// problems worth a waveform, which are all deep into a run (TODO.md P4-5).
+static std::string  vcd_path;
+#if VM_TRACE_VCD
+static VerilatedVcdC* tfp = nullptr;
+#endif
 double sc_time_stamp() { return main_time; }
 
 static DebugConsole console;
@@ -518,6 +529,9 @@ static void print_usage(const char* argv0) {
 	printf("                            --trace-from/--trace-until, it is ~8000\n");
 	printf("                            lines per frame.\n");
 	printf("  --trace-sub-cpu [file]    Same, for the sub CPU\n");
+	printf("  --vcd <file>              Dump a VCD waveform, limited to the\n");
+	printf("                            --trace-from/--trace-until window. Needs\n");
+	printf("                            `make TRACE=1`.\n");
 	printf("  --trace-from <frame>      Start tracing at this frame (default 0)\n");
 	printf("  --trace-until <frame>     Stop tracing after this frame\n");
 	printf("  --trace-max <n>           Cap on trace lines (default 200000)\n");
@@ -609,6 +623,7 @@ static int parse_args(int argc, char** argv) {
 		}
 		else if (a == "--dump-shadow")     { const char* v = next(); if (v) dump_shadow_path = v; }
 		else if (a == "--dump-shadow-sub") { const char* v = next(); if (v) dump_shadow_sub_path = v; }
+		else if (a == "--vcd")         { const char* v = next(); if (v) vcd_path = v; }
 		else if (a == "--trace-from")  { const char* v = next(); if (v) trace_from = atoi(v); }
 		else if (a == "--trace-until") { const char* v = next(); if (v) trace_until = atoi(v); }
 		else if (a == "--trace-max")   { const char* v = next(); if (v) trace_max = atol(v); }
@@ -1078,6 +1093,9 @@ static void sim_cycle() {
 	pre_s_addr = top->dbg_s_addr; pre_s_din = top->dbg_s_din;
 	pre_s_dout = top->dbg_s_dout; pre_s_rw  = top->dbg_s_rw;  pre_s_e = top->dbg_s_e;
 
+#if VM_TRACE_VCD
+	if (tfp && in_trace_window()) tfp->dump(main_time);
+#endif
 	main_time++;
 	apply_frame_actions(video.count_frame);
 }
@@ -1195,6 +1213,20 @@ int main(int argc, char** argv, char** env) {
 
 	top = new Vemu();
 
+#if VM_TRACE_VCD
+	if (!vcd_path.empty()) {
+		Verilated::traceEverOn(true);
+		tfp = new VerilatedVcdC;
+		top->trace(tfp, 6);
+		tfp->open(vcd_path.c_str());
+		printf("VCD: %s, frames %d..%s\n", vcd_path.c_str(), trace_from,
+		       trace_until >= 0 ? std::to_string(trace_until).c_str() : "end");
+	}
+#elif 1
+	if (!vcd_path.empty())
+		fprintf(stderr, "--vcd needs a TRACE=1 build: make clean && make TRACE=1\n");
+#endif
+
 	// Hook the ioctl download engine up to the core's upload port.
 	bus.ioctl_addr     = &top->ioctl_addr;
 	bus.ioctl_index    = &top->ioctl_index;
@@ -1306,6 +1338,9 @@ int main(int argc, char** argv, char** env) {
 	video.CleanUp();
 #endif
 
+#if VM_TRACE_VCD
+	if (tfp) { tfp->close(); delete tfp; tfp = nullptr; }
+#endif
 	if (trace_io_file) fclose(trace_io_file);
 	top->final();
 	delete top;
