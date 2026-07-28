@@ -118,6 +118,7 @@ selection, and following Thexder past its load.
 | **P0-6** | **Sub CPU ran at half speed.** `SCPUCLK` took `SCLK2` (4 MHz, E = 1 MHz) in FM-7 mode; MAME has the FM-7 sub at `16.128MHz/2` = 8.064 MHz, E = 2.016 MHz — the sub is meant to be the FASTER of the two CPUs. `SCLK2` is the keyboard MCU's clock, per `MB60H010.v`'s own label. Sub rate 2001 → 3820 instructions/frame. **P0-5 again, on the other CPU** (`CLKCTRL.v`) |
 | **P0-7** | **Sub CPU lost ~55% of its cycles to a blanket VRAM halt.** `FLAGS.v` asserted `SHALTn` for the whole display period whenever the `$d409` mode flag was set, whether or not the sub was touching VRAM — because `MB60H010.v` only hands it the VRAM address bus during blanking (`SVRADRS = SCASSEL ? sub : raster`), so an access mid-display lands at the raster's address. Replaced with a real wait state on the access itself (`sub_vram_wait` in `core.v`, stalling `SCPUCLK`); neither `nHALT` nor `nDMABREQ` could express one, as mc6809i samples both at `CPUSTATE_FETCH_I1`. Sub rate 3976 → 8538 instructions/frame **with the display still clean** |
 | **P1-4** | **`$fd37` was not writable at all.** The `x74138_m93` driving `WFD37n` is enabled by `FD0Xn` (`$fd00-$fd0f`), so with `G2A = MADDRBUS[3]` its `Y7` is `$fd07`, not `$fd37`. The multi-page register read back `$00` for ever and every game's VRAM plane selection was silently ignored. Decoded directly from `m22_q8` now, qualified by `WTQEn` (`MDECODE.v`), and latched on the leading edge (`FLAGS.v`) |
+| **P4-1i** | `SEEK` set the head position but not the TRACK REGISTER. A real WD179x steps until the two agree (MAME `wd_fdc.cpp:412`, stepping at `:439`), so after a seek they always match; here `$fd19` read back stale. RESTORE and STEP already maintained it — SEEK was the odd one out (`wd1793.sv`) |
 | **harness** | `sim.v` treated `ce_pix` as a one-cycle enable when it is a 2/3-duty clock, doubling every pixel |
 
 ---
@@ -784,15 +785,40 @@ cd vsim && ./obj_dir/Vemu --headless --bootrom 1 --stop-at-frame 300 \
    logical.find(bytes.fromhex('10ced000ced383'))   # -> offset 207299
    ```
 
-3. **Second drive.** `FDC.v` accepts one image. The FM-7 supports two, and
+3. **[NEXT] Ys deadlocks in the same shared-window byte pump.** A second title
+   to chase, and it points at the same machinery as Thexder's residual defect.
+
+   `Ys (FM7) (Disk A).d77` mounts and parses perfectly (see below), issues 6
+   RESTOREs, a SEEK and 19 READ SECTORs, then both CPUs wedge:
+
+   ```
+   main  $01c9  TSTA / BNE $01c9      <- A is never reloaded: a hang, not a wait
+   sub   $c03e  LDB -1,U / BEQ $c03e  <- waiting for the next byte
+   ```
+
+   That sub-CPU loop is **the same byte-pump stub idiom Thexder uses** (compare
+   `$d3b9` there), so whatever still costs Thexder its last 3 bytes is the prime
+   suspect. The main CPU hanging rather than waiting says its loader took an
+   error path.
+
+   Ruled out already: the SEEK track-register bug (P4-1i) was found while
+   chasing this and is genuinely fixed, but it did not change Ys's behaviour.
+
+   **Ys is a much better parser test than Thexder** and it passes: 411 sectors
+   over 80 tracks, **395 of them `N=3` (1024-byte) mixed with 16 `N=1`**, all 411
+   matching a reference decode exactly. Thexder is uniform 256-byte, so this is
+   the first real exercise of the multi-block read path and of per-sector size
+   codes — a fixed-geometry reader could not touch this disk at all.
+
+4. **Second drive.** `FDC.v` accepts one image. The FM-7 supports two, and
    `$fd1d` already decodes the drive number (MAME rejects anything above 1).
    Needs a second `img_mounted`/`sd_*` set and a second `wd1793`, or one
    controller with two tables.
-4. **2DD media.** `edsk[1992]` bounds the sector table. 2D (40x2x16) needs 1280
+5. **2DD media.** `edsk[1992]` bounds the sector table. 2D (40x2x16) needs 1280
    and fits; 2DD at 16 sectors/track would need 2560. The scanner stops cleanly
    at the bound rather than wrapping, and says so under `DEBUG_FDC=1`. Widening
    means `edsk_addr`/`edsk_start`/`edsk_size`/`edsk_next` go from 11 to 12 bits.
-5. **Multi-disk `.d88`.** `.d88` allows several images concatenated in one file;
+6. **Multi-disk `.d88`.** `.d88` allows several images concatenated in one file;
    `.d77` in practice never does. The size check at `$1c` would reject such a
    file outright, which is at least a safe failure.
 

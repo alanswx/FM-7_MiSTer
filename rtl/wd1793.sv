@@ -654,6 +654,18 @@ always @(posedge clk_sys) begin
 								begin
 									// set real track to datareg
 									disk_track <= wdreg_data;
+
+									// LOCAL CHANGE (FM-7_MiSTer): and update the TRACK
+									// REGISTER with it too. A real WD179x seeks by
+									// stepping until the track register equals the data
+									// register (MAME's wd_fdc.cpp:412 `main_state == SEEK
+									// && track == data`, stepping with `track += ...` at
+									// :439/:457), so when a SEEK finishes the two always
+									// agree. This moved only the head, leaving the track
+									// register stale, so software that seeks and then
+									// reads $fd19 back saw the old track. RESTORE and STEP
+									// here already maintain it; SEEK was the odd one out.
+									wdreg_track <= wdreg_data;
 									s_headloaded <= din[3];
 
 									// get busy
