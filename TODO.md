@@ -69,6 +69,109 @@ Note **`--bootrom 0`**: bank 0 of the boot ROM is the one that loads a boot
 sector at `$0100`, which is what real disks require — see P3-6b, and fix
 `ROMS.v`'s bank selection so the OSD's four settings map onto the four banks.
 
+**Disk F-BASIC boots all the way to `Ready`, interactively.** This is the
+strongest end-to-end evidence the floppy path is right — it exercises the DOS,
+not just a game's own loader, and it takes keyboard input:
+
+```sh
+cd vsim && ./obj_dir/Vemu --headless --bootrom 0 \
+    --disk "[Compilation] Game 013.d77" \
+    --key '700:1' --key '730:@RETURN' --key '820:2' --key '850:@RETURN' \
+    --stop-at-frame 2200 --screenshot 2180
+```
+
+```
+DISK VERSION
+How many disk drives      ? 1
+How many disk files(0-15)? 2
+
+FUJITSU F-BASIC Version 3.0
+Copyright (C) 1981 By FUJITSU/MICROSOFT
+25662 Bytes Free
+
+Ready
+```
+
+Both prompts are answered from the command line and echo correctly. **25662
+bytes free against cassette BASIC's 30530** — the DOS takes the difference,
+which is the right shape.
+
+**The 77AVEMU demo disk boots too**, showing `YS-DOS V1.0 by CaptainYS 2019`,
+which is a useful independent check: it is the reference emulator author's own
+image, not a commercial title.
+
+### P4-4 [verified] A disk read stalls forever in `STATE_WAIT_READ_2`
+
+**[NEXT]** Reproduces on the compilation disk, loading a machine-language game
+out of Disk BASIC:
+
+```sh
+cd vsim && ./obj_dir/Vemu --headless --bootrom 0 --disk "[Compilation] Game 013.d77" \
+    --key '700:1' --key '730:@RETURN' --key '820:2' --key '850:@RETURN' \
+    --key-hold 4 --key '2100:run"CHAN.POP"' --key '2300:@RETURN' --stop-at-frame 3400
+```
+
+It prints `Loading GAME Program`, then the main CPU spins forever in the boot
+ROM's own transfer loop with neither DRQ nor INTRQ ever arriving:
+
+```
+$ff94  LDB  <$1f     ; DP=$fd -> $fd1f
+$ff96  BPL  $ff9e    ; no DRQ -> test INTRQ
+$ff9e  LSLB
+$ff9f  BPL  $ff94    ; neither -> spin
+```
+
+`make DEBUG_FDC=1` adds a `WDST` state tracer. The command is accepted and the
+sector is found — the stall is downstream of both:
+
+```
+WDST 0 -> 1 ... 3 -> 4  sd_rd=0 sd_ack=0 lba=418 blk=0
+WDST 4 -> 5  sd_rd=1 sd_ack=0 drq=0 busy=1 intrq=0 lba=418 blk=0     <- stops here
+```
+
+State 5 is `STATE_WAIT_READ_2`, which waits on `!sd_busy`, and `sd_busy` clears
+only on the **falling** edge of `sd_ack` (`if(ack[5:4] == 'b10')`, wd1793.sv:353).
+
+The block device *does* serve the request — `FLOPPY DMA: LBA=418 ... reading=1`
+is printed — so this is the tail of the handshake, not the fetch. Reading
+`vsim/sim/sim_blkdevice.cpp`: in the call where the last byte transfers,
+`reading` goes 0 while `ack_delay` is still 1, so `sd_ack` is left **set**; the
+same call decrements `ack_delay` to 0 and releases `current_disk` to -1; and
+from then on the whole `if (current_disk == i)` block is skipped, so the
+matching `bitclear(*sd_ack, i)` never runs. `sd_ack` therefore falls only when
+the *next* request starts — but the FDC will not start one until it has seen
+that fall.
+
+Not yet proven, because it cannot be the whole story: thousands of sectors read
+correctly before this one, so something normally does break the cycle. Next step
+is to instrument `sd_ack` transitions directly rather than reason about them —
+and note this may be a `vsim`-only defect in the block-device model rather than
+an RTL bug, since real MiSTer hardware runs the HPS side. Determine which before
+changing `wd1793.sv`.
+
+**A second game title now loads.** `Ys (FM7) (Disk A).d77` reads the sectors it
+actually asks for, streams tracks off both sides, and loads a clean contiguous
+24 KB into `$8000-$dfff` through the `$fd0f` RAM-mode window. It does not yet
+render. Getting there needed P4-1j, and the interesting part is what P4-1j was
+*not*: three separate subsystems were suspected, instrumented, and cleared —
+the sector match, the halt handshake, and the shared-RAM aperture were all
+already correct, and so was the boot ROM bank. The bug was one register write
+per command being dropped between the CPU bus and the controller, invisible to
+every check that asked "did the read work?", because the read always worked.
+
+**Two methodology notes earned the hard way**, both of which produced confident
+wrong answers before being caught:
+
+- **A trace that hits `--trace-max` was truncated from the start of the run**,
+  not the end. Check the frame range and compare the line count against the cap
+  before believing any trace. (`--trace-from` now applies to the memory traces,
+  which it previously did not.)
+- **Reconstructing state from the bus log is not the same as asking the RTL.**
+  A Python decoder that inferred `(track, side, sector)` from `$fd18-$fd1b`
+  traffic reported two sectors returning the wrong side's data; a `$display` in
+  the RTL's own match arm showed all 19 matches exact. Instrument the decision,
+  not its inputs.
+
 Getting that far needed two fixes with nothing to do with the FDC, both on the
 sub CPU, and both worth knowing about:
 

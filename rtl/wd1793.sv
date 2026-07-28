@@ -801,6 +801,19 @@ always @(posedge clk_sys) begin
 	end
 end
 
+`ifdef DEBUG_FDC_SCAN
+// State-machine tracer. The CPU spinning on $fd1f with neither DRQ nor INTRQ
+// means the controller stopped somewhere without ending the command; this shows
+// which state it stopped in and whether it is waiting on the SD handshake.
+io_state_t state_dbg = STATE_IDLE;
+always @(posedge clk_sys) begin
+	state_dbg <= state;
+	if (state != state_dbg)
+		$display("WDST %0d -> %0d  sd_rd=%b sd_ack=%b drq=%b busy=%b intrq=%b lba=%0d blk=%0d",
+		         state_dbg, state, sd_rd, sd_ack, s_drq, s_busy, s_intrq, sd_lba, sd_block);
+end
+`endif
+
 reg        scan_active = 0;
 reg [19:0] scan_addr;
 reg        scan_wr;
