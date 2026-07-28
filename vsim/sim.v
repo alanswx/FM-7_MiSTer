@@ -40,6 +40,11 @@ module emu
 	// [7:0] scancode, [8] extended, [9] pressed, [10] toggles per event
 	input  [10:0] ps2_key,
 
+	// Joysticks, driven from sim_main.cpp's --joystick option.
+	// MiSTer bit order: [0]=right [1]=left [2]=down [3]=up [4]=A [5]=B.
+	input   [5:0] joystick_0,
+	input   [5:0] joystick_1,
+
 	// HPS ioctl download. index 1 == "F1,t77" in CONF_STR.
 	input         ioctl_download,
 	input         ioctl_wr,
@@ -184,6 +189,8 @@ core u_core(
   .HSync       ( HSync       ),
   .grb         ( grb         ),
   .ps2_key     ( ps2_key     ),
+  .joystick_0  ( joystick_0  ),
+  .joystick_1  ( joystick_1  ),
   .SVIDEOCLK   ( SVIDEOCLK   ),
   .ce_pix      ( ce_pix      ),
   .audio_out   ( audio_out   ),

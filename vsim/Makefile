@@ -68,6 +68,12 @@ endif
 #         every command the controller latched
 #
 # All of it is low volume except D77SEC. See TODO.md P4-1.
+# `make DEBUG_JOY=1` prints one line per PSG port-B write (stick selection) and
+# per port-A read (the byte handed back), from rtl/SOUND.v.
+ifeq ($(DEBUG_JOY),1)
+V_DEFINE += +define+DEBUG_JOY
+endif
+
 ifeq ($(DEBUG_FDC),1)
 V_DEFINE += +define+DEBUG_FDC_SCAN
 endif

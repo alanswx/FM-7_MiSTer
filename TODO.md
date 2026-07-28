@@ -82,6 +82,10 @@ sub CPU, and both worth knowing about:
   which is now a proper per-access wait state. Between them the sub went from
   2001 to 8538 instructions/frame.
 
+**Joysticks work** (P4-2), on the PSG's I/O ports, verified end to end by
+driving the PSG by hand from F-BASIC. `vsim` can inject them:
+`--joystick <frame>:<buttons>[:<hold>]`.
+
 Next: P2-1 (`KEYBOARD.v` has no ctrl/graph/kana tables), the `ROMS.v` bank
 selection, and following Thexder past its load.
 
@@ -795,7 +799,56 @@ cd vsim && ./obj_dir/Vemu --headless --bootrom 1 --stop-at-frame 300 \
 Test material: 2 loose `.d77` under `software/Fujitsu FM-7/Thexder (Game
 Arts)/`, and 195 `[FD]` `.7z` archives alongside them.
 
-### P4-2 [read] No joystick
+### P4-2 [DONE] Joysticks
+
+Both sticks work, on the PSG's I/O ports where the FM-7 puts them. Verified end
+to end: with stick 1 held `up`+`A`, driving the PSG by hand from F-BASIC
+
+```
+poke64781,3:poke64782,15:poke64781,2:poke64782,32:poke64781,3:poke64782,14:poke64781,1:?peek(64782)
+```
+
+prints **238** (`$ee`) -- bit 0 (up) and bit 4 (button A) low, everything else
+high, exactly as predicted. `$fd0d` = 64781 and `$fd0e` = 64782.
+
+Protocol, from `refs/common-src-project/src/vm/fm7/joystick.cpp`:
+
+  * write PSG **register 15** (port B) to select -- high nibble `$2` picks
+    stick 0, `$5` picks stick 1, anything else selects none
+  * read PSG **register 14** (port A) to get it, ACTIVE LOW, as
+    `{1, 1, ~buttonB, ~buttonA, ~right, ~left, ~down, ~up}`, or `$ff` when
+    nothing is selected
+
+Implemented in `rtl/SOUND.v` by snooping the PSG bus rather than inside
+`ym2149_audio.v`, which has no I/O ports at all and is machine-translated from
+VHDL (`n###_o` signal names) -- adding a register file there would have been far
+more invasive. `SOUND.v` tracks the register address from the `{bdir, bc1}`
+protocol on `$fd0d` plus the data writes on `$fd0e`.
+
+`FM-7_MiSTer.sv` gained a `J1,Button A,Button B;` line in `CONF_STR`; there was
+none, so buttons were not mappable.
+
+**Two traps worth knowing.** F-BASIC 3.0's `STICK()` is useless for testing this
+-- it returns 0 and never touches `$fd0d`/`$fd0e` at all, so it does not read the
+PSG joystick in this ROM. And Thexder does use the PSG, but only for sound
+during the parts traced so far; it had issued no joystick selection by frame 760.
+Hence the poke-it-by-hand test above.
+
+In `vsim`:
+
+```
+--joystick  <frame>:<buttons>[:<hold>]   up down left right a b fire none, '+'-separated
+--joystick2 <frame>:<buttons>[:<hold>]
+--joystick-hold <frames>                 default 10
+```
+
+State is held between events, so a stick stays where it was put. `make
+DEBUG_JOY=1` prints every selection and every read.
+
+CSP `joystick.cpp` also implements the FM-7 mouse on the same port, which can
+follow later.
+
+### P4-2-orig [read] No joystick
 
 The FM-7 joysticks hang off the PSG's I/O port B — CSP wires it explicitly in
 `refs/common-src-project/src/vm/fm7/fm7.cpp:626`:
@@ -809,7 +862,18 @@ not connect any, and `core.v` has no joystick input — the core's only input is
 CSP `joystick.cpp` also implements the FM-7 mouse on the same port, which can
 follow later.
 
-### P4-3 [read] `SOUND.v` has a floating select
+### P4-3 [DONE, needs an ear] `SOUND.v` had a floating select
+
+`sel_n_i` is now driven. Per the header of `ym2149_audio.v` it divides the PSG
+strobe: 0 = undivided, 1 = divide by two. The FM-7's AY-3-8910 runs from a
+1.2288 MHz master clock and halves it internally, and `en_clk_psg_i` here is
+already 1.2 MHz, so the divided setting is the one that puts the tone counters
+at the right rate -- undriven (effectively 0) made every pitch an octave sharp.
+
+That is reasoning, not measurement. **Worth confirming by ear** against a
+recording of real hardware before trusting it.
+
+### P4-3-orig [read] `SOUND.v` has a floating select
 
 `SOUND.v:31` declares `wire sel_n_i;` and passes it to `ym2149_audio` without
 ever driving it. Drive it explicitly (the YM2149 `SEL` pin picks the clock

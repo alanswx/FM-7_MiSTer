@@ -10,6 +10,9 @@ module core(
   output ce_pix,
   output [2:0] grb,
   input [10:0] ps2_key,
+  // Joysticks (MiSTer order: [0]=right [1]=left [2]=down [3]=up [4]=A [5]=B)
+  input [5:0] joystick_0,
+  input [5:0] joystick_1,
   input cin,
   output motor,
   output SVIDEOCLK,
@@ -715,6 +718,8 @@ SOUND u_SOUND(
   .RFD0En       ( RFD0En       ),
   .WFD0En       ( WFD0En       ),
   .WFD0Dn       ( WFD0Dn       ),
+  .joystick_0   ( joystick_0   ),
+  .joystick_1   ( joystick_1   ),
   .mix_audio_o  ( audio_out    )
 );
 

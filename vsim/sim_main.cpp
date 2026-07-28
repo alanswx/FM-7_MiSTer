@@ -221,6 +221,8 @@ static bool port_is_decoded(uint8_t p) {
 // Scheduled input injection
 //----------------------------------------------------------------------------
 
+static bool split_frame_arg(const char* s, int& frame, std::string& rest);
+
 struct KeyAction {
 	int         frame;
 	std::string text;   // literal text to type, or a single @NAME token
@@ -234,6 +236,73 @@ static int key_hold_frames = 6;
 
 struct PendingKey { int frame; uint16_t code; bool extended; bool down; };
 static std::vector<PendingKey> pending_keys;
+
+//----------------------------------------------------------------------------
+// Joysticks
+//
+// The FM-7's sticks hang off the PSG's I/O ports (rtl/SOUND.v). Bit order here
+// is MiSTer's, which is what the core expects:
+//
+//   [0] right  [1] left  [2] down  [3] up  [4] button A  [5] button B
+//
+// Held state is per player and only changes on a scheduled event, so a stick
+// stays where it was put until something moves it -- which is what software
+// polling it expects.
+static uint8_t joy_state[2] = { 0, 0 };
+static int     joy_hold_frames = 10;
+
+struct PendingJoy { int frame; int player; uint8_t mask; bool down; };
+static std::vector<PendingJoy> pending_joy;
+
+// "up", "up+a", "left+b", "none" ... -> a MiSTer button mask.
+// Returns false and names the offender if a token is not recognised.
+static bool parse_joy_mask(const std::string& spec, uint8_t& mask, std::string& bad) {
+	static const struct { const char* name; uint8_t bit; } kNames[] = {
+		{ "right", 0x01 }, { "left", 0x02 }, { "down", 0x04 }, { "up", 0x08 },
+		{ "a", 0x10 }, { "b", 0x20 },
+		{ "fire", 0x10 },        // friendly alias for button A
+		{ "none", 0x00 },
+	};
+	mask = 0;
+	size_t pos = 0;
+	while (pos <= spec.size()) {
+		size_t plus = spec.find('+', pos);
+		std::string tok = spec.substr(pos, plus == std::string::npos ? std::string::npos : plus - pos);
+		if (!tok.empty()) {
+			for (auto& c : tok) c = tolower(c);
+			bool found = false;
+			for (auto& n : kNames)
+				if (tok == n.name) { mask |= n.bit; found = true; break; }
+			if (!found) { bad = tok; return false; }
+		}
+		if (plus == std::string::npos) break;
+		pos = plus + 1;
+	}
+	return true;
+}
+
+// --joystick <frame>:<buttons>[:<hold>] -> a press now and a release later.
+static void add_joy_action(int player, const char* arg) {
+	int frame; std::string rest;
+	if (!split_frame_arg(arg, frame, rest)) {
+		printf("Error: --joystick%s needs <frame>:<buttons>[:<hold>]\n", player ? "2" : "");
+		return;
+	}
+	int hold = joy_hold_frames;
+	size_t colon = rest.find(':');
+	if (colon != std::string::npos) {
+		hold = atoi(rest.substr(colon + 1).c_str());
+		rest = rest.substr(0, colon);
+	}
+	uint8_t mask = 0; std::string bad;
+	if (!parse_joy_mask(rest, mask, bad)) {
+		printf("Error: --joystick: unknown button \"%s\" (use up down left right a b fire none)\n",
+		       bad.c_str());
+		return;
+	}
+	pending_joy.push_back({ frame, player, mask, true });
+	if (hold > 0) pending_joy.push_back({ frame + hold, player, mask, false });
+}
 
 // PS/2 set-2 scancodes, matching what rtl/KEYBOARD.v decodes.
 //
@@ -434,6 +503,13 @@ static void print_usage(const char* argv0) {
 	printf("                                   LEFT RIGHT HOME INS DEL CTRL SHIFT\n");
 	printf("                                   GRAPH KANA BREAK F1..F10\n");
 	printf("  --key-hold <frames>       Frames to hold each key (default 6)\n");
+	printf("  --joystick <frame>:<b>[:<hold>]\n");
+	printf("                            Press joystick 1 buttons at <frame> and release\n");
+	printf("                            after <hold> frames. Buttons are '+'-separated:\n");
+	printf("                              up down left right a b fire none\n");
+	printf("                            e.g. --joystick 300:up+a  --joystick 400:right:120\n");
+	printf("  --joystick2 <frame>:<b>[:<hold>]   same for joystick 2\n");
+	printf("  --joystick-hold <frames>  Default hold for --joystick (default 10)\n");
 	printf("\nTracing:\n");
 	printf("  --trace-io [file]         Log every $fdxx read/write\n");
 	printf("  --trace-io-unknown [file] Log only ports rtl/ does not decode\n");
@@ -468,7 +544,7 @@ static void print_usage(const char* argv0) {
 	printf("      --stop-at-frame 3000\n");
 }
 
-static bool split_frame_arg(const char* s, int& frame, std::string& rest) {
+bool split_frame_arg(const char* s, int& frame, std::string& rest) {
 	const char* colon = strchr(s, ':');
 	if (!colon) return false;
 	frame = atoi(std::string(s, colon - s).c_str());
@@ -512,6 +588,9 @@ static int parse_args(int argc, char** argv) {
 				}
 			}
 		}
+		else if (a == "--joystick")  { const char* v = next(); if (v) add_joy_action(0, v); }
+		else if (a == "--joystick2") { const char* v = next(); if (v) add_joy_action(1, v); }
+		else if (a == "--joystick-hold") { const char* v = next(); if (v) joy_hold_frames = atoi(v); }
 		else if (a == "--key") {
 			const char* v = next();
 			int f; std::string t;
@@ -768,6 +847,18 @@ static void apply_frame_actions(int frame) {
 	for (auto& pk : pending_keys)
 		if (pk.frame == frame)
 			input.keyEvents.push(SimInput_PS2KeyEvent(0, pk.down, pk.extended, pk.code));
+
+	// Joysticks hold their state between events, so only touch them when one is
+	// actually due -- otherwise a stick would be released the frame after it was
+	// pressed.
+	for (auto& pj : pending_joy)
+		if (pj.frame == frame) {
+			if (pj.down) joy_state[pj.player] |=  pj.mask;
+			else         joy_state[pj.player] &= ~pj.mask;
+			console.AddLog("frame %d: joystick %d = %02x", frame, pj.player + 1, joy_state[pj.player]);
+		}
+	top->joystick_0 = joy_state[0];
+	top->joystick_1 = joy_state[1];
 	if (reset_at_frame == frame) {
 		console.AddLog("frame %d: reset", frame);
 		reset_hold = 20000;
