@@ -38,7 +38,11 @@ public:
 	bool mountQueue[kVDNUM];
 	std::fstream disk[kVDNUM];
 
-	void BeforeEval(int cycles);
+	// 64-bit, not int. main_time passes INT_MAX around frame 2666 at 48 MHz /
+	// 60 Hz (~800k cycles a frame); truncating it made `cycles` go negative, the
+	// `cycles < 2000` guard below became permanently true, and the block device
+	// silently stopped servicing every request from then on. See TODO.md P4-5.
+	void BeforeEval(uint64_t cycles);
 	void AfterEval(void);
 	//void QueueDownload(std::string file, int index);
 	//void QueueDownload(std::string file, int index, bool restart);

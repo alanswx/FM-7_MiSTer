@@ -53,7 +53,7 @@ void SimBlockDevice::MountDisk( std::string file, int index) {
 }
 
 
-void SimBlockDevice::BeforeEval(int cycles)
+void SimBlockDevice::BeforeEval(uint64_t cycles)
 {
 //
 // switch to a new disk if current_disk is -1
@@ -152,7 +152,7 @@ void SimBlockDevice::BeforeEval(int cycles)
             int track = lba / 13;  // 13 sectors per track
             int sector = lba % 13;
             printf("FLOPPY DMA: LBA=%d (track=%d sector=%d) seek=%06X reading=%d writing=%d\n",
-                   lba, track, sector, (lba) * kBLKSZ + header_size[i], reading, writing);
+                   lba, track, sector, (int)((lba) * kBLKSZ + header_size[i]), reading, writing);
         }
         bytecnt = 0;
         *sd_buff_addr = 0;

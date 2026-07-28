@@ -126,84 +126,61 @@ Verilator never elaborates an uninstantiated module.
 
 Verified both tops connect every one of `core`'s 28 ports, with none left over.
 
-### P4-5 [verified] A disk read stalls forever in `STATE_WAIT_READ_2`
+### P4-5 [FIXED] Every simulation froze at frame ~2666 — `(int)main_time`
 
-**[NEXT]** (P4-4 was already taken by the tape item below.) Reproduces on the
-compilation disk, loading a machine-language game
-out of Disk BASIC:
+`SimBlockDevice::BeforeEval` took its cycle count as `int`, and the call site
+truncated: `blk.BeforeEval((int)main_time)`. `main_time` is a `vluint64_t` that
+advances once per simulated 48 MHz cycle, so at 60 Hz it passes **INT_MAX
+(2147483647) at frame ≈ 2666** (~800k cycles a frame). The cast then goes
+negative, the very first line of the function —
 
-```sh
-cd vsim && ./obj_dir/Vemu --headless --bootrom 0 --disk "[Compilation] Game 013.d77" \
-    --key '700:1' --key '730:@RETURN' --key '820:2' --key '850:@RETURN' \
-    --key-hold 4 --key '2100:run"CHAN.POP"' --key '2300:@RETURN' --stop-at-frame 3400
+```cpp
+if (cycles < 2000) return;      // "wait until the computer boots"
 ```
 
-It prints `Loading GAME Program`, then the main CPU spins forever in the boot
-ROM's own transfer loop with neither DRQ nor INTRQ ever arriving:
+— becomes permanently true, and **the block device silently stops servicing
+every request from that moment on**. Fixed by widening the parameter to
+`uint64_t` and dropping the cast.
+
+This is a simulation-harness bug, not RTL. Nothing on hardware is affected. But
+it invalidates *any* vsim result past frame ~2666, which is worth knowing before
+trusting a long run: `run_tests.sh` uses `FRAMES=620` and never reached it,
+which is why it stayed hidden.
+
+**How it presented.** Loading a machine-language game out of Disk BASIC hung
+with the main CPU spinning in the boot ROM's transfer loop, DRQ and INTRQ both
+dead:
 
 ```
 $ff94  LDB  <$1f     ; DP=$fd -> $fd1f
-$ff96  BPL  $ff9e    ; no DRQ -> test INTRQ
+$ff96  BPL  $ff9e
 $ff9e  LSLB
 $ff9f  BPL  $ff94    ; neither -> spin
 ```
 
-`make DEBUG_FDC=1` adds a `WDST` state tracer. The command is accepted and the
-sector is found — the stall is downstream of both:
+Fixed: the DMA now runs on to LBA 427 instead of freezing at 418, and the CPU
+leaves the wait loop. (It then crashes into low memory executing `CLR <$ff` /
+`STU $ffff` — a separate, later fault, and real progress.)
 
-```
-WDST 0 -> 1 ... 3 -> 4  sd_rd=0 sd_ack=0 lba=418 blk=0
-WDST 4 -> 5  sd_rd=1 sd_ack=0 drq=0 busy=1 intrq=0 lba=418 blk=0     <- stops here
-```
+**Four wrong answers came before the right one, all from `$display`:**
 
-State 5 is `STATE_WAIT_READ_2`, which waits on `!sd_busy`, and `sd_busy` clears
-only on the **falling** edge of `sd_ack` (`if(ack[5:4] == 'b10')`, wd1793.sv:353).
+1. *"The sim leaves `sd_ack` stuck high."* Never demonstrated.
+2. *"Stale bits in `ack` clear `sd_rd` before the block device sees it."*
+   Disproved — flushing `ack` per request changed nothing at all, instruction
+   counts byte-identical at 19088384 / 32418615. Reverted.
+3. *"The block device is idle and consistent at the stall."* Wrong: that printf
+   run hit its 3000 s timeout *before* the stall and was reporting the quiet
+   period preceding it.
+4. *"So the fault is in the RTL after all."* Also wrong.
 
-The block device *does* serve the request — `FLOPPY DMA: LBA=418 ... reading=1`
-is printed — so this is the tail of the handshake, not the fetch. Reading
-`vsim/sim/sim_blkdevice.cpp`: in the call where the last byte transfers,
-`reading` goes 0 while `ack_delay` is still 1, so `sd_ack` is left **set**; the
-same call decrements `ack_delay` to 0 and releases `current_disk` to -1; and
-from then on the whole `if (current_disk == i)` block is skipped, so the
-matching `bitclear(*sd_ack, i)` never runs. `sd_ack` therefore falls only when
-the *next* request starts — but the FDC will not start one until it has seen
-that fall.
+What actually found it: a **VCD** (`--vcd`, added for this) showing the
+controller assert `sd_rd` and wait correctly while `ce` kept ticking — proving
+the RTL innocent — and then a probe that printed **nothing at all**, because the
+guard it sat behind had already gone dead. The silence was the evidence.
 
-**A waveform settles what three rounds of printf could not.** `--vcd` now exists
-(see below); dumping frames 2667-2669 shows the stall onset exactly:
-
-```
-t=2148123649  sd_rd   -> 1
-t=2148123649  state   -> 5      (STATE_WAIT_READ_2)
-t=2148123649  sd_busy -> 1
-                        ... and nothing ever changes again
-```
-
-`sd_ack` never rises, `sd_rd` stays asserted, `ack` stays `000000` — while `ce`
-toggles 100607 times in the same window, so the clock enable is alive and the
-state machine is being evaluated. **The controller is behaving correctly: it
-asked for a block and is waiting.** Nothing responds.
-
-That puts it back on `sim_blkdevice.cpp` after all. Three of my own conclusions
-along the way were wrong, and the reasons are worth keeping:
-
-- *"The sim leaves `sd_ack` stuck high."* Not shown either way.
-- *"Stale bits in `ack` clear `sd_rd` before the block device sees it."* Wrong —
-  flushing `ack` on each request changed nothing at all (instruction counts came
-  back byte-identical, 19088384 main / 32418615 sub). Reverted.
-- *"The block device is idle and consistent at the stall."* **Wrong, and the
-  mistake is instructive**: that came from a `BLKSNAP` printf whose run hit its
-  3000-second timeout at `n=2147200000`, before the stall at `t=2148123649`. It
-  was reporting the quiet period *before* the failure and looked like proof of
-  innocence. Always check a long run actually reached the event.
-
-**Next:** the request is asserted and unserved, so the fault is in the guard
-chain that decides to service it — `(current_disk==-1 || current_disk==i)` and
-`if (!ack_delay)`. `ack_delay` is decremented in two different places, one of
-which only runs when `current_disk == i` and the other only when
-`!reading && !writing`; any state where those disagree freezes the counter and
-`sd_ack` is only ever asserted when it reaches 1. Instrument `current_disk`,
-`ack_delay` and `reading` *at the stall* — with a run that provably reaches it.
+Two lessons worth keeping: check that a long run actually reached the event
+before believing what it says about it; and when a bug survives two rounds of
+printf, stop adding printfs.
 
 **A second game title now loads.** `Ys (FM7) (Disk A).d77` reads the sectors it
 actually asks for, streams tracks off both sides, and loads a clean contiguous

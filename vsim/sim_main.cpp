@@ -906,7 +906,7 @@ static void sim_cycle() {
 	// --- rising edge -------------------------------------------------
 	top->clk_sys = 1;
 	bus.BeforeEval();
-	blk.BeforeEval((int)main_time);
+	blk.BeforeEval(main_time);
 	input.BeforeEval();
 
 	top->bootrom_sel = opt_bootrom;
