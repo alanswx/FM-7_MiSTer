@@ -78,9 +78,26 @@ assign SVDHALT =
   yy < 9'd261 ? 1'b0 :
   xx > 10'd930;
 
-assign SFTLODn = |xx[2:0];// | SFTCLK;
+// Shift-register load, delayed one CLKSYS past the character boundary.
+//
+// CRTRAM's VRAM is a synchronous-read RAM: q follows addr by one CLKSYS.
+// SVRADRS is combinational on xx, so at the instant xx crosses a cell
+// boundary the RAM has only just sampled the new address and its output
+// still holds the PREVIOUS cell. Loading the shift registers on that same
+// edge therefore latched the wrong byte, which showed up as a duplicated
+// column in every character ("FUJIITSU" instead of "FUJITSU").
+//
+// One CLKSYS of delay is a third of a pixel and lets q settle first.
+reg sftlodn_d;
+always @(posedge CLKSYS) sftlodn_d <= |xx[2:0];
+assign SFTLODn = sftlodn_d;
 
 always @(posedge _16128KHz) begin
+`ifdef DEBUG_MB60H010
+  // One line per pixel clock -- 16M lines per simulated second.
+  // vsim: enable with `make DEBUG_VIDEO=1`.
+  $display("xx %x yy %x HBLANKn %x",xx,yy,HBLANKn);
+`endif
   if (~SRESETn) begin
     xx <= 0;
     yy <= 0;

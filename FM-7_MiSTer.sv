@@ -207,6 +207,7 @@ localparam CONF_STR = {
   "FM-7;;",
   "-;",
   "F1,t77,Load Tape;",
+  "S0,d77,Load Disk;",
   "O[8],Tape Rewind;",
   "O[9],Tape Audio,Off,On;",
   "O[11:10],BootROM,Basic,1,2,3;",
@@ -235,7 +236,18 @@ wire [15:0] ioctl_dout;
 
 wire [31:0] joy1, joy2;
 
-hps_io #(.CONF_STR(CONF_STR),.WIDE(1)) hps_io
+// Floppy block-device interface. VDNUM 1 = one drive; the FM-7 supports two,
+// see TODO.md P4-1.
+wire        img_mounted;
+wire        img_readonly;
+wire [63:0] img_size;
+wire [31:0] sd_lba;
+wire        sd_rd, sd_wr, sd_ack;
+wire  [8:0] sd_buff_addr;
+wire  [7:0] sd_buff_dout, sd_buff_din;
+wire        sd_buff_wr;
+
+hps_io #(.CONF_STR(CONF_STR),.WIDE(1),.VDNUM(1)) hps_io
 (
   .clk_sys(clk_sys),
   .HPS_BUS(HPS_BUS),
@@ -258,7 +270,20 @@ hps_io #(.CONF_STR(CONF_STR),.WIDE(1)) hps_io
   .status(status),
   .status_menumask({ direct_video }),
 
-  .ps2_key(ps2_key)
+  .ps2_key(ps2_key),
+
+  .img_mounted(img_mounted),
+  .img_readonly(img_readonly),
+  .img_size(img_size),
+  .sd_lba('{sd_lba}),
+  .sd_blk_cnt('{6'd0}),
+  .sd_rd(sd_rd),
+  .sd_wr(sd_wr),
+  .sd_ack(sd_ack),
+  .sd_buff_addr(sd_buff_addr),
+  .sd_buff_dout(sd_buff_dout),
+  .sd_buff_din('{sd_buff_din}),
+  .sd_buff_wr(sd_buff_wr)
 );
 
 ///////////////////////   CLOCKS   ///////////////////////////////
@@ -301,6 +326,16 @@ wire [24:0] sdram_addr;
 wire need_more_byte;
 wire sdram_ready;
 wire rewind = (old_ioctl_download & ~ioctl_download) | status[8];
+
+// Size of the mounted tape, latched from the ioctl download, so t77_decode
+// can stop at the end instead of running on into whatever else is in SDRAM.
+// hps_io is WIDE(1) here, so ioctl_addr steps by 2.
+reg [24:0] tape_size = 25'd0;
+always @(posedge clk_sys) begin
+  if (ioctl_download && ioctl_index == 8'd1) begin
+    if (ioctl_wr) tape_size <= ioctl_addr + 25'd2;
+  end
+end
 wire SVIDEOCLK;
 wire [13:0] audio_out;
 wire buzzer;
@@ -330,7 +365,19 @@ core u_core(
   // tape
   .cin         ( cin           ),
   .motor       ( motor         ),
-  .bootrom_sel ( status[11:10] )
+  .bootrom_sel ( status[11:10] ),
+  // floppy
+  .img_mounted  ( img_mounted  ),
+  .img_readonly ( img_readonly ),
+  .img_size     ( img_size     ),
+  .sd_lba       ( sd_lba       ),
+  .sd_rd        ( sd_rd        ),
+  .sd_wr        ( sd_wr        ),
+  .sd_ack       ( sd_ack       ),
+  .sd_buff_addr ( sd_buff_addr ),
+  .sd_buff_dout ( sd_buff_dout ),
+  .sd_buff_din  ( sd_buff_din  ),
+  .sd_buff_wr   ( sd_buff_wr   )
 );
 
 
@@ -342,7 +389,9 @@ t77_decode u_t77_decode(
   .sdram_addr ( sdram_addr     ),
   .sdram_rd   ( need_more_byte ),
   .sout       ( cin            ),
-  .rewind     ( rewind         )
+  .rewind     ( rewind         ),
+  .image_size ( tape_size      ),
+  .eot        (                )
 );
 
 

@@ -39,53 +39,94 @@ assign SKDATA =
   ~KACKNGn ? kdata :
   ~KDATAn ? { P0, 7'd0 } : 8'h0;
 
-always @* begin
+// Modifier state.
+//
+// This used to live in the combinational block below and was assigned
+// `~press_btn`, i.e. it went TRUE when the modifier was RELEASED, so the shift
+// branch could never fire while shift was actually held. Tracking it in a
+// clocked block instead makes the polarity explicit and removes a
+// read-and-write-in-the-same-comb-block loop.
+//
+//   alt left = GRAPH, alt right = KANA, ctrl left = CTRL
+reg shift_h, ctrl_h, graph_h, kana_h;
+always @(posedge CLKSYS) begin
+  if (~RESETBn) begin
+    shift_h <= 1'b0; ctrl_h <= 1'b0; graph_h <= 1'b0; kana_h <= 1'b0;
+  end
+  else if (input_strobe) begin
+    case (code)
+      9'h012, 9'h059: shift_h <= press_btn;  // shift left / right
+      9'h014:         ctrl_h  <= press_btn;  // ctrl left
+      9'h011:         graph_h <= press_btn;  // alt left
+      9'h111:         kana_h  <= press_btn;  // alt right
+    endcase
+  end
+end
 
-	if (~RESETBn) begin
-		modif = 4'h0;
-	end
+always @* begin
 
   if (input_strobe) begin
 
-	  // alt left = graph
-	  // alt right = kana
-	  // ctl left = ctl
-	  case (code)
-	    9'h14: modif[0] = ~press_btn; // ctl
-	    9'h12, 8'h59: modif[1] = ~press_btn; // shift (left/right)
-	  	9'h111: modif[3] = ~press_btn; // alt right
-	  	9'h011:modif[2] = ~press_btn; // alt left
-	  endcase
+    // SHIFT. JIS layout, matching the unshifted table below: the codes here are
+    // what the FM-7 keyboard MCU sends, i.e. plain ASCII for these keys.
+    // CTRL / GRAPH / KANA are still unimplemented -- see TODO.md P2-1.
+    if (shift_h && press_btn) begin
+      case (code)
+        9'h1c: begin { P0, kdata } = 9'h41; end // A
+        9'h32: begin { P0, kdata } = 9'h42; end // B
+        9'h21: begin { P0, kdata } = 9'h43; end // C
+        9'h23: begin { P0, kdata } = 9'h44; end // D
+        9'h24: begin { P0, kdata } = 9'h45; end // E
+        9'h2b: begin { P0, kdata } = 9'h46; end // F
+        9'h34: begin { P0, kdata } = 9'h47; end // G
+        9'h33: begin { P0, kdata } = 9'h48; end // H
+        9'h43: begin { P0, kdata } = 9'h49; end // I
+        9'h3b: begin { P0, kdata } = 9'h4a; end // J
+        9'h42: begin { P0, kdata } = 9'h4b; end // K
+        9'h4b: begin { P0, kdata } = 9'h4c; end // L
+        9'h3a: begin { P0, kdata } = 9'h4d; end // M
+        9'h31: begin { P0, kdata } = 9'h4e; end // N
+        9'h44: begin { P0, kdata } = 9'h4f; end // O
+        9'h4d: begin { P0, kdata } = 9'h50; end // P
+        9'h15: begin { P0, kdata } = 9'h51; end // Q
+        9'h2d: begin { P0, kdata } = 9'h52; end // R
+        9'h1b: begin { P0, kdata } = 9'h53; end // S
+        9'h2c: begin { P0, kdata } = 9'h54; end // T
+        9'h3c: begin { P0, kdata } = 9'h55; end // U
+        9'h2a: begin { P0, kdata } = 9'h56; end // V
+        9'h1d: begin { P0, kdata } = 9'h57; end // W
+        9'h22: begin { P0, kdata } = 9'h58; end // X
+        9'h35: begin { P0, kdata } = 9'h59; end // Y
+        9'h1a: begin { P0, kdata } = 9'h5a; end // Z
 
-	  // ctl
-	  if (modif[0]) begin
+        // JIS number row: 1..9 give ! " # $ % & ' ( ) ; shift-0 is unassigned.
+        9'h16: begin { P0, kdata } = 9'h21; end // !
+        9'h1e: begin { P0, kdata } = 9'h22; end // "
+        9'h26: begin { P0, kdata } = 9'h23; end // #
+        9'h25: begin { P0, kdata } = 9'h24; end // $
+        9'h2e: begin { P0, kdata } = 9'h25; end // %
+        9'h36: begin { P0, kdata } = 9'h26; end // &
+        9'h3d: begin { P0, kdata } = 9'h27; end // '
+        9'h3e: begin { P0, kdata } = 9'h28; end // (
+        9'h46: begin { P0, kdata } = 9'h29; end // )
 
-			// TODO
+        9'h4e: begin { P0, kdata } = 9'h3d; end // - -> =
+        9'h55: begin { P0, kdata } = 9'h7e; end // ^ -> ~
+        9'h5d: begin { P0, kdata } = 9'h7c; end // \ -> |
+        9'h54: begin { P0, kdata } = 9'h60; end // @ -> `
+        9'h5b: begin { P0, kdata } = 9'h7b; end // [ -> {
+        9'h4c: begin { P0, kdata } = 9'h2b; end // ; -> +
+        9'h52: begin { P0, kdata } = 9'h2a; end // : -> *
+        9'h41: begin { P0, kdata } = 9'h3c; end // , -> <
+        9'h49: begin { P0, kdata } = 9'h3e; end // . -> >
+        9'h4a: begin { P0, kdata } = 9'h3f; end // / -> ?
 
-	  end
-	  // shift
-	  else if (modif[1]) begin
-
-			// TODO
-
-	  end
-
-	  // graph
-	  else if (modif[2]) begin
-
-			// TODO
-
-	  end
-
-	  // kana
-	  else if (modif[3]) begin
-
-			// TODO
-
-	  end
-
-	  // normal
-	  else if (press_btn) begin
+        9'h29: begin { P0, kdata } = 9'h20; end // spacebar
+        9'h5a: begin { P0, kdata } = 9'h0d; end // enter
+      endcase
+    end
+    // normal
+    else if (press_btn) begin
 		  case (code)
 	      9'h76: begin { P0, kdata } = 9'h1b; end // esc ??
 	      9'h05: begin { P0, kdata } = 9'h101; end // f1
@@ -150,7 +191,7 @@ always @* begin
 	      9'h41: begin { P0, kdata } = 9'h2c; end // ,
 	      9'h49: begin { P0, kdata } = 9'h2e; end // .
 	      9'h14a: begin { P0, kdata } = 9'h2f; end // .
-	      9'h04a: begin { P0, kdata } = 9'h22; end // /
+	      9'h04a: begin { P0, kdata } = 9'h2f; end // / (was '"'; " is shift-2)
 
 	      9'h29: begin { P0, kdata } = 9'h20; end // spacebar
 	      9'h5a: begin { P0, kdata } = 9'h0d; end // enter
@@ -202,9 +243,29 @@ end
 
 wire clr = ~(RESETBn & RFD01n & KACKNGn);
 
-always @(posedge press_btn, posedge clr) begin
-  if (clr) m132 <= 1'b0;
-  else m132 <= 1'b1;
+// "A code is waiting", driven by a real keystroke rather than by
+// `posedge press_btn`.
+//
+// The edge-triggered version latched on ANY key going down, including the
+// modifiers -- so pressing SHIFT presented whatever stale code was still in
+// kdata, and the letter that followed produced no new edge at all (press_btn
+// was already high), so it was never delivered. Shifted characters therefore
+// did nothing. The real MB88401 keyboard MCU sends nothing for a modifier on
+// its own.
+//
+// Setting also wins over clearing, so a keystroke that lands in the same cycle
+// the CPU acknowledges the previous one is not silently dropped.
+wire is_modifier = (code == 9'h012) || (code == 9'h059) ||  // shift L/R
+                   (code == 9'h014) || (code == 9'h114) ||  // ctrl L/R
+                   (code == 9'h011) || (code == 9'h111);    // alt L/R
+
+reg key_stb;
+always @(posedge CLKSYS)
+  key_stb <= input_strobe & press_btn & ~is_modifier;
+
+always @(posedge CLKSYS) begin
+  if (key_stb)  m132 <= 1'b1;
+  else if (clr) m132 <= 1'b0;
 end
 
 assign KSTROBEn = ~(m132 & ~m77[0]);

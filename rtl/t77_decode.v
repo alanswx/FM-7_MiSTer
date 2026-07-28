@@ -5,6 +5,8 @@ module t77_decode(
   input [15:0] data,
   input data_stb,
   input rewind,
+  input [24:0] image_size,   // bytes loaded over ioctl; 0 = unknown
+  output eot,                // end of tape reached
   output reg [24:0] sdram_addr,
   output reg sdram_rd,
   output sout
@@ -16,10 +18,18 @@ reg [15:0] counter = 0;
 reg s;
 reg [14:0] len;
 reg sending;
-reg [24:0] addr = 25'h62;//25'd16;
+// Start past the 16-byte "XM7 TAPE IMAGE 0" header, the same place the
+// rewind path below uses. This was 25'h62, which skipped 82 bytes of real
+// tape data on the first play after power-on.
+reg [24:0] addr = 25'd16;
 reg [15:0] init;
 
 assign sout = s;
+
+// Without this the address counter ran forever: a 238 KB image played out
+// and then kept reading whatever else happened to be in SDRAM. image_size
+// is latched from the ioctl download by the top level.
+assign eot = (image_size != 25'd0) && (addr >= image_size);
 
 always @(posedge CLKSYS) begin
   if (counter >= DIV_9us) begin
@@ -60,7 +70,7 @@ always @(posedge clk_9us, posedge rewind) begin
         len <= { data[6:0], data[15:8] };
       end
     end
-    else if (sending) begin
+    else if (sending && ~eot) begin
       if (len) begin
         len <= len - 15'd1;
       end

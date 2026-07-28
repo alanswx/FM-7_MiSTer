@@ -1,0 +1,16 @@
+obj_dir/
+imgui.ini
+audio.wav
+*.log
+pc_profile_main.txt
+pc_profile_sub.txt
+*.bin
+*.bin.known
+
+# Generated screenshots and traces. shots-ref/ IS tracked on purpose -- it is
+# the visual baseline run_tests.sh is compared against.
+shots/
+*.png
+!shots-ref/
+!shots-ref/*.png
+.DS_Store

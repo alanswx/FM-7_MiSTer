@@ -41,7 +41,20 @@ wire m158_11 = ~&SADDRBUS[15:14];
 wire m58_3 = m80_10 | m158_11;
 wire m87_3 = SQB | SRWB;
 wire m58_6 = m58_3 | m87_3;
-wire m57_6 = ~(SRWB & SEB);
+// Read qualifier for the sub-CPU I/O decoder (m98 below).
+//
+// The schematic signal SRDEn is ~(SRWB & SEB), which drops the instant SEB
+// falls -- the same instant mc6809i latches the data bus. KDATAn/KACKNGn
+// were already high by then and core.v's SDATABUS_in mux had fallen through
+// to its 8'hff default, so the sub CPU's keyboard handler read $ffff from
+// $d400 instead of the keystroke, decoded it as a function key, and printed
+// a garbage string out of the F-key table.
+//
+// Same bug as the main CPU's RDEn -- see the MDECODE comment in core.v.
+// Qualifying with (SEB | SQB) extends the strobe past the latching edge,
+// exactly as SRDQEn already does for the sub's ROM/RAM reads.
+wire m57_6 = ~(SRWB & SEB);            // schematic SRDEn, exported as-is
+wire m57_6_rd = ~(SRWB & (SEB | SQB)); // what actually enables m98
 wire m57_8 = ~(&SADDRBUS[15:13] & ~SBA);
 wire m58_11 = m57_8 | m80_10;
 wire m64_11 = m86_y6 | SADDRBUS[10];
@@ -79,7 +92,7 @@ x74138 m87(
 
 x74138 m98(
   .G2B ( m64_8        ),
-  .G2A ( SRDEn        ),
+  .G2A ( m57_6_rd     ),
   .G1  ( ~SADDRBUS[3] ),
   .A   ( SADDRBUS[0]  ),
   .B   ( SADDRBUS[1]  ),

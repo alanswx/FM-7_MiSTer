@@ -56,6 +56,7 @@ reg qh3;
 wire [2:0] color = { qh3, qh2, qh1 };
 
 always @(posedge SFTCLK) begin
+//$display("pal[color] %x",pal[color]);
   grb <= pal[color];
   qh1 <= SFT1[7];
   qh2 <= SFT2[7];

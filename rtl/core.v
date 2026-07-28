@@ -15,7 +15,20 @@ module core(
   output SVIDEOCLK,
   output [13:0] audio_out,
   output buzzer,
-  input [1:0] bootrom_sel
+  input [1:0] bootrom_sel,
+
+  // Floppy: MiSTer block-device interface, straight through to FDC.v
+  input         img_mounted,
+  input         img_readonly,
+  input  [63:0] img_size,
+  output [31:0] sd_lba,
+  output        sd_rd,
+  output        sd_wr,
+  input         sd_ack,
+  input   [8:0] sd_buff_addr,
+  input   [7:0] sd_buff_dout,
+  output  [7:0] sd_buff_din,
+  input         sd_buff_wr
 );
 
 wire [15:0] MADDRBUS;
@@ -223,7 +236,11 @@ assign SDATABUS_in =
   8'hff;
 
 CLKCTRL u_CLKCTRL(
-  .SW2          ( 1'b0         ), // FM8 compatibility switch
+  // FM-7 mode. This picks the CPU clock (MCPUCLK = CLK4_9 = 4.9152 MHz, so
+  // E = 1.2288 MHz, the real FM-7 main CPU rate; 1'b0 selects SCLK1 and runs
+  // it at the FM-8's 2 MHz) and is reported on $FD00 bit 0, which the BIOS
+  // reads to choose between two different cassette routines.
+  .SW2          ( 1'b1         ), // 0 = FM-8 compatibility
   .CLKSYS       ( CLKSYS       ),
   .SCLK1        ( SCLK1        ),
   .SCLK2        ( SCLK2        ),
@@ -281,9 +298,21 @@ MRAM u_MRAM(
   .DOUT     ( MRAM_dout    )
 );
 
+// RDQEn, not RDEn, gates the I/O read decoder.
+//
+// RDEn is ~(RWB & EB), so it drops the instant E falls -- the same instant
+// mc6809i latches the data bus (always @(negedge E)). The RFDxxn strobes are
+// already high by then and the read mux above has fallen through to its
+// `~IOSn ? 8'hff` default, so EVERY $fdxx read returned $ff. Real hardware is
+// saved by 74LS138 propagation delay and the 6809's data hold window;
+// zero-delay RTL is not.
+//
+// RDQEn is ~(RWB & (QB|EB)). Q falls a quarter cycle after E, so this strobe
+// starts on the same edge and simply extends past the latch. It is what the
+// ROM/RAM read path already uses, which is why that path always worked.
 MDECODE u_MDECODE(
   .MADDRBUS ( MADDRBUS ),
-  .RDEn     ( RDEn     ),
+  .RDEn     ( RDQEn    ),
   .E        ( E        ),
   .RWBn     ( RWBn     ),
   .WTQEn    ( WTQEn    ),
@@ -340,7 +369,7 @@ MCPU u_MCPU(
 
 TIMER u_TIMER(
   .CLKSYS       ( CLKSYS       ),
-  .MDATABUS_in  ( MDATABUS_in  ),
+  .MDATABUS_in  ( MDATABUS_out ),
   .MDATABUS_out ( TIMER_out    ),
   .WFD03n       ( WFD03n       ),
   .BUZZERn      ( BUZZERn      ),
@@ -352,6 +381,7 @@ TIMER u_TIMER(
   .RFD04n       ( RFD04n       ),
   .RFD05n       ( RFD05n       ),
   .BUSY         ( BUSY         ),
+  .SHALTACn     ( SHALTACn     ),
   .BREAKn       ( BREAKn       ),
   .EXTDETn      ( EXTDETn      ),
   .CLK0_3       ( CLK0_3       ),
@@ -382,9 +412,28 @@ PERIPHERAL u_PERIPHERAL(
   .cin          ( cin          )
 );
 
+// Sub-CPU VRAM wait state.
+//
+// MB60H010 hands the VRAM address bus to the sub CPU only while SCASSEL is high
+// (blanking); during active display SVRADRS follows the raster instead. So a
+// sub access to VRAM mid-display does not merely contend, it lands at the
+// raster's address. That is what the blanket halt in FLAGS.v exists to prevent,
+// and it costs the sub about 55% of its cycles even when running code that
+// never touches VRAM -- which is what starves Thexder's shared-window byte pump
+// (TODO.md P4-1).
+//
+// The right answer is a wait state on the access itself, but neither `nHALT`
+// nor `nDMABREQ` can express one: mc6809i samples both at CPUSTATE_FETCH_I1,
+// i.e. at instruction boundaries. So stall the sub's clock directly. Holding
+// SCPUCLK low freezes the core mid-cycle until blanking arrives, at which point
+// SVRADRS is its own address again and the access completes correctly.
+wire sub_vram_sel = ~(SDRAMBn & SDRAMGn & SDRAMRn);  // sub is addressing VRAM
+wire sub_vram_wait = sub_vram_sel & ~SCASSEL;        // ...while the raster owns it
+wire SCPUCLK_w = SCPUCLK & ~sub_vram_wait;
+
 SCPU u_SCPU(
   .RESETBn      ( RESETBn      ),
-  .SCPUCLK      ( SCPUCLK      ),
+  .SCPUCLK      ( SCPUCLK_w    ),
   .SCLKNMIn     ( SCLKNMIn     ),
   .SUBIRQn      ( SUBIRQn      ),
   .KSTROBEn     ( KSTROBEn     ),
@@ -410,7 +459,7 @@ FLAGS u_FLAGS(
   .SLEDn       ( SLEDn       ),
   .CANCELn     ( CANCELn     ),
   .SIRQCLRn    ( SIRQCLRn    ),
-  .MDATABUS_in ( MDATABUS_in ),
+  .MDATABUS_in ( MDATABUS_out),
   .RESETBn     ( RESETBn     ),
   .WFD37n      ( WFD37n      ),
   .SRWBn       ( SRWBn       ),
@@ -535,7 +584,19 @@ FDC u_FDC(
   .FD_INTRQn ( FD_INTRQn ),
   .FD_CSn    ( FD_CSn    ),
   .FD_WEn    ( FD_WEn    ),
-  .FD_REn    ( FD_REn    )
+  .FD_REn    ( FD_REn    ),
+
+  .img_mounted  ( img_mounted  ),
+  .img_readonly ( img_readonly ),
+  .img_size     ( img_size     ),
+  .sd_lba       ( sd_lba       ),
+  .sd_rd        ( sd_rd        ),
+  .sd_wr        ( sd_wr        ),
+  .sd_ack       ( sd_ack       ),
+  .sd_buff_addr ( sd_buff_addr ),
+  .sd_buff_dout ( sd_buff_dout ),
+  .sd_buff_din  ( sd_buff_din  ),
+  .sd_buff_wr   ( sd_buff_wr   )
 );
 
 
@@ -649,7 +710,7 @@ SOUND u_SOUND(
   .CLKSYS       ( CLKSYS       ),
   .CLK1_2       ( CLK1_2       ),
   .RESETBn      ( RESETBn      ),
-  .MDATABUS_in  ( MDATABUS_in  ),
+  .MDATABUS_in  ( MDATABUS_out ),
   .MDATABUS_out ( SOUND_dout   ),
   .RFD0En       ( RFD0En       ),
   .WFD0En       ( WFD0En       ),

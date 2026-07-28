@@ -1,17 +1,323 @@
+//============================================================================
+//  FM-7 floppy disk controller: MB8877 + the FM-7's own $fd1c-$fd1f registers
+//
+//  The MB8877 is register- and command-compatible with the WD1793 (MAME's own
+//  compatibility table, refs/mame/src/devices/machine/wd_fdc.h:31, lists it as
+//  "fd1793 compatible" with a NORMAL, non-inverted data bus -- unlike its
+//  MB8876/MB8866 siblings). MAME instantiates it for every FM-7 variant and
+//  never calls dden_w(), so it runs permanently in MFM / double density, which
+//  is what FM-7 2D media needs.
+//
+//  rtl/wd1793.sv is vendored from refs/fdc/spectrum-wd1793 with one local
+//  change, marked LOCAL CHANGE in that file (a declaration moved out of a
+//  generate block so Verilator will elaborate it). This file is the glue:
+//
+//    * $fd18-$fd1b (FD_RS 0-3) go straight to the WD1793 core.
+//    * $fd1c-$fd1f (FD_RS 4-7) do NOT exist in the chip -- on real hardware
+//      they are board logic, and MAME models them in C++ (fm7.cpp fdc_r/fdc_w).
+//      They are implemented here.
+//    * MFD.v drives FD_WEn/FD_REn from the 6809's E/Q overlap, a ~200 ns
+//      window. The core samples on a 1 MHz ce, so an access has to be latched
+//      and stretched to survive the crossing -- see "Crossing from the bus into
+//      the controller's clock enable" below. This is not cosmetic: without it
+//      no register write reaches the chip at all.
+//    * The core's drq/intrq are ACTIVE HIGH (real WD179x pins); MFD.v wants
+//      active low. Inverted below. Getting this backwards gives either an
+//      interrupt storm or a permanently busy-looking controller.
+//
+//  The MiSTer block-device interface (sd_lba/sd_rd/sd_wr/sd_buff_*) is brought
+//  out to the top level, so images reach the core over hps_io on hardware and
+//  over SimBlockDevice in vsim.
+//
+//  .d77 images are understood: wd1793.sv reads the whole image once at mount
+//  time and builds a sector table from it (see the .D77 block in that file, and
+//  refs/fdc/d77-format.md). Geometry is therefore per-track and per-sector, not
+//  assumed, which .d77 requires -- the format interleaves a 16-byte header
+//  before every sector, and real images have tracks with differing sector
+//  counts.
+//
+//  `ready` is held low while that scan runs, so the drive reports not-ready
+//  rather than answering out of a half-built table.
+//============================================================================
 
 module FDC(
   input CLKSYS,
-  input FD_MRn, // reset
-  input [7:0] FD_Din,
-  output [7:0] FD_Dout,
-  input [2:0] FD_RS,
+  input FD_MRn,          // master reset, active low
+  input [7:0] FD_Din,    // data from the CPU
+  output [7:0] FD_Dout,  // data to the CPU
+  input [2:0] FD_RS,     // register select, $fd18 + FD_RS
   output FD_DRQn,
   output FD_INTRQn,
   input FD_CSn,
   input FD_WEn,
-  input FD_REn
+  input FD_REn,
+
+  // MiSTer block-device interface (hps_io on hardware, SimBlockDevice in vsim).
+  // One drive for now; the FM-7 supports two, see TODO.md P4-1.
+  input         img_mounted,
+  input         img_readonly,
+  input  [63:0] img_size,
+  output [31:0] sd_lba,
+  output        sd_rd,
+  output        sd_wr,
+  input         sd_ack,
+  input   [8:0] sd_buff_addr,
+  input   [7:0] sd_buff_dout,
+  output  [7:0] sd_buff_din,
+  input         sd_buff_wr
 );
 
-assign FD_Dout = 8'hff; // no FDC
+wire reset = ~FD_MRn;
+
+//----------------------------------------------------------------------------
+// Clock enable
+//
+// MAME clocks the MB8877 at 8_MHz_XTAL/8 = 1 MHz (fm7.cpp). CLKSYS is 48 MHz,
+// so a 1-in-48 enable gives the chip its real rate.
+//----------------------------------------------------------------------------
+
+reg [5:0] ce_cnt = 6'd0;
+reg       ce = 1'b0;
+always @(posedge CLKSYS) begin
+  ce <= 1'b0;
+  if (ce_cnt == 6'd47) begin
+    ce_cnt <= 6'd0;
+    ce     <= 1'b1;
+  end
+  else ce_cnt <= ce_cnt + 6'd1;
+end
+
+// The mount-time scan replays the whole image through the controller one byte
+// per 8 ce ticks. At the MB8877's real 1 MHz that is 8us a byte -- about 2.8
+// seconds for a 345 KB 2D image, which is long enough to look like a hang and
+// long enough that a boot ROM already polling the drive gives up before the
+// table exists.
+//
+// So free-run ce while the scan is in progress. Nothing else is happening: the
+// command FSM sits in STATE_IDLE for the whole scan, and `ready` is low, so a
+// command that does arrive is rejected on the spot rather than being run at the
+// wrong rate. What is left is the byte replay, which goes as fast as the blocks
+// arrive -- on hardware that means the SD reads set the pace, which is right.
+wire ce_wd = ce | prepare;
+
+//----------------------------------------------------------------------------
+// Host strobes
+//
+// FD_WEn/FD_REn are active low and stay low for as long as the 6809's E/Q
+// overlap lasts. Turn each into a one-CLKSYS pulse on its falling edge so a
+// single CPU access is registered exactly once; the pulse is then stretched
+// into the controller's clock domain below.
+//----------------------------------------------------------------------------
+
+reg wen_d = 1'b1, ren_d = 1'b1;
+always @(posedge CLKSYS) begin
+  wen_d <= FD_WEn;
+  ren_d <= FD_REn;
+end
+
+wire sel      = ~FD_CSn;
+wire core_sel = sel & ~FD_RS[2];          // $fd18-$fd1b
+wire aux_sel  = sel &  FD_RS[2];          // $fd1c-$fd1f
+wire wr_stb   = ~FD_WEn & wen_d;          // falling edge of FD_WEn
+wire rd_stb   = ~FD_REn & ren_d;          // falling edge of FD_REn
+
+//----------------------------------------------------------------------------
+// Crossing from the bus into the controller's clock enable
+//
+// The WD1793 core samples rd/wr/addr/din only on `ce` ticks and does its own
+// edge detection there, so an access has to stay visible for a whole ce period
+// to be seen at all. The 6809's E/Q write window is about 200 ns and CLKSYS is
+// 48 MHz, so a single-cycle bus strobe is 1/48th of a 1 MHz ce period wide and
+// is essentially never sampled. Measured, before this was here: the DOS boot
+// ROM issued 11 register writes and the controller received none of them, so
+// every command byte it thought it had sent was simply dropped.
+//
+// So latch the access -- address, data, direction -- on the bus edge and hold
+// the strobe until one ce tick has consumed it. The core then sees a clean
+// 0->1->0 across consecutive ce ticks, which is also what its end-of-transfer
+// detection needs (`old_rd && !rde` on a data read is how it advances a byte).
+//
+// The latched address feeds the core's read mux too, so it stays pointed at the
+// register being read for the whole bus cycle rather than following the bus.
+//
+// Two accesses inside one ce period would collide, but they cannot happen: one
+// 6809 bus cycle at 1.2288 MHz is 814 ns and consecutive accesses to the FDC
+// are several cycles apart, so a ce tick always falls between them.
+//----------------------------------------------------------------------------
+
+reg [1:0] acc_addr = 2'd0;
+reg [7:0] acc_din  = 8'd0;
+reg       acc_wr   = 1'b0;
+reg       acc_rd   = 1'b0;
+
+always @(posedge CLKSYS) begin
+  if (reset) begin
+    acc_wr <= 1'b0;
+    acc_rd <= 1'b0;
+  end
+  else begin
+    if (core_sel & wr_stb) begin
+      acc_addr <= FD_RS[1:0];
+      acc_din  <= FD_Din;
+      acc_wr   <= 1'b1;
+    end
+    else if (ce_wd) acc_wr <= 1'b0;
+
+    if (core_sel & rd_stb) begin
+      acc_addr <= FD_RS[1:0];
+      acc_rd   <= 1'b1;
+    end
+    else if (ce_wd) acc_rd <= 1'b0;
+  end
+end
+
+`ifdef DEBUG_FDC_SCAN
+always @(posedge CLKSYS) begin
+  if (core_sel & wr_stb) $display("FDCW reg%0d <- %02x", FD_RS[1:0], FD_Din);
+end
+`endif
+
+//----------------------------------------------------------------------------
+// FM-7 board registers, $fd1c-$fd1f (MAME fm7.cpp fdc_r/fdc_w cases 4-7)
+//
+//   4  side select   write bit 0; reads back as side | $fe
+//   5  drive select  write: bits 1:0 drive, bit 7 motor. MAME rejects a drive
+//                    number above 1 and latches 0 instead. Reads back the latch
+//   6  mode          FM-7 always reads $ff; writes only matter on FM77AV+
+//   7  status        bit 7 = DRQ, bit 6 = INTRQ, rest 0
+//----------------------------------------------------------------------------
+
+reg       fdc_side  = 1'b0;
+reg [7:0] fdc_drive = 8'd0;
+
+always @(posedge CLKSYS) begin
+  if (reset) begin
+    fdc_side  <= 1'b0;
+    fdc_drive <= 8'd0;
+  end
+  else if (aux_sel & wr_stb) begin
+    case (FD_RS[1:0])
+      2'd0: fdc_side  <= FD_Din[0];
+      2'd1: fdc_drive <= (FD_Din[1:0] > 2'd1) ? 8'd0 : FD_Din;
+      default: ;
+    endcase
+  end
+end
+
+wire [7:0] aux_dout =
+  (FD_RS[1:0] == 2'd0) ? { 7'h7f, fdc_side } :   // side | $fe
+  (FD_RS[1:0] == 2'd1) ? fdc_drive :
+  (FD_RS[1:0] == 2'd2) ? 8'hff :                 // mode: FM-7 always $ff
+                         { drq, intrq, 6'd0 };   // status flags
+
+//----------------------------------------------------------------------------
+// The controller
+//----------------------------------------------------------------------------
+
+wire [7:0] core_dout;
+wire       drq, intrq, busy;
+wire       prepare, fmt_wp;
+
+// The drive is ready once an image is mounted AND the mount-time scan of that
+// image has finished -- until then the sector table is still being built, and a
+// seek would search a half-filled table. `prepare` is the controller's own
+// "scan in progress"; it goes high a little after img_mounted falls, so the
+// scan is tracked from the mount rather than from prepare alone.
+//
+// Write protect follows the OSD's read-only flag ONLY.
+//
+// A .d77 also carries its own write-protect byte at header offset $1a, and the
+// scanner lifts it out as fmt_wp -- but it is deliberately NOT applied here.
+// Neither reference emulator enforces it: MAME's d88 loader reads it into
+// `tag->write_protect` (refs/mame/src/lib/formats/d88_dsk.cpp:351) and never
+// looks at it again, and common-source-project does not read it at all.
+//
+// Enforcing it breaks real software. Thexder's image has $1a = $10, and its
+// boot sector asks the boot ROM for a disk write; with write protect forced on,
+// the ROM's error decoder at $ffad reads status $60, takes the "bit 6 -> error
+// 11" branch, and the boot sector halts on `BRA $0340`. The disk is simply
+// unbootable. fmt_wp is left exported in case it should one day become a
+// default for an OSD toggle, but the byte records how the physical disk was
+// dumped, not whether the emulated drive should refuse writes.
+reg mounted      = 1'b0;
+reg scanning     = 1'b0;
+reg prepare_seen = 1'b0;
+reg wp_r         = 1'b1;
+
+always @(posedge CLKSYS) begin
+  if (img_mounted) begin
+    mounted      <= |img_size;
+    wp_r         <= img_readonly;
+    scanning     <= |img_size;
+    prepare_seen <= 1'b0;
+  end
+  else begin
+    if (prepare) prepare_seen <= 1'b1;
+    if (prepare_seen & ~prepare) begin
+      scanning     <= 1'b0;
+      prepare_seen <= 1'b0;
+    end
+  end
+end
+
+wire ready = mounted & ~scanning;
+wire wp    = wp_r;
+
+// EDSK=1 compiles in the mount-time sector-table scanner, which is where the
+// .d77 parser lives -- it fills the same edsk[]/spt[] structures the EDSK parser
+// does, so the runtime path is shared. It must stay 1: with EDSK=0 there is no
+// table at all, and Verilator additionally rejects the file (`spt_addr` is
+// declared inside the generate block yet referenced outside it).
+wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793
+(
+  .clk_sys      ( CLKSYS            ),
+  .ce           ( ce_wd             ),
+  .reset        ( reset             ),
+  // io_en is folded into acc_rd/acc_wr, which are only ever set for a selected
+  // access to $fd18-$fd1b.
+  .io_en        ( 1'b1              ),
+  .rd           ( acc_rd            ),
+  .wr           ( acc_wr            ),
+  .addr         ( acc_addr          ),
+  .din          ( acc_din           ),
+  .dout         ( core_dout         ),
+  .drq          ( drq               ),
+  .intrq        ( intrq             ),
+  .busy         ( busy              ),
+
+  .wp           ( wp                ),
+  .fmt_wp       ( fmt_wp            ),
+  .size_code    ( 3'd1              ),  // 256-byte sectors, the FM-7 2D norm
+  .layout       ( 1'b0              ),  // Track-Side-Sector
+  .side         ( fdc_side          ),
+  .ready        ( ready             ),
+
+  // SD block interface (RWMODE 1). img_size is 20 bits in the core: 1 MB max,
+  // which covers 2D (320-360 KB) and 2DD .d77 images comfortably.
+  .img_mounted  ( img_mounted       ),
+  .img_size     ( img_size[19:0]    ),
+  .prepare      ( prepare           ),
+  .sd_lba       ( sd_lba            ),
+  .sd_rd        ( sd_rd             ),
+  .sd_wr        ( sd_wr             ),
+  .sd_ack       ( sd_ack            ),
+  .sd_buff_addr ( sd_buff_addr      ),
+  .sd_buff_dout ( sd_buff_dout      ),
+  .sd_buff_din  ( sd_buff_din       ),
+  .sd_buff_wr   ( sd_buff_wr        ),
+
+  // RAM buffer interface: unused with RWMODE 1.
+  .input_active ( 1'b0              ),
+  .input_addr   ( 20'd0             ),
+  .input_data   ( 8'd0              ),
+  .input_wr     ( 1'b0              ),
+  .buff_addr    (                   ),
+  .buff_read    (                   ),
+  .buff_din     ( 8'd0              )
+);
+
+assign FD_Dout   = FD_RS[2] ? aux_dout : core_dout;
+assign FD_DRQn   = ~drq;
+assign FD_INTRQn = ~intrq;
 
 endmodule

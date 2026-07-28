@@ -38,3 +38,17 @@ c5_pin_model_dump.txt
 *_netlist
 *.cdf
 **/.DS_Store
+# Working trees that are not part of the core and must not be published here.
+#
+#   refs/      3.2 GB of vendored reference emulator sources (MAME,
+#              common-source-project, 77AVEMU) used only for comparison
+#   software/  commercial FM-7 disk and tape images
+#   verilog/   older scratch tree
+#
+# Several files in these exceed GitHub's 100 MB hard limit in any case.
+refs/
+software/
+verilog/
+
+# Verilator build output for the vsim harness (~67 MB, regenerate with `make`)
+vsim/obj_dir/

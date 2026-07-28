@@ -10,16 +10,17 @@ module MRAM (
   output [7:0] DOUT
 );
 
-// ram #(16,8) ram(
-//   .clk  ( CLKSYS              ),
-//   .addr ( MADDRBUS            ),
-//   .din  ( DIN                 ),
-//   .q    ( DOUT                ),
-//   .wr_n ( ~RWBn               ),
-//   .rd_n ( ~RDQEn              ),
-//   .ce_n ( 1'b0                )
-// );
-
+`ifdef VERILATOR
+ ram #(16,8) ram(
+   .clk  ( CLKSYS              ),
+   .addr ( MADDRBUS            ),
+  .din  ( DIN                 ),
+   .q    ( DOUT                ),
+   .wr_n ( ~RWBn               ),
+   .rd_n ( ~RDQEn              ),
+   .ce_n ( 1'b0                )
+ );
+`else
 ram_quartus ram(
   .clock   ( CLKSYS   ),
   .address ( MADDRBUS ),
@@ -28,6 +29,6 @@ ram_quartus ram(
   .wren    ( RWBn     ),
   .rden    ( RDQEn    )
 );
-
+`endif
 
 endmodule

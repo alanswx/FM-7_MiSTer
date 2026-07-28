@@ -26,8 +26,12 @@ wire [7:0] m151_q;
 wire [7:0] m152_1_q;
 wire [7:0] m152_2_q;
 
+// Boot ROM select. Only two images exist (boot_bas / boot_dos_a) but the OSD
+// offers four settings, so anything non-zero means "DOS". Testing SW2[0]
+// alone made setting 2 (SW2 = 2'b10) pick the BASIC boot ROM while m120_q
+// below still deselected the F-BASIC ROM -- a combination that cannot boot.
 // &MADDRBUS[15:4] is a fix to force vectors from DOS ROM
-wire [7:0] m152_q = SW2[0] || &MADDRBUS[15:4] ? m152_2_q : m152_1_q;
+wire [7:0] m152_q = |SW2 || &MADDRBUS[15:4] ? m152_2_q : m152_1_q;
 
 assign ROMDATA = m151_q | m152_q;
 
@@ -58,7 +62,7 @@ m139 m139_u1(
   .clk   ( CLKSYS        ),
   .addr  ( MADDRBUS[9:1] ),
   .q     ( m139_q        ),
-  .cs_n  ( FCXXn         ),
+  .cs_n  ( FCXXn         )
 );
 
 rom #("./roms/fbasic300.rom.mem", 15, 8) m151(

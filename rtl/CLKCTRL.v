@@ -64,20 +64,49 @@ always @(posedge SCLKNMIn)
 // When loading tapes, the bios checks for this flag fist and jumps to the
 // corresponding procedure.
 assign MCPUCLK = switch ? CLK4_9 : SCLK1;
-assign SCPUCLK = switch ? SCLK2  : SCLK1;
+
+// The FM-7/FM-8 switch changes the MAIN CPU's clock only. The sub CPU runs at
+// the same rate either way: MAME has it at 16.128MHz/2 = 8.064 MHz for both
+// (fm7.cpp `MC6809(config, m_sub, 16.128_MHz_XTAL / 2)`), giving E = 2.016 MHz,
+// while the FM-7's main CPU drops to 4.9152 MHz / E = 1.2288 MHz.
+//
+// This used to hand the sub SCLK2 in FM-7 mode, which is 4 MHz -- E = 1 MHz,
+// half speed. SCLK2 is not the sub's clock at all; MB60H010.v labels it "clock
+// for MB88401 MCU", i.e. the keyboard controller.
+//
+// It matters beyond fidelity. The sub CPU is meant to be the FASTER of the two
+// (E 2.016 vs 1.2288 MHz) and software leans on that: Thexder pumps its sub-CPU
+// program across the shared window with a counter at $fcfe and never waits for
+// the sub to catch up. At half speed the sub fell behind and dropped roughly
+// every other byte. This is P0-5 again, on the other CPU.
+assign SCPUCLK = SCLK1;
 
 // M50 is a FF that is supposed to output the timer IRQ signal for the main CPU.
 // It can be masked with TMMASK. Clock is a 2MS signal generated in this module.
 reg m50_1;
 wire m50_qn = ~m50_1;
-wire s0 = ~IRQCLRn;
-// always @(posedge _2MS or posedge s0)
-//   if (s0) m50_1 <= 1'b1;
-//   else m50_1 <= TMMASK;
 
-always @(posedge SVIDEOCLK) begin
-  if (~IRQCLRn) m50_1 <= 1'b1;
-  if (_2MS_en) m50_1 <= TMMASK;
+// On the schematic this is a 74LS74 clocked by _2MS with an ASYNCHRONOUS
+// preset from the $FD03 read, so the clear can never be missed. Sampling it
+// on SVIDEOCLK (~2 MHz) instead did miss it: IRQCLRn is an E-domain strobe
+// roughly a quarter of a microsecond wide, shorter than SVIDEOCLK's period,
+// and when it did coincide with _2MS_en the second assignment below won and
+// threw the clear away. The result was IRQn stuck asserted and the main CPU
+// permanently re-entering its interrupt handler.
+//
+// Running the flip-flop on CLKSYS fixes both problems without an async
+// clock: the strobe is many CLKSYS cycles wide so it cannot be missed, and
+// giving the clear priority over the tick matches the async preset.
+reg _2MS_en_d;
+wire _2MS_tick = _2MS_en & ~_2MS_en_d;   // SVIDEOCLK pulse -> 1 CLKSYS pulse
+
+always @(posedge CLKSYS) begin
+  _2MS_en_d <= _2MS_en;
+  if (~RESETBn) m50_1 <= 1'b1;
+  else begin
+    if (_2MS_tick) m50_1 <= TMMASK;
+    if (~IRQCLRn)  m50_1 <= 1'b1;   // clear wins, as the async preset does
+  end
 end
 
 // This is the read $FD03 I/O implementation.

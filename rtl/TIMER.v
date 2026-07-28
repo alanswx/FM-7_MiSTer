@@ -13,6 +13,7 @@ module TIMER(
   input RFD04n,
   input RFD05n,
   input BUSY,
+  input SHALTACn,   // sub-CPU halt acknowledge, active low
   input BREAKn,
   input EXTDETn,
   input CLK0_3,
@@ -96,12 +97,29 @@ always @(posedge m76_q6, posedge s2)
   if (s2) m45_q8n <= 1'b1;
   else m45_q8n <= 1'b0;
 
+// $fd05 bit 7 is "the sub system is not available", which is true both while it
+// is BUSY working on a command and while it is HALTED for the main CPU to touch
+// shared RAM. MAME says so explicitly (fm7_v.cpp subintf_r: `if(sub_busy != 0
+// || sub_halt != 0) ret |= 0x80;`).
+//
+// BUSY alone is not enough, and the two halves are mutually exclusive here:
+// FLAGS.v holds the BUSY flip-flop asynchronously cleared while the halt is
+// acknowledged (`s3 = RESETBn & SHALTACn`), so during a halt bit 7 read as 0
+// forever. Software that requests a halt and then polls for it to take effect
+// -- the normal way to get at shared RAM -- hung.
+//
+// Nothing caught this before because the only code exercised so far polls the
+// other way round. F-BASIC waits for bit 7 to CLEAR (`LDA <$05 / BMI`), which a
+// permanently-0 bit satisfies immediately, so the handshake looked healthy.
+// Thexder's loader waits for it to SET and spun forever at $100c.
+wire SUBUNAVAIL = BUSY | ~SHALTACn;
+
 // m72
 always @*
   if (~RFD04n)
     MDATABUS_out = { 5'b11111, BUSY, BREAKn, m47_q11 };
   else if (~RFD05n)
-    MDATABUS_out = { BUSY, 6'b111111, EXTDETn };
+    MDATABUS_out = { SUBUNAVAIL, 6'b111111, EXTDETn };
   else
     MDATABUS_out = 8'h00;
 

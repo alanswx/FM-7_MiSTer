@@ -68,6 +68,9 @@ x74244 x74244_i1(
   .Y  ( x74244_Y        )
 );
 
+//always @(MCPUCLK)
+//	$display("ADDR %x D %x E %x Q %x",MADDRBUS,MDATABUS_in,E,Q);
+
 mc6809s mc6809s_i0 (
   .CLK4     ( MCPUCLK      ),
   .D        ( MDATABUS_in  ),
