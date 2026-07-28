@@ -169,25 +169,36 @@ matching `bitclear(*sd_ack, i)` never runs. `sd_ack` therefore falls only when
 the *next* request starts — but the FDC will not start one until it has seen
 that fall.
 
-A `WDACK` edge tracer settles which side is at fault: after the controller
-enters state 5 with `sd_rd=1`, **`sd_ack` never rises again — not once**. So this
-is not a missed falling edge or an edge-detect width problem in the RTL; the
-block device simply stops servicing a request it has already accepted (it prints
-`FLOPPY DMA: LBA=418 ... reading=1` for it).
+**Both sides are clean at the point of the stall, which is the puzzle.** Two
+rounds of instrumentation, and both of my hypotheses were wrong:
 
-That points at `sim_blkdevice.cpp`, not `wd1793.sv`. During a read `ack_delay`
-is decremented in exactly one place — inside `if (current_disk == i)` — and
-`sd_ack` is asserted only when it reaches 1, so anything that leaves
-`current_disk` out of step with the pending request stalls the transfer
-permanently. The suspicious sequence is the end of the *previous* block: the
-call that transfers the last byte clears `reading` while `ack_delay` is still 1,
-so `sd_ack` is left set, and the same call drops `ack_delay` to 0 and releases
-`current_disk` to -1 — after which the clearing branch is skipped entirely.
+- *"The sim leaves `sd_ack` stuck high."* Wrong. A periodic snapshot of the
+  block device during the stall shows it **completely idle and consistent**:
+  `sd_rd=0 sd_wr=0 sd_ack=0 current_disk=-1 ack_delay=0 reading=0 writing=0
+  bytecnt=512`. It finished its transfer and released everything. The sim is not
+  hanging on to anything.
+- *"Stale bits in the `ack` shift register clear `sd_rd` before the block device
+  sees it."* Wrong. Flushing `ack` on every new request (`ack <= 0` in
+  `STATE_WAIT_READ_1`) changed **nothing** — the instruction counts came back
+  byte-identical, 19088384 main / 32418615 sub, so the race never fires.
+  Reverted.
 
-**So this is very likely a `vsim`-only defect and not an RTL bug.** Real MiSTer
-runs the HPS block-device side, which is a different implementation. Confirm on
-hardware before changing `wd1793.sv` — the RTL waiting on a falling `sd_ack`
-(`ack[5:4] == 'b10`) is the upstream behaviour and is probably correct.
+So: the block device completed the transfer and dropped `sd_ack`, `sd_rd` is
+low, and the controller still never left `STATE_WAIT_READ_2`. `sd_busy` clears
+5 `ce` ticks after `sd_ack` falls (`ack[5:4] == 'b10`), the `case (state)` is
+unguarded inside `else if(ce)`, and `ce` is a free-running divide-by-48 inside
+`FDC.v` that cannot stop. Every link in that chain checks out individually,
+which means the fault is in how they line up in time.
+
+**This now looks like an RTL problem, not a `vsim` one** — the opposite of what
+an earlier version of this entry said. Correcting that here so the wrong lead is
+not inherited.
+
+Next step is a waveform, not another guess: `--trace` a window around the stall
+and look at `ce`, `sd_rd`, `sd_ack`, `ack`, `sd_busy` and `state` together.
+Reasoning about this state machine from printfs has now produced two confident
+wrong answers, and each printf round costs a full 3000-frame run. One `.vcd`
+answers it directly.
 
 **A second game title now loads.** `Ys (FM7) (Disk A).d77` reads the sectors it
 actually asks for, streams tracks off both sides, and loads a clean contiguous
