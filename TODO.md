@@ -221,10 +221,38 @@ zeros**. It is clearing the screen and painting 407 bytes of actual content.
 Thexder, which renders correctly, is 23% non-zero.
 
 So: the display is on, the planes are unmasked, the offset is zero, the sub CPU
-is drawing, and what it draws is blank. **Stop looking at the video path.** The
-fault is upstream -- Ys is not reaching the code that produces graphics. Chase
-it from the main CPU at `$1424`/`$1440` instead, and find what it is waiting on
-or looping over.
+is drawing, and what it draws is blank. **Stop looking at the video path.**
+
+**What the main CPU is actually doing** (PC histogram over frames 3000-3010, so
+long after loading finished). Not one tight loop -- it cycles through three
+places, and all three are healthy:
+
+```
+$1471  ADDD ,S          3359x   a counted delay loop
+$1473  LEAY -1,Y
+$1475  BNE  $1471
+
+$1180  BITA #$04        706x    an interrupt handler
+$1182  BEQ  $1195
+$1194  RTI
+$1195  DEC  $11a3               every-Nth-interrupt counter
+$1198  BNE  $1194
+$119a  JSR  $11b7               ...do the periodic work
+$119f  STA  $11a3               reload = 2
+
+$11e9  LDA  $18,X       1048x   a sound driver, channel state at $165c
+$11ec  ANDA #$c0
+$11ee  CMPA #$c0
+$11f3  DEC  $21,X               note duration countdown
+$11f9  LDA  $1e,X               reload from the pattern
+$11fc  STA  $21,X
+```
+
+Ys is sitting in an idle state with its timer interrupt and music player running
+normally, waiting on something. The main loop tests `LDB 6,X` / `BITB #$40` at
+`$1440` -- a bit-6 ready flag in a structure. **Find who is supposed to set that
+bit.** It is plausibly another keypress (an earlier prompt at `$11a4` needed one,
+which `--key '820:@SPACE'` satisfied), or a completion flag from the sub CPU.
 
 A trap worth noting from this measurement: a *low* write count proves nothing.
 Sampling frames 3000-3020 gives Ys 16 writes and Thexder **0**, and Thexder is
