@@ -206,13 +206,31 @@ reasoning:
 - Sub-side display offset `$d40e`/`$d40f` are written `$00`/`$00`, i.e. no
   offset.
 
-So the display path is enabled and unmasked, and the program is executing. The
-open question is whether anything reaches VRAM at all: a 10-frame sample near
-frame 850 showed **16** sub-side VRAM writes against Thexder's 128 in a
-comparable window, which is far too few to paint anything. Measure that
-cumulatively over a long run first -- it splits the problem cleanly into
-"nothing is drawn" versus "drawn but not displayed", and only the first is worth
-chasing into the sub CPU.
+**Measured, and the answer is "nothing is drawn" -- the video path is not at
+fault.** Cumulative sub-side VRAM writes over frames 0-1400, against Thexder as
+a working control:
+
+| | writes | zero | nonzero |
+|---|---|---|---|
+| Ys | 75496 | 75089 | **407 (0.5%)** |
+| Thexder | 94886 | 72727 | 22159 (23.4%) |
+
+Ys touches VRAM plenty -- 75k writes spread evenly over the three planes
+(24839 / 24581 / 26076), about 1.5 screens' worth -- but **99.5% of it is
+zeros**. It is clearing the screen and painting 407 bytes of actual content.
+Thexder, which renders correctly, is 23% non-zero.
+
+So: the display is on, the planes are unmasked, the offset is zero, the sub CPU
+is drawing, and what it draws is blank. **Stop looking at the video path.** The
+fault is upstream -- Ys is not reaching the code that produces graphics. Chase
+it from the main CPU at `$1424`/`$1440` instead, and find what it is waiting on
+or looping over.
+
+A trap worth noting from this measurement: a *low* write count proves nothing.
+Sampling frames 3000-3020 gives Ys 16 writes and Thexder **0**, and Thexder is
+displaying a full title screen at the time -- the image is already in VRAM and
+needs no rewriting. Only a cumulative count from reset, with the data values
+checked, says anything useful.
 
 ### P4-7 [NEXT] CHAN.POP loads further, then runs off into low memory
 
