@@ -249,10 +249,23 @@ $11fc  STA  $21,X
 ```
 
 Ys is sitting in an idle state with its timer interrupt and music player running
-normally, waiting on something. The main loop tests `LDB 6,X` / `BITB #$40` at
-`$1440` -- a bit-6 ready flag in a structure. **Find who is supposed to set that
-bit.** It is plausibly another keypress (an earlier prompt at `$11a4` needed one,
-which `--key '820:@SPACE'` satisfied), or a completion flag from the sub CPU.
+normally.
+
+**`$1440` is not a wait, and is not worth chasing.** `LDB 6,X` / `BITB #$40`
+looks like a ready-flag poll, but X there only ever takes `$1612`, `$1637`,
+`$165c` -- three structures `$25` apart, the same `$165c` the sound driver at
+`$11e9` walks. It is the music player iterating its three channels. (Recorded
+because it reads convincingly as a handshake and it is not one.)
+
+**Input is not what it wants either**: feeding SPACE, RETURN and joystick
+fire/A at frames 820-3000 changes nothing, screen still blank at 3580.
+
+So every routine the main CPU visits is accounted for as timer + music, and none
+of it is game logic. The open question is what *stopped* calling the game logic
+-- i.e. what the code path was that ran between loading finishing and this idle
+state settling in. Trace forward from the end of loading (~frame 800) rather than
+backward from the idle loop, and find the last thing it does before it stops
+advancing.
 
 A trap worth noting from this measurement: a *low* write count proves nothing.
 Sampling frames 3000-3020 gives Ys 16 writes and Thexder **0**, and Thexder is
