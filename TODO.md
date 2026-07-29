@@ -260,12 +260,29 @@ because it reads convincingly as a handshake and it is not one.)
 **Input is not what it wants either**: feeding SPACE, RETURN and joystick
 fire/A at frames 820-3000 changes nothing, screen still blank at 3580.
 
-So every routine the main CPU visits is accounted for as timer + music, and none
-of it is game logic. The open question is what *stopped* calling the game logic
--- i.e. what the code path was that ran between loading finishing and this idle
-state settling in. Trace forward from the end of loading (~frame 800) rather than
-backward from the idle loop, and find the last thing it does before it stops
-advancing.
+**The loaded program is never entered.** Bucketing main-CPU execution by address
+page over frames 780-1600 (100-frame bins, instruction counts):
+
+| frame | `$10xx` | `$11xx` | `$12xx` | `$13xx` | `$14xx` | `$15xx` |
+|---|---|---|---|---|---|---|
+| 700 | 134144 | -- | -- | -- | -- | -- |
+| 800 | 139288 | 124910 | 44324 | 1810 | 141879 | 14112 |
+| 900 | 6539 | 158684 | 53672 | 1923 | 178706 | 16556 |
+| 1000 | 6183 | 151346 | 57772 | 1678 | 176165 | 19972 |
+| 1500 | 6518 | 158102 | 54047 | 2104 | 178688 | 16610 |
+
+Two things fall out:
+
+1. It settles at **frame ~900** and the distribution is then identical bin after
+   bin, to within a few percent. A fixed steady state, not slow progress.
+2. **Execution never leaves `$1000-$15ff`.** Nothing runs in `$8000-$dfff` --
+   the 24 KB the loader placed there through the `$fd0f` RAM window -- nor in
+   `$6000`.
+
+So Ys loads its program correctly and then never transfers control to it. That
+is the whole bug, and it is a much narrower target than "blank screen": find the
+jump into `$8000+` that should happen around frame 900 and does not. The
+`$14xx` routine is the busiest caller and the obvious place to start.
 
 A trap worth noting from this measurement: a *low* write count proves nothing.
 Sampling frames 3000-3020 gives Ys 16 writes and Thexder **0**, and Thexder is
