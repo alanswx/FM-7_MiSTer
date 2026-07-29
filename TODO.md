@@ -182,6 +182,31 @@ Two lessons worth keeping: check that a long run actually reached the event
 before believing what it says about it; and when a bug survives two rounds of
 printf, stop adding printfs.
 
+### P4-7 [NEXT] CHAN.POP loads further, then runs off into low memory
+
+With P4-5 fixed, `run"CHAN.POP"` from Disk BASIC gets measurably further -- the
+loader reaches LBA 427 instead of freezing at 418, 860 DMA requests -- and then
+the main CPU ends up executing data as code in page zero and loops there:
+
+```
+$009d  SUBB #$0f
+$009f  NEG  <$3f
+$00a1  SUBB #$00
+$00a3  NEG  <$0f
+$00a5  SUBB #$ff
+```
+
+No disk activity at all after LBA 427, and both CPUs stay live (4747 main / 9284
+sub per frame at frame 5200), so this is a wild jump, not a wedge. Screen still
+reads `Loading GAME Program`.
+
+**Not a bad DOS vector, despite appearances.** `JSR <$de` at `$7555` with
+`DP=00` calls `$00de`, which holds `7e f1 7d` = `JMP $f17d` -- correctly
+installed, and the call works. Two separate passes over this mistook that
+legitimate vector call for the crash, because a filter looking for "first
+execution in `$00xx`" lands on it. Find where control *leaves* the loaded
+program instead; the last sane PC is in the `$75xx` region.
+
 **A second game title now loads.** `Ys (FM7) (Disk A).d77` reads the sectors it
 actually asks for, streams tracks off both sides, and loads a clean contiguous
 24 KB into `$8000-$dfff` through the `$fd0f` RAM-mode window. It does not yet
