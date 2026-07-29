@@ -182,6 +182,38 @@ Two lessons worth keeping: check that a long run actually reached the event
 before believing what it says about it; and when a bug survives two rounds of
 printf, stop adding printfs.
 
+### P4-8 [NEXT] Ys runs its own code for thousands of frames and draws nothing
+
+Re-run long now that P4-5 makes frames past ~2666 trustworthy. At frame 4500,
+with the keypress fed:
+
+- Screen blank throughout (frames 1500, 2500, 3500, 4480 all identical).
+- Both CPUs live and doing real work -- 4294 main / 7673 sub per frame. Main is
+  at `$1424 BEQ / $1440 LDB 6,X / $1442 BITB #$40`, i.e. Ys's own loaded code
+  testing a bit in a structure. Not a wait loop, not garbage, not a wedge.
+
+**Two display suspects checked and cleared**, both against CSP rather than by
+reasoning:
+
+- **`$fd37` plane mask.** Ys writes `$00` exactly once. In CSP a plane is
+  fetched when `!multimode_dispflags[i]` (`vram.cpp:512`) and
+  `dispflags[i] = (dispmask & (1<<i)) != 0`, so `$00` means **show all three
+  planes**. `FLAGS.v` has `DPAGE1 = m46[4]` and `PAL.v` has
+  `clr1 = DPAGE1 | m25_3`, so `$00` shows everything here too. Same polarity,
+  not the fault.
+- **`$d408` CRT switch.** Already cleared earlier: Ys's last access is a *read*,
+  which is CRT-on in CSP (`display.cpp:560`) and in `FLAGS.v`.
+- Sub-side display offset `$d40e`/`$d40f` are written `$00`/`$00`, i.e. no
+  offset.
+
+So the display path is enabled and unmasked, and the program is executing. The
+open question is whether anything reaches VRAM at all: a 10-frame sample near
+frame 850 showed **16** sub-side VRAM writes against Thexder's 128 in a
+comparable window, which is far too few to paint anything. Measure that
+cumulatively over a long run first -- it splits the problem cleanly into
+"nothing is drawn" versus "drawn but not displayed", and only the first is worth
+chasing into the sub CPU.
+
 ### P4-7 [NEXT] CHAN.POP loads further, then runs off into low memory
 
 With P4-5 fixed, `run"CHAN.POP"` from Disk BASIC gets measurably further -- the
