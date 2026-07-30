@@ -342,10 +342,39 @@ $1126  LDA  #$06                            ; command $06
 Ys is telling the sub to draw what it just loaded. Then it settles into `$11xx`
 alone -- ISR and sound driver -- and never reaches `$8000-$dfff`.
 
-**So the next question is the sub side, not the main.** Ys issues command `$06`
-with those two VRAM pointers and waits; VRAM ends up 99.5% zeros (see above).
-Find what the sub does with command `$06` -- whether it dispatches it at all, and
-what it draws. That is where the blank screen is decided.
+**The sub side now works too, and the protocol is clear.** Ys uploads a payload
+through the shared window rather than just poking a command:
+
+```
+$1126  LDA  #$06
+$1128  STA  $fc80      ; command
+$112b  CLR  $fc81
+$1133  LDB  #$78       ; 120 bytes
+$1135  LDU  #$fc82     ; into the window, +2
+$1138  LDA  ,X+        ; from $2000
+$113a  STA  ,U+
+$113d  BNE  $1138
+```
+
+120 bytes into `$fc82`-`$fcfa`, which fits the 128-byte aperture exactly.
+
+Traced on the sub side: it leaves the ROM idle loop at `$e13e`, consumes the
+commands (`CLR $d382`, and acknowledgements `STA $d380` with `$07` then `$46`),
+and by frame 1100 is executing at `$fd76` with **`x=c000, y=c7d0`** -- pointers
+into the `$c000` region where a game's own sub code lives (Thexder's sits at
+`$c054`/`$c133`). It sits in a masked wait loop there polling `<$00` and `<$04`
+in DP page `$d0`.
+
+So before P1-6 the sub idled in ROM forever; now both CPUs are exchanging
+commands and the sub is running game code. The screen is still blank, so
+something in that `$fd76` wait or what follows it is next -- but the main/sub
+handshake, the loader, the keyboard and the disk are all now accounted for.
+
+**A trap this nearly caused, twice in one session:** the sub reads `$d380 = $14`
+at frames 1074-1075 and Ys writes `$06` at frame **1076**. Comparing those two
+directly "shows" a write that never landed. It is the same window mistake as the
+truncated `--trace-max` runs -- always check the frame numbers line up before
+concluding a value did not propagate.
 
 The original measurement, kept because the method is the useful part -- bucketing
 main-CPU execution by address page over frames 780-1600:
