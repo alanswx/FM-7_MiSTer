@@ -182,6 +182,38 @@ Two lessons worth keeping: check that a long run actually reached the event
 before believing what it says about it; and when a bug survives two rounds of
 printf, stop adding printfs.
 
+### P1-6 [FIXED] `$fd03` bit 2 read the opposite sense to the other three
+
+`CLKCTRL.v` returned the interrupt-cause register as
+
+```verilog
+MDATABUS_out = { 4'hf, ~EXTIRQ, m50_qn, LPINTn, KEYINn };
+```
+
+Bits 0, 1 and 3 are active low -- `KEYINn`, `LPINTn` and `~EXTIRQ` each read 0
+when that source is pending -- but bit 2 was `m50_qn`, i.e. `~m50_1`, and
+`m50_1` is itself the active-low timer flag: `IRQn = m50_1 & KEYINn & LPINTn`
+asserts on 0. So the timer bit read the opposite sense to the IRQ line driving
+it, and to its three neighbours.
+
+Both references agree the whole register is active low. CSP clears a bit when
+its source is pending (`irqstat_reg0 &= ~0x08`, `fm7_mainio.cpp:1141`) and
+acknowledges on read by setting the timer and printer bits back
+(`irqstat_reg0 |= 0x06`); MAME's assignments match (`IRQ_FLAG_KEY 0x01`,
+`PRINTER 0x02`, `TIMER 0x04`, `OTHER 0x08`, `fm7.h:69`). Now `m50_1`.
+
+**Verified no regression, and honestly: no confirmed improvement either.**
+F-BASIC boots and runs (`print 12-3` -> ` 9`), Thexder's title renders
+pixel-identical to the reference, and all 8 `run_tests.sh` rows pass. F-BASIC's
+I/O count rises sharply -- `boot-basic` 777310 -> 1094418 cycles, main 5189 ->
+5343 per frame -- which is what servicing a timer interrupt that was previously
+never recognised should look like, but that is inference, not proof. An attempt
+to confirm via the BASIC clock failed for a silly reason: `print time` is a
+syntax error, it needs `TIME$`, and the `$` needs shift. Worth redoing.
+
+It did **not** unblock Ys. Kept because the inconsistency is real and the
+references are unambiguous, not because it fixed a title.
+
 ### P4-8 [NEXT] Ys runs its own code for thousands of frames and draws nothing
 
 Re-run long now that P4-5 makes frames past ~2666 trustworthy. At frame 4500,

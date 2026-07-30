@@ -110,8 +110,20 @@ always @(posedge CLKSYS) begin
 end
 
 // This is the read $FD03 I/O implementation.
+//
+// LOCAL CHANGE: bit 2 was `m50_qn` (= ~m50_1) while bits 0, 1 and 3 are all
+// active low -- KEYINn, LPINTn and ~EXTIRQ each read 0 when that source is
+// pending. CSP has the whole register active low: a pending source clears its
+// bit (`irqstat_reg0 &= ~0x08` for external, fm7_mainio.cpp:1141) and reading
+// acknowledges by setting the timer and printer bits back
+// (`irqstat_reg0 |= 0x06`). MAME's bit map agrees on the assignments
+// (IRQ_FLAG_KEY 0x01, PRINTER 0x02, TIMER 0x04, OTHER 0x08, fm7.h:69).
+//
+// And m50_1 is already the active-low timer flag in this module -- `IRQn =
+// m50_1 & KEYINn & LPINTn` asserts on 0 -- so inverting it for the register
+// made bit 2 read the opposite sense to the IRQ line that drives it.
 always @*
-  if (~RFD03n) MDATABUS_out = { 4'hf, ~EXTIRQ, m50_qn, LPINTn, KEYINn };
+  if (~RFD03n) MDATABUS_out = { 4'hf, ~EXTIRQ, m50_1, LPINTn, KEYINn };
   else MDATABUS_out = 8'd0;
 
 // IRQ generation logic
