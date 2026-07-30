@@ -313,8 +313,25 @@ because it reads convincingly as a handshake and it is not one.)
 **Input is not what it wants either**: feeding SPACE, RETURN and joystick
 fire/A at frames 820-3000 changes nothing, screen still blank at 3580.
 
-**The loaded program is never entered.** Bucketing main-CPU execution by address
-page over frames 780-1600 (100-frame bins, instruction counts):
+**[UPDATED after P1-6]** The `$fd03` fix moved this on substantially. Ys now
+accepts the keypress, hands the sub CPU a command through the shared window
+(`$1155` waits on `$fd05`, halts, writes `$14` to `$fc80`, releases), and then
+**runs a second disk-load phase** -- execution appears in `$0100-$03ff`, the
+boot-sector loader, which never happened before:
+
+| frame | before the fix | after |
+|---|---|---|
+| 800 | `$10xx` `$11xx` `$12xx` `$13xx` `$14xx` `$15xx` | `$10xx`, **`$15xx` 905403** |
+| 1000 | the same fixed pattern | **`$01xx`, `$02xx` 120111, `$03xx` 3281**, `$11xx`, `$15xx` |
+| 1200+ | the same fixed pattern, forever | **`$11xx` only** |
+
+It then settles into `$11xx` alone -- the ISR and sound driver -- and still never
+reaches `$8000-$dfff`. So the remaining fault is after this second load, not
+before it. Re-do the trace from ~frame 1000 and find what the `$02xx` loader
+does and where it returns to.
+
+The original measurement, kept because the method is the useful part -- bucketing
+main-CPU execution by address page over frames 780-1600:
 
 | frame | `$10xx` | `$11xx` | `$12xx` | `$13xx` | `$14xx` | `$15xx` |
 |---|---|---|---|---|---|---|
