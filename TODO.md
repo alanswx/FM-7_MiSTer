@@ -325,10 +325,27 @@ boot-sector loader, which never happened before:
 | 1000 | the same fixed pattern | **`$01xx`, `$02xx` 120111, `$03xx` 3281**, `$11xx`, `$15xx` |
 | 1200+ | the same fixed pattern, forever | **`$11xx` only** |
 
-It then settles into `$11xx` alone -- the ISR and sound driver -- and still never
-reaches `$8000-$dfff`. So the remaining fault is after this second load, not
-before it. Re-do the trace from ~frame 1000 and find what the `$02xx` loader
-does and where it returns to.
+**The second load succeeds and hands off to the sub CPU.** Traced through:
+
+```
+$02c4  LDA  <$18 / ANDA #$9f / BEQ $02d3   ; error check -> clean
+$01ec  CLRA                                 ; return code 0 = success
+$01ed  PULS CC,DP,PC
+$1043  LDX  #$2000                          ; back in Ys's own code
+$1046  JSR  $1120
+$1120  LEAY $2400,X                         ; Y = $4400
+$1124  BSR  $1155                           ; halt the sub
+$1126  LDA  #$06                            ; command $06
+```
+
+`$2000` and `$4400` are **sub-side VRAM addresses** (`$0000-$5fff` is VRAM), so
+Ys is telling the sub to draw what it just loaded. Then it settles into `$11xx`
+alone -- ISR and sound driver -- and never reaches `$8000-$dfff`.
+
+**So the next question is the sub side, not the main.** Ys issues command `$06`
+with those two VRAM pointers and waits; VRAM ends up 99.5% zeros (see above).
+Find what the sub does with command `$06` -- whether it dispatches it at all, and
+what it draws. That is where the blank screen is decided.
 
 The original measurement, kept because the method is the useful part -- bucketing
 main-CPU execution by address page over frames 780-1600:
