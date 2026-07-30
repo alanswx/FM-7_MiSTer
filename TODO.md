@@ -366,9 +366,30 @@ into the `$c000` region where a game's own sub code lives (Thexder's sits at
 in DP page `$d0`.
 
 So before P1-6 the sub idled in ROM forever; now both CPUs are exchanging
-commands and the sub is running game code. The screen is still blank, so
-something in that `$fd76` wait or what follows it is next -- but the main/sub
-handshake, the loader, the keyboard and the disk are all now accounted for.
+commands and the sub is running game code.
+
+**Neither CPU is deadlocked -- both are idle but serviced.** The sub waits at
+`$fd76` with FIRQ masked/unmasked around the poll, and is interrupted regularly,
+running a handler at `$febf`:
+
+```
+$febf  LDA <$0a / BNE $fec5 / BSR $fec8 / CLR <$0a / RTI
+$fec8  LDA <$1c (=01) / BEQ / BMI / DEC <$1d / BNE ...
+```
+
+-- a periodic tick doing countdowns in DP page `$d0`. Meanwhile the main sits in
+`$11xx` doing its own timer and music work. So this is not a hang on either
+side: it is two healthy idle loops, each waiting for a state change the other
+never produces.
+
+**Where to pick this up.** The sub polls `<$00` and `<$04` (`$d000`/`$d004`,
+sub work RAM, which the main cannot write -- only `$d380-$d3ff` is shared), so
+those can only be set by the sub's own interrupt handler. Find which sub
+interrupt is supposed to set them and confirm it is being delivered: the FM-7
+main CPU can raise an attention on the sub, and `FLAGS.v` carries `SUBIRQn` and
+`CANCELn` for exactly that. If that attention never fires, this is the same
+class of bug as P1-6 -- an interrupt the hardware should deliver and does not --
+and that is the first thing to check.
 
 **A trap this nearly caused, twice in one session:** the sub reads `$d380 = $14`
 at frames 1074-1075 and Ys writes `$06` at frame **1076**. Comparing those two
