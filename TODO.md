@@ -382,14 +382,32 @@ $fec8  LDA <$1c (=01) / BEQ / BMI / DEC <$1d / BNE ...
 side: it is two healthy idle loops, each waiting for a state change the other
 never produces.
 
-**Where to pick this up.** The sub polls `<$00` and `<$04` (`$d000`/`$d004`,
-sub work RAM, which the main cannot write -- only `$d380-$d3ff` is shared), so
-those can only be set by the sub's own interrupt handler. Find which sub
-interrupt is supposed to set them and confirm it is being delivered: the FM-7
-main CPU can raise an attention on the sub, and `FLAGS.v` carries `SUBIRQn` and
-`CANCELn` for exactly that. If that attention never fires, this is the same
-class of bug as P1-6 -- an interrupt the hardware should deliver and does not --
-and that is the first thing to check.
+**The sub's three interrupt sources, and why none of them wakes it.** From
+`SCPU.v`: `nIRQ = SUBIRQn` (main's attention), `nFIRQ = KSTROBEn` (keyboard),
+`nNMI = SCLKNMIn` (display). Checked all three against the references; **all
+three are implemented correctly**, so the P1-6 hypothesis does not repeat here:
+
+- **IRQ / attention.** `$fd05` latches `{MDATABUS_in[7:6], MDATABUS_in[0]}` into
+  `m9`, giving bit 7 -> `SUBHALTREQn` and bit 6 -> `CANCELn`, which matches CSP
+  (`sub_halt = val & 0x80`, `sub_cancel = val & 0x40`, `fm7_mainio.cpp:744`).
+  Correct -- but **Ys only ever writes `$80` and `$00`**, so it never uses the
+  attention bit at all. Nothing to fix; it simply is not the wake-up path.
+- **FIRQ / keyboard.** `KSTROBEn = ~(m132 & ~m77[0])` and
+  `KEYINn = ~(m132 & m77[0])` make the main and sub keyboard interrupts mutually
+  exclusive on `$fd02` bit 0. CSP does exactly the same: bit 0 set enables the
+  main IRQ (`irqmask_keyboard = false`) and the same write drives the sub with
+  `SIG_FM7_SUB_KEY_MASK`, where `firq_mask = !flag` (`display.cpp:2134`). Since
+  Ys takes the keyboard on the main side (P1-6), the sub's FIRQ is *correctly*
+  masked.
+- **NMI / display** is the one that does fire -- it is what runs the `$febf`
+  handler.
+
+So the sub is left waiting on `$d000`/`$d004` with only its NMI running, and
+nothing in the hardware is wrong about that. The remaining question is a
+software-flow one: what was supposed to give the sub work after the 120-byte
+upload, and why the uploaded routine is not what ends up running. Start from the
+sub's NMI handler at `$febf` and find what it does with `<$1c`/`<$1d` and
+whether it ever dispatches to `$c000`.
 
 **A trap this nearly caused, twice in one session:** the sub reads `$d380 = $14`
 at frames 1074-1075 and Ys writes `$06` at frame **1076**. Comparing those two
