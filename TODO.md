@@ -202,17 +202,38 @@ acknowledges on read by setting the timer and printer bits back
 (`irqstat_reg0 |= 0x06`); MAME's assignments match (`IRQ_FLAG_KEY 0x01`,
 `PRINTER 0x02`, `TIMER 0x04`, `OTHER 0x08`, `fm7.h:69`). Now `m50_1`.
 
-**Verified no regression, and honestly: no confirmed improvement either.**
-F-BASIC boots and runs (`print 12-3` -> ` 9`), Thexder's title renders
-pixel-identical to the reference, and all 8 `run_tests.sh` rows pass. F-BASIC's
-I/O count rises sharply -- `boot-basic` 777310 -> 1094418 cycles, main 5189 ->
-5343 per frame -- which is what servicing a timer interrupt that was previously
-never recognised should look like, but that is inference, not proof. An attempt
-to confirm via the BASIC clock failed for a silly reason: `print time` is a
-syntax error, it needs `TIME$`, and the `$` needs shift. Worth redoing.
+**Confirmed effect: it repairs keyboard delivery to games with their own ISR.**
+Ys's interrupt handler dispatches on this register:
 
-It did **not** unblock Ys. Kept because the inconsistency is real and the
-references are unambiguous, not because it fixed a title.
+```
+$117d  LDA  $fd03
+$1180  BITA #$04        ; timer?
+$1182  BEQ  $1195       ; yes -> music tick
+$1184  BITA #$01        ; no  -> keyboard?
+$1186  BEQ  $1189
+$1189  LDA  $fd01       ; read the key
+$118c  LDB  $fd00
+$118f  BMI  $1194
+$1191  STA  $11a4       ; hand it to the game
+```
+
+With bit 2 inverted the timer always appeared pending, so `$1182` was taken
+every single time and **`$1184`-`$1193` never executed at all** -- measured, not
+assumed. `$11a4` stayed `$00` forever and Ys sat in its key-wait loop at
+`$1026`. After the fix `$fd03` reads `$fe` (bit 0 clear = key pending, bit 2 set
+= not timer), the branch falls through, `$fd01` returns `$20` for SPACE, `$11a4`
+receives it, and the poll loop's `CMPA #$20` matches. The whole path works.
+
+This did not show up as a working title, because Ys has further problems (P4-8),
+which is why an earlier version of this entry wrongly recorded "no confirmed
+improvement". Any game that services `$fd03` itself was losing keyboard input.
+
+No regression: F-BASIC boots and runs (`print 12-3` -> ` 9`), Thexder's title is
+pixel-identical to the reference, all 8 `run_tests.sh` rows pass. F-BASIC's I/O
+also rises sharply -- `boot-basic` 777310 -> 1094418 cycles -- consistent with a
+timer interrupt now being recognised. (A separate attempt to confirm through the
+BASIC clock failed for a silly reason: `print time` is a syntax error, it needs
+`TIME$` and the `$` needs shift.)
 
 ### P4-8 [NEXT] Ys runs its own code for thousands of frames and draws nothing
 
