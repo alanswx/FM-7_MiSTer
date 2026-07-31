@@ -126,6 +126,50 @@ Verilator never elaborates an uninstantiated module.
 
 Verified both tops connect every one of `core`'s 28 ports, with none left over.
 
+### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
+
+`software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip` holds **156 floppy titles**
+as nested `.7z` per game. Extract with a bracket-free pattern -- `[FD]` is a
+shell/unzip *character class*, so `*[FD]*.7z` silently matches the wrong things:
+
+```sh
+unzip -o -j -q "$Z" "*F-BASIC v3.0 L10 *FD*.7z" -d .   # good
+7z x -y -o. *.7z
+```
+
+Booted at `--bootrom 0`, screenshot at frame 680:
+
+| title | result |
+|---|---|
+| **Archon** (BPS) | **full title screen**, logo + artwork + border |
+| **`[OS]` F-BASIC v3.0 L10** (Fujitsu) | **boots Disk BASIC** to its drive prompt |
+| **Amnork** (ASCII) | credits screen, "PROGRAMMED BY H.SONOBE" |
+| **A-Train** (Artdink) | loads all five sections, "SECTION 5/5" |
+| `[Compilation]` Game 1 | content on screen |
+| `[OS]` OS-9 Level 1 | **falls back to cassette BASIC** -- needs DOS boot mode, blocked by P3-6b |
+| 1942, Albatross, Alpha, Arion | blank |
+
+**Archon is the second game to render a title screen**, and the official Fujitsu
+BASIC disk booting is a stronger result than the compilation disk, since it is
+first-party system software.
+
+**OS-9 gives P3-6b a concrete cost.** Its image is named `{boot DOS mode}` and it
+cannot boot because settings 1/2/3 all resolve to bank 2. That raises P3-6b from
+tidiness to "blocks an OS".
+
+**Both keyboard routings verified working.** Titles split on `$fd02` bit 0:
+
+- `$fd02 <- $05` (bit 0 set, keyboard to **main**): Ys, 1942. Verified in P1-6.
+- `$fd02 <- $40` (bit 0 clear, keyboard to **sub**): Archon, Amnork. Verified
+  here -- Archon's sub does a 16-bit read at `pc=$fdae` and gets
+  `$d400=$00 / $d401=$0d` for RETURN and `$20` for SPACE, once per press via
+  FIRQ. Correct codes, correct delivery.
+
+So the sub-side keyboard is **not** the reason Archon waits at its title, and
+that whole path is now cleared. No new bug came out of this sweep -- which is
+itself the finding: the remaining failures are per-title software problems, not
+shared subsystem faults.
+
 ### P4-5 [FIXED] Every simulation froze at frame ~2666 — `(int)main_time`
 
 `SimBlockDevice::BeforeEval` took its cycle count as `int`, and the call site
