@@ -182,6 +182,44 @@ only main-CPU code running besides the wait, so the console loop is in there --
 and check whether OS-9 ever touches `$fd00`/`$fd01`/`$fd02` at all after the
 kernel starts.
 
+### P4-11 [NEXT] Arion's main CPU stops dead at frame 150
+
+Picked out of the P4-9 sweep by its instruction rate, which is the useful part:
+every other title runs the main CPU at **4400-5800 instructions/frame**; Arion
+reports **1087**, with a healthy sub at 8721. That is not "slow", it is "ran
+normally for a while and then stopped" -- and it is a much sharper triage signal
+than a blank screen. **Sort a sweep by main/frame, not by screenshot.**
+
+Measured: **zero** main instructions from frame 151 onwards (traced 100-400 and
+400-700, both empty past 150). Before stopping it runs off into page zero
+executing data as instructions:
+
+```
+$00ef  ORB  <$fe
+$00f5  FCB  $61        <- undefined opcode
+$00f9  FCB  $01
+$00ff  CMPA -10,X
+$0101  NEG  <$90       <- last instruction, frame 150
+```
+
+**How it stops is not yet explained**, and the obvious answers are ruled out:
+
+- Not the Z80 bus handoff. `nHALT` on the main CPU is `GHn = ~m9[0]`, driven by
+  `$fd05` bit 0 -- and **Arion never writes `$fd05` at all** (checked; 1942 and
+  Archon do, with `$00/$40/$80`, bit 0 clear). `m9` resets to 0, so `GHn` stays
+  high.
+- Not `SYNC`/`CWAI` -- neither appears anywhere in the trace up to the stop.
+- Not an illegal-instruction stop. `mc6809i.v` can halt on those
+  (`IllegalInstructionState = CPUSTATE_STOP`) but only when parameterised
+  `ILLEGAL_INSTRUCTIONS=="STOP"`, and the default is `"GHOST"`, which maps them
+  to legal instructions instead.
+
+So a 6809 that is not halted, not waiting, and not in a stop state simply
+stops fetching. That is worth understanding **regardless of Arion**, because it
+would mask any crash as a quiet CPU -- exactly how this one presented. Next step
+is a VCD over frames 149-151 (`--vcd`, see the Makefile) looking at the main
+CPU's clock enable, `nHALT`, and the core's state register across the stop.
+
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
 `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip` holds **156 floppy titles**
