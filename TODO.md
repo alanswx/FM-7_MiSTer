@@ -1036,11 +1036,40 @@ the stack, the loader hands the ROM garbage -- a WRITE of track 0 **sector 0** -
 the ROM's error decoder at `$ffad` returns error 11/12, and the boot sector halts
 on `BRA $0340`.
 
-So `bootrom 1/2/3` selecting bank 2 is why disks looked unbootable. Nothing is
-missing and no ROM needs patching; what needs fixing is `ROMS.v`'s selection so
-the OSD's four settings map onto the four banks of `TL11_11_M152.BIN` instead of
-onto two loose 512-byte files, one of which is the wrong bank for booting. See
-P3-6 above for the selection bug itself.
+So `bootrom 1/2/3` selecting bank 2 is why disks looked unbootable.
+
+**[FIXED]** `ROMS.v` now instantiates the whole 2 KB chip once and addresses it
+as `{SW2, MADDRBUS[8:0]}`, so setting N selects bank N. The two loose 512-byte
+images are no longer used.
+
+That also retired a hack. The old mux read
+
+```verilog
+wire [7:0] m152_q = |SW2 || &MADDRBUS[15:4] ? m152_2_q : m152_1_q;
+```
+
+where `&MADDRBUS[15:4]` forced `$fff0-$ffff` from the DOS image whatever the
+setting. The reason: **`boot_bas.rom` is a bad dump.** Its last two bytes are the
+reset vector and they read `$ffff` instead of `$fe00`, so a machine booting from
+it fetched a garbage RESET and the hack papered over it. Every bank of the real
+chip carries `RESET=$fe00`, so nothing needs forcing. (Checked byte for byte:
+bank 0 differs from `boot_bas.rom` in exactly those 2 bytes; bank 2 differs from
+`boot_dos_a.rom` in 30, so they are the same revision family but not identical.)
+
+**Payoff: OS-9 Level 1 now boots.** With `--bootrom 2` it prints
+
+```
+* OS-9 Kernel Started !
+```
+
+where before it fell back to cassette BASIC on every setting. It stops at the
+kernel banner rather than reaching a shell, so there is more to do, but the
+kernel runs. That is a second operating system on the core.
+
+`run_tests.sh` after the change: `boot-basic`, `boot-dos2`, all three `basic-*`
+and `disk-Thexder` are **unchanged**; `boot-dos1` (5795 -> 6571) and `boot-dos3`
+(-> 6711, and 0 I/O cycles, since bank 3 is the empty one) now reach banks that
+were previously unreachable.
 
 
 ## P4 — missing peripherals

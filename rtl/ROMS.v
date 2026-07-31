@@ -23,15 +23,23 @@ reg ff_q;
 
 wire [3:0] m139_q;
 wire [7:0] m151_q;
-wire [7:0] m152_1_q;
-wire [7:0] m152_2_q;
+wire [7:0] m152_bank_q;
 
-// Boot ROM select. Only two images exist (boot_bas / boot_dos_a) but the OSD
-// offers four settings, so anything non-zero means "DOS". Testing SW2[0]
-// alone made setting 2 (SW2 = 2'b10) pick the BASIC boot ROM while m120_q
-// below still deselected the F-BASIC ROM -- a combination that cannot boot.
-// &MADDRBUS[15:4] is a fix to force vectors from DOS ROM
-wire [7:0] m152_q = |SW2 || &MADDRBUS[15:4] ? m152_2_q : m152_1_q;
+// Boot ROM select. M152 is a single 2 KB chip holding FOUR 512-byte banks, and
+// the OSD's four settings are exactly those banks -- see TODO.md P3-6b. MAME
+// says the same of its own 0x800 `boot` region ("actually 0.5K banks of the
+// same ROM", fm7.cpp:2179). SW2 is the bank number.
+//
+// This replaces a pair of loose 512-byte images (boot_bas.rom / boot_dos_a.rom)
+// selected by |SW2, which made settings 1, 2 and 3 all the same ROM and left
+// bank 1 unreachable.
+//
+// It also retires a hack. The old mux had `|| &MADDRBUS[15:4]`, forcing reads of
+// $fff0-$ffff from the DOS image whatever the setting, because boot_bas.rom is a
+// **bad dump**: its last two bytes are the reset vector and they read $ffff
+// instead of $fe00, so a machine booting from it fetched a garbage RESET. Every
+// bank of the real chip carries RESET=$fe00, so nothing needs forcing now.
+wire [7:0] m152_q = m152_bank_q;
 
 assign ROMDATA = m151_q | m152_q;
 
@@ -72,18 +80,12 @@ rom #("./roms/fbasic300.rom.mem", 15, 8) m151(
   .ce_n ( RDQEn | m107_q )
 );
 
-rom #("./roms/boot_bas.rom.mem", 9, 8) m152_1(
-  .clk  ( CLKSYS            ),
-  .addr ( MADDRBUS[8:0]     ),
-  .dout ( m152_1_q          ),
-  .ce_n ( m131_q1 | m131_q2 )
-);
-
-rom #("./roms/boot_dos_a.rom.mem", 9, 8) m152_2(
-  .clk  ( CLKSYS            ),
-  .addr ( MADDRBUS[8:0]     ),
-  .dout ( m152_2_q          ),
-  .ce_n ( m131_q1 | m131_q2 )
+// The whole 2 KB chip, addressed as {bank, offset}.
+rom #("./roms/TL11_11_M152.rom.mem", 11, 8) m152(
+  .clk  ( CLKSYS               ),
+  .addr ( {SW2, MADDRBUS[8:0]} ),
+  .dout ( m152_bank_q          ),
+  .ce_n ( m131_q1 | m131_q2    )
 );
 
 endmodule
