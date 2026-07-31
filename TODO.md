@@ -172,22 +172,24 @@ a sub **read**, which matches CSP exactly (`set_subbusy` on `SUB:D40A:W`,
 `reset_subbusy` on `SUB:D40A:R`, `display.cpp:677-688`). So the polarity is not
 the bug.
 
-**What to check next.** Since the stock sub ROM must work on real hardware, the
-suspect is *when* our `BUSY` is set relative to the halt, not the polarity.
-Specifically `FLAGS.v`:
+**A lead I talked myself out of, recorded so nobody else spends the time.**
+`FLAGS.v` has `s3 = RESETBn & SHALTACn` on the async clear, so every halt
+*clears* `BUSY`, whereas CSP *sets* `sub_busy` on a halt request
+(`display.cpp:1881`). Opposite, and it looks like the bug -- but it cannot be
+this one. `SUBUNAVAIL = BUSY | ~SHALTACn`, so during a halt `~SHALTACn` already
+forces the bit high; the difference only shows *after* release, where ours
+reports **available** and CSP reports busy. Ours is the more permissive of the
+two, so it cannot be why main is stuck waiting. (Worth aligning with CSP anyway
+on general principle, but not as a fix for this.)
 
-```verilog
-wire s3 = RESETBn & SHALTACn;
-always @(negedge SBUSYSETn or negedge s3)
-```
-
-`s3` clears `m44_8` whenever `SHALTACn` goes low, i.e. **every halt clears BUSY**.
-Check that against the references: CSP instead *sets* `sub_busy` on a halt
-request (`SIG_FM7_SUB_HALT` -> `sub_busy = true`, `display.cpp:1881`, which is
-what P4-1g relied on). Ours clearing it on the same event is the opposite, and
-is the first thing to test -- ideally by finding the frame where main first
-enters the `$0424` loop and looking at `BUSY` and `SHALTACn` across the halt
-that precedes it.
+**What is actually left.** `BUSY` must be getting set *after* the release, and
+the only thing that sets it is the sub's own `write $d40a` at `$e14a` -- the
+dispatch path. So the sub took a command and never finished it. Next step is to
+find that last dispatch: trace sub `$d40a` accesses *and* `$d380`/`$d382` writes
+together with frame numbers, find the final `$e14a` write, and follow what the
+sub does afterwards instead of returning to `$e13b`. Note the sub does complete
+this cycle correctly **193 times** before it stops, so it is a specific command
+that hangs, not the mechanism.
 
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
