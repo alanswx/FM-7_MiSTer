@@ -126,6 +126,69 @@ Verilator never elaborates an uninstantiated module.
 
 Verified both tops connect every one of `core`'s 28 ports, with none left over.
 
+### P4-10 [NEXT] OS-9 stops at the kernel banner on a BUSY-flag deadlock
+
+With P3-6b fixed, `--bootrom 2` boots OS-9 as far as
+
+```
+* OS-9 Kernel Started !
+```
+
+printed twice, then nothing. Both CPUs stay live (5277 main / 5843 sub per
+frame). Localised:
+
+**Main** spins in the loaded kernel at
+
+```
+$0424  LDA  $fd05     ; a=fe, bit 7 set
+$0427  BMI  $0424     ; wait for the sub to become available
+```
+
+`$fd05` bit 7 is `SUBUNAVAIL = BUSY | ~SHALTACn` (`TIMER.v`). Main wrote `$fd05`
+exactly twice in 1200 frames -- `$80` at `pc=$042b` then `$00` at `$043a` -- so
+the halt was requested and released, `SUBHALTREQn` is high, and the sub is
+demonstrably executing. So `~SHALTACn` is 0 and **`BUSY` is what is stuck**.
+
+**Sub** is idling in its ROM dispatcher, and the shape of that loop is the point:
+
+```
+$e13b  (read  $d40a)    ; clears BUSY -- "I am free"
+$e13e  LDA   $d382
+$e141  BNE   $e14a
+$e143  LDA   $d380
+$e146  BMI   $e133
+$e148  BRA   $e13e      <-- back to $e13e, skipping $e13b
+$e14a  (write $d40a)    ; SETS BUSY when dispatching
+```
+
+The spin path never re-reads `$d40a`, so `BUSY` is only cleared by going round
+via `$e133`, which needs main to set `$d380` bit 7. Main will not do that while
+it is blocked waiting for `BUSY`. Measured over 1200 frames the sub does work
+this correctly **193 times** (193 writes, 384 reads of `$d40a`), and the last
+access in the window is a *write* at `$e14a` -- BUSY left set.
+
+`BUSY` is `m44_8` in `FLAGS.v`, set on a sub **write** of `$d40a` and cleared on
+a sub **read**, which matches CSP exactly (`set_subbusy` on `SUB:D40A:W`,
+`reset_subbusy` on `SUB:D40A:R`, `display.cpp:677-688`). So the polarity is not
+the bug.
+
+**What to check next.** Since the stock sub ROM must work on real hardware, the
+suspect is *when* our `BUSY` is set relative to the halt, not the polarity.
+Specifically `FLAGS.v`:
+
+```verilog
+wire s3 = RESETBn & SHALTACn;
+always @(negedge SBUSYSETn or negedge s3)
+```
+
+`s3` clears `m44_8` whenever `SHALTACn` goes low, i.e. **every halt clears BUSY**.
+Check that against the references: CSP instead *sets* `sub_busy` on a halt
+request (`SIG_FM7_SUB_HALT` -> `sub_busy = true`, `display.cpp:1881`, which is
+what P4-1g relied on). Ours clearing it on the same event is the opposite, and
+is the first thing to test -- ideally by finding the frame where main first
+enters the `$0424` loop and looking at `BUSY` and `SHALTACn` across the halt
+that precedes it.
+
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
 `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip` holds **156 floppy titles**
