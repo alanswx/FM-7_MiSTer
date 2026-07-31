@@ -163,11 +163,24 @@ but never reaches a shell. That is a much weaker signal than a hang, and it is
 not obviously an emulation fault at all -- it may simply need something the boot
 is not being given (a second disk, a console device, a keypress).
 
-**Cheap things to try before any deep tracing:** Disk 2 of the set is right
-there (`OS-9 Level 1 (Disk 2)`), the boot may want it mounted or swapped; and
-feeding keys, since the kernel may be waiting at a console prompt that produces
-no visible output. Only if those fail is it worth tracing what `$0368`-`$036e`
-does between polls.
+**Both cheap options tried; neither helps.**
+
+- **Disk 2** boots the same banner and briefly shows a **cursor block** on the
+  third line, so a console does come up. Disk 1 never shows one.
+- **Keys do not reach it.** RETURN, `dir`, RETURN fed between frames 1400 and
+  2300 change nothing on either disk -- the screen is byte-identical at 1600,
+  2000 and 2580 -- and the cursor is transient rather than a steady prompt.
+
+So the kernel starts, the sub handshake runs, a console appears momentarily, and
+input never lands. Note this is *not* the P1-6 class of bug: keyboard delivery to
+both the main (`$fd03` bit 0 -> `$fd01`) and the sub (`$d401` via FIRQ) is
+verified working by other titles (P4-9). OS-9 installs its own drivers, so the
+question is which route its console driver expects and what it polls.
+
+Next: find what `$0368`-`$036e` does between the `$fd05` polls -- that is the
+only main-CPU code running besides the wait, so the console loop is in there --
+and check whether OS-9 ever touches `$fd00`/`$fd01`/`$fd02` at all after the
+kernel starts.
 
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
