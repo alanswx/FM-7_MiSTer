@@ -126,7 +126,7 @@ Verilator never elaborates an uninstantiated module.
 
 Verified both tops connect every one of `core`'s 28 ports, with none left over.
 
-### P4-10 [NEXT] OS-9 stops at the kernel banner on a BUSY-flag deadlock
+### P4-10 [NEXT] OS-9 boots its kernel, then makes no visible progress
 
 With P3-6b fixed, `--bootrom 2` boots OS-9 as far as
 
@@ -134,62 +134,40 @@ With P3-6b fixed, `--bootrom 2` boots OS-9 as far as
 * OS-9 Kernel Started !
 ```
 
-printed twice, then nothing. Both CPUs stay live (5277 main / 5843 sub per
-frame). Localised:
+printed twice, then the screen stops changing. Both CPUs stay live (5277 main /
+5843 sub per frame).
 
-**Main** spins in the loaded kernel at
+**It is not a deadlock, and the sub/main handshake is working.** An earlier
+version of this entry claimed a stuck `BUSY` flag; that was wrong, and the way
+it was wrong is worth recording because it is the fourth instance of the same
+mistake this session.
 
-```
-$0424  LDA  $fd05     ; a=fe, bit 7 set
-$0427  BMI  $0424     ; wait for the sub to become available
-```
+- The `$d40a` busy handshake is **still running at frame 2387** of a 2400-frame
+  run -- 1218 accesses, the sub dispatching (`write $d40a` at `$e14a`) and
+  clearing (`read` at `$e13b`) throughout. It only looked stuck because the first
+  trace ended at its own `--stop-at-frame`, so the "last" access was an artefact
+  of the window, not a hang.
+- Main is not spinning either. The PC histogram over frames 2000-2010 is
+  dominated by `$0424`/`$0427` (27090 each) but also contains `$0368`-`$036e`
+  (169), `$040b`-`$0441` (34/13) and `$0358` (8). So the wait at
 
-`$fd05` bit 7 is `SUBUNAVAIL = BUSY | ~SHALTACn` (`TIMER.v`). Main wrote `$fd05`
-exactly twice in 1200 frames -- `$80` at `pc=$042b` then `$00` at `$043a` -- so
-the halt was requested and released, `SUBHALTREQn` is high, and the sub is
-demonstrably executing. So `~SHALTACn` is 0 and **`BUSY` is what is stuck**.
+  ```
+  $0424  LDA  $fd05
+  $0427  BMI  $0424
+  ```
 
-**Sub** is idling in its ROM dispatcher, and the shape of that loop is the point:
+  **does** fall through regularly; it is a poll that succeeds, not a block.
 
-```
-$e13b  (read  $d40a)    ; clears BUSY -- "I am free"
-$e13e  LDA   $d382
-$e141  BNE   $e14a
-$e143  LDA   $d380
-$e146  BMI   $e133
-$e148  BRA   $e13e      <-- back to $e13e, skipping $e13b
-$e14a  (write $d40a)    ; SETS BUSY when dispatching
-```
+So OS-9 is in a steady state where the kernel runs and polls the sub normally
+but never reaches a shell. That is a much weaker signal than a hang, and it is
+not obviously an emulation fault at all -- it may simply need something the boot
+is not being given (a second disk, a console device, a keypress).
 
-The spin path never re-reads `$d40a`, so `BUSY` is only cleared by going round
-via `$e133`, which needs main to set `$d380` bit 7. Main will not do that while
-it is blocked waiting for `BUSY`. Measured over 1200 frames the sub does work
-this correctly **193 times** (193 writes, 384 reads of `$d40a`), and the last
-access in the window is a *write* at `$e14a` -- BUSY left set.
-
-`BUSY` is `m44_8` in `FLAGS.v`, set on a sub **write** of `$d40a` and cleared on
-a sub **read**, which matches CSP exactly (`set_subbusy` on `SUB:D40A:W`,
-`reset_subbusy` on `SUB:D40A:R`, `display.cpp:677-688`). So the polarity is not
-the bug.
-
-**A lead I talked myself out of, recorded so nobody else spends the time.**
-`FLAGS.v` has `s3 = RESETBn & SHALTACn` on the async clear, so every halt
-*clears* `BUSY`, whereas CSP *sets* `sub_busy` on a halt request
-(`display.cpp:1881`). Opposite, and it looks like the bug -- but it cannot be
-this one. `SUBUNAVAIL = BUSY | ~SHALTACn`, so during a halt `~SHALTACn` already
-forces the bit high; the difference only shows *after* release, where ours
-reports **available** and CSP reports busy. Ours is the more permissive of the
-two, so it cannot be why main is stuck waiting. (Worth aligning with CSP anyway
-on general principle, but not as a fix for this.)
-
-**What is actually left.** `BUSY` must be getting set *after* the release, and
-the only thing that sets it is the sub's own `write $d40a` at `$e14a` -- the
-dispatch path. So the sub took a command and never finished it. Next step is to
-find that last dispatch: trace sub `$d40a` accesses *and* `$d380`/`$d382` writes
-together with frame numbers, find the final `$e14a` write, and follow what the
-sub does afterwards instead of returning to `$e13b`. Note the sub does complete
-this cycle correctly **193 times** before it stops, so it is a specific command
-that hangs, not the mechanism.
+**Cheap things to try before any deep tracing:** Disk 2 of the set is right
+there (`OS-9 Level 1 (Disk 2)`), the boot may want it mounted or swapped; and
+feeding keys, since the kernel may be waiting at a console prompt that produces
+no visible output. Only if those fail is it worth tracing what `$0368`-`$036e`
+does between polls.
 
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
