@@ -182,43 +182,44 @@ only main-CPU code running besides the wait, so the console loop is in there --
 and check whether OS-9 ever touches `$fd00`/`$fd01`/`$fd02` at all after the
 kernel starts.
 
-### P4-11 [NEXT] Arion's main CPU stops dead at frame 150
+### P4-11 [CLOSED — not a core bug] Arion crashes into a CWAI
 
-Picked out of the P4-9 sweep by its instruction rate, which is the useful part:
-every other title runs the main CPU at **4400-5800 instructions/frame**; Arion
-reports **1087**, with a healthy sub at 8721. That is not "slow", it is "ran
-normally for a while and then stopped" -- and it is a much sharper triage signal
-than a blank screen. **Sort a sweep by main/frame, not by screenshot.**
+Picked out of the P4-9 sweep by its instruction rate, and **the triage signal is
+the part worth keeping**: every other title runs the main CPU at 4400-5800
+instructions/frame; Arion reports 1087 with a healthy sub. That means "ran
+normally then stopped", which is far sharper than a blank screen. **Sort a sweep
+by main/frame, not by screenshot.**
 
-Measured: **zero** main instructions from frame 151 onwards (traced 100-400 and
-400-700, both empty past 150). Before stopping it runs off into page zero
-executing data as instructions:
+It executes zero main instructions from frame 151 onward, after running off into
+page zero and executing data as instructions (`FCB $61`, `FCB $01`, last printed
+`NEG <$90` at frame 150).
+
+**Resolved by waveform, and it is Arion's own crash, not ours.** A `--vcd` over
+frames 149-151 shows the main CPU's state register ending in
 
 ```
-$00ef  ORB  <$fe
-$00f5  FCB  $61        <- undefined opcode
-$00f9  FCB  $01
-$00ff  CMPA -10,X
-$0101  NEG  <$90       <- last instruction, frame 150
+CpuState 108 (CPUSTATE_CWAI) -> 109 (CWAI_DONTCARE1) -> 83 (PSH_ACTION) -> 110 (CWAI_POST)
 ```
 
-**How it stops is not yet explained**, and the obvious answers are ruled out:
+and staying at 110, with `nHALT=1` and `nRESET=1` throughout. So the core is
+**correctly executing a `CWAI`** -- clear CC bits and wait for interrupt -- which
+it reached among the garbage it was executing. A `CWAI` whose operand leaves I
+and F set waits forever by definition, which is exactly right behaviour.
 
-- Not the Z80 bus handoff. `nHALT` on the main CPU is `GHn = ~m9[0]`, driven by
-  `$fd05` bit 0 -- and **Arion never writes `$fd05` at all** (checked; 1942 and
-  Archon do, with `$00/$40/$80`, bit 0 clear). `m9` resets to 0, so `GHn` stays
-  high.
-- Not `SYNC`/`CWAI` -- neither appears anywhere in the trace up to the stop.
-- Not an illegal-instruction stop. `mc6809i.v` can halt on those
-  (`IllegalInstructionState = CPUSTATE_STOP`) but only when parameterised
-  `ILLEGAL_INSTRUCTIONS=="STOP"`, and the default is `"GHOST"`, which maps them
-  to legal instructions instead.
+**Two things I got wrong on the way, both worth remembering:**
 
-So a 6809 that is not halted, not waiting, and not in a stop state simply
-stops fetching. That is worth understanding **regardless of Arion**, because it
-would mask any crash as a quiet CPU -- exactly how this one presented. Next step
-is a VCD over frames 149-151 (`--vcd`, see the Makefile) looking at the main
-CPU's clock enable, `nHALT`, and the core's state register across the stop.
+1. *"A 6809 that is not halted, not waiting and not in a stop state stops
+   fetching -- a core bug that would mask other crashes."* Wrong: it **was**
+   waiting.
+2. The reason I believed that: `grep -E 'SYNC|CWAI'` over the instruction trace
+   returned **zero**. The trace is emitted *one instruction late* (see the
+   comment on `emit_cpu_trace` in `sim_main.cpp`), so the `CWAI` after `$0101`
+   was never printed. **A `--trace-cpu` log does not contain the instruction that
+   stopped the CPU.** Read the CPU state, not the disassembly, when asking why
+   execution ended.
+
+So nothing to fix here. What remains is why Arion crashes into page zero in the
+first place, which is an ordinary per-title question and low priority.
 
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
