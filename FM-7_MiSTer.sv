@@ -203,14 +203,32 @@ assign VIDEO_ARX = (!ar) ? 12'd4 : (ar - 1'd1);
 assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 
 `include "build_id.v"
+
+// ---------------------------------------------------------------- OSD bits
+// Every bit of `status` this core reads, and nothing else is allocated. sys/
+// reserves none of them -- hps_io just transports 128 bits and CONF_STR below
+// is the only thing that gives them meaning.
+//
+//   bit(s)    menu entry                 read at
+//   ------    ----------------------     ----------------------------------
+//   0         Reset / Reset+close OSD    reset_req
+//   8         Tape Rewind (trigger)      rewind -> t77_decode
+//   9         Tape Audio                 cin_audio, relay_audio
+//   11:10     Boot ROM                   bootrom_sel -> ROMS.v M152 bank
+//   122:121   Aspect ratio               VIDEO_ARX / VIDEO_ARY
+//
+// Bits 1..7 and 12..120 are free. The hole at 1..7 is where the template's
+// "TV Mode" (O[2]) and "Noise" (O[4:3]) demo options used to sit; they drove
+// nothing in this core and are gone. The hole is left as-is deliberately --
+// renumbering would only invalidate saved .cfg files for no gain.
 localparam CONF_STR = {
   "FM-7;;",
   "-;",
   "F1,t77,Load Tape;",
   "S0,d77d88,Mount Disk;",
-  "O[8],Tape Rewind;",
+  "T[8],Tape Rewind;",
   "O[9],Tape Audio,Off,On;",
-  "O[11:10],BootROM,Basic,1,2,3;",
+  "O[11:10],Boot ROM,0 disk,1 alt,2 dos-a,3 empty;",
   "-;",
   "J1,Button A,Button B;",
   "jn,A,B;",
@@ -219,15 +237,13 @@ localparam CONF_STR = {
   "-;",
   "T[0],Reset;",
   "R[0],Reset and close OSD;",
-  "v,3;",
+  "v,4;",
   "V,v",`BUILD_DATE
 };
 
-wire forced_scandoubler;
 wire   [1:0] buttons;
 wire [127:0] status;
 wire  [10:0] ps2_key;
-wire direct_video;
 
 wire        ioctl_download;
 wire  [7:0] ioctl_index;
@@ -264,9 +280,6 @@ hps_io #(.CONF_STR(CONF_STR),.WIDE(0),.VDNUM(1)) hps_io
   .HPS_BUS(HPS_BUS),
   .EXT_BUS(),
   .gamma_bus(),
-  .direct_video(direct_video),
-
-  .forced_scandoubler(forced_scandoubler),
 
   .ioctl_download(ioctl_download),
   .ioctl_wr(ioctl_wr),
@@ -279,7 +292,6 @@ hps_io #(.CONF_STR(CONF_STR),.WIDE(0),.VDNUM(1)) hps_io
 
   .buttons(buttons),
   .status(status),
-  .status_menumask({ direct_video }),
 
   .ps2_key(ps2_key),
 
@@ -309,9 +321,24 @@ pll pll
   .locked(locked)
 );
 
-// Capture even a short HPS/OSD reset request and hold reset long enough for
-// every divided/generated clock domain in the original FM-7 logic to see it.
-// Also keep the core reset while the system PLL is acquiring lock.
+// Reset sources, and there are exactly three: RESET (sys_top asserts it at
+// power-on and on core load), status[0] (the OSD's Reset / Reset and close
+// OSD, both of which pulse bit 0) and buttons[1] (the physical user button).
+//
+// The pulse is latched rather than used directly. status[0] is momentary, and
+// the FM-7 logic runs on clock enables divided down from CLKSYS -- the main
+// CPU's E clock is 1.2288 MHz against 48 MHz -- so a reset must be held long
+// enough for every one of those domains to see it. 2^20 CLKSYS cycles is
+// 21.8 ms, tens of thousands of cycles even for the slowest. The counter also
+// holds reset while the PLL is unlocked, and its {20{1'b1}} initial value
+// means the core comes out of FPGA configuration already in reset instead of
+// relying on a power-up state -- see TODO.md P0-2 for what that cost before.
+//
+// img_mounted is deliberately NOT a reset source. Auto-resetting on mount
+// would boot a disk inserted from the OSD, but it would also reboot the
+// machine on every mid-game disk swap -- Ys (Disk A/B) and Mugen no Shinzou II
+// (Disk 1/2) both do that. Mount-then-boot belongs in the MGL instead, as a
+// <reset delay="1" hold="1"/> after the <file> element.
 wire reset_req = RESET | status[0] | buttons[1];
 reg [19:0] reset_count = {20{1'b1}};
 
