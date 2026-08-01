@@ -497,6 +497,44 @@ artwork gains detail and its rate moves 5005 -> 5008 main/frame. That is the
 same residual byte loss (the ~3-of-433 the pump used to cost) easing on the
 title that leans hardest on this window.
 
+**A/B'd properly rather than assumed.** The change alters a flag that titles
+poll in a wait loop, so "it fixed my test case" is not enough — it could have
+hard-blocked something else. The pre-fix core was rebuilt and 93 titles (every
+render plus 60 healthy-rate blanks) run through both:
+
+| | |
+|---|---|
+| better with the fix | **7** |
+| worse with the fix | **0** |
+| unchanged | 86 |
+
+| | before | after |
+|---|---|---|
+| Ys (FM7) (Disk A) | 3790 (blank) | **26146** |
+| DNA (Disk A) | 4094 | **9791** |
+| Dezeni Land | 3790 (blank) | **8529** |
+| Templo del Sol - Asteka II | 3790 (blank) | **6407** |
+| Thexder | 55364 | 57826 |
+| Hydlide II | 26335 | 28715 |
+
+**One real hazard the A/B did NOT show, recorded because it will matter later.**
+1942 polls `LDA $fd05 / BMI` — waiting for bit 7 to *clear*. Before the fix it
+read `$7e` and fell through; after, it reads `$fe` and spins forever, because
+its sub CPU never returns to the ROM idle loop to read `$d40a`:
+
+```
+sub handshake : BUSY=1  SHALTn=1  SHALTACn=1   $fd05 would read $fe
+   $d40a access : 3 reads (clear BUSY), 2 writes (set BUSY)
+```
+
+Three `$d40a` accesses in 700 frames, with the sub executing 8370
+instructions/frame — so the sub is running *something*, just not the ROM's idle
+loop. 1942 was blank before and is blank now, so this is not a regression in
+outcome, and the flag semantics match both references. But it does mean **a
+title whose sub never reaches `$e13b` will now hard-block on `$fd05` bit 7**,
+and that is a sharp, checkable signature to look for in the remaining blanks:
+`BUSY=1` with `SHALTACn=1` and a near-zero `$d40a` count.
+
 **A metric that did NOT show the fix, worth recording.** The write/read ratio
 this entry was originally built on barely moved: the main still writes 6891
 payload bytes to `$fc83`-`$fc8f` over 700 frames and the sub now reads 5878
@@ -610,14 +648,14 @@ disks that *should not* boot:
 | | |
 |---|---|
 | 108 | FM-7 images at a healthy rate with a blank screen |
-| −12 | boot sector is a deliberate **halt stub** — not bootable by design |
+| −13 | boot sector is a deliberate **halt stub** — not bootable by design |
 | −8 | user/save/`{run NAME}` disks by name, not caught by the stub test |
-| **88** | genuine "should boot and does not" |
-| (17) | of those 88 are marked `[b]`, a known-bad dump |
-| **~71** | good dumps of bootable disks that come up blank |
+| **87** | genuine "should boot and does not" |
+| (17) | of those 87 are marked `[b]`, a known-bad dump |
+| **70** | good dumps of bootable disks that come up blank |
 
 **The halt-stub finding is the useful part**, and `vsim/sweep/bootsector.py`
-tests for it directly from the image. 28 disks in the collection have a track 0
+tests for it directly from the image. 31 disks in the collection have a track 0
 / side 0 / sector 1 that reads
 
 ```
@@ -634,9 +672,15 @@ loop and shows a blank screen, which is **exactly right**. Their signature is
 main 6399 / sub 8721 / 3519 I/O cycles, identical across every one of them, and
 a `--pc-profile` puts 3841350 of the main CPU's instructions on `$0107` alone.
 
-So the honest remaining target is ~71 titles, not 108. That is still the biggest
-bucket and still the P4-8 shape — loads fine, never transfers control — but do
-not chase a disk whose boot sector asked to halt.
+So the honest remaining target is **70** titles, not 108. That is still the
+biggest bucket and still the P4-8 shape — loads fine, never transfers control —
+but do not chase a disk whose boot sector asked to halt.
+
+*(A trap in the tooling itself, worth the same warning as the rest: some of
+these archives unpack into an `alts/` subdirectory, so a flat `os.listdir` over
+the extraction directory silently misses 26 of the 350 images. That does not
+look like a bug, it looks like 26 titles having no disk image. `find` and
+`os.walk` see them; `os.listdir` and `ls *.d77` do not.)*
 
 **The sweep reproduces the earlier numbers exactly**, which is the check that
 the harness is honest: Arion 1087, Solitaire Royale 1049, Miner 2049er 1965,

@@ -61,12 +61,20 @@ if len(sys.argv) > 2:
             if len(p) >= 6:
                 rows[p[5]] = p
 
+# Walk recursively. Some of the Neo Kobe archives unpack into an "alts/"
+# subdirectory, so a flat os.listdir silently misses 26 of the 350 images --
+# which then look like missing data rather than like a directory that was never
+# searched.
+paths = []
+for root, _dirs, files in os.walk(d):
+    for name in files:
+        if name.lower().endswith(".d77"):
+            paths.append(os.path.join(root, name))
+
 stubs, real, bad = [], [], []
-for name in sorted(os.listdir(d)):
-    if not name.lower().endswith(".d77"):
-        continue
-    title = name[:-4]
-    data = boot_sector(os.path.join(d, name))
+for path in sorted(paths):
+    title = os.path.basename(path)[:-4]
+    data = boot_sector(path)
     if data is None:
         bad.append(title)
         continue
