@@ -20,8 +20,6 @@ module KEYBOARD(
   output KEYINn
 );
 
-assign BREAKn = 1;
-
 reg press_btn;
 reg [8:0] code;
 reg [7:0] kdata = 8'd0;
@@ -47,30 +45,301 @@ assign SKDATA =
 // clocked block instead makes the polarity explicit and removes a
 // read-and-write-in-the-same-comb-block loop.
 //
-//   alt left = GRAPH, alt right = KANA, ctrl left = CTRL
-reg shift_h, ctrl_h, graph_h, kana_h;
+//   alt left = GRAPH, alt right = KANA, ctrl left = CTRL, ctrl right = BREAK
+reg shift_h, ctrl_h, graph_h, kana_h, break_h;
 always @(posedge CLKSYS) begin
   if (~RESETBn) begin
     shift_h <= 1'b0; ctrl_h <= 1'b0; graph_h <= 1'b0; kana_h <= 1'b0;
+    break_h <= 1'b0;
   end
   else if (input_strobe) begin
     case (code)
       9'h012, 9'h059: shift_h <= press_btn;  // shift left / right
       9'h014:         ctrl_h  <= press_btn;  // ctrl left
-      9'h011:         graph_h <= press_btn;  // alt left
-      9'h111:         kana_h  <= press_btn;  // alt right
+      9'h011:         graph_h <= press_btn;  // alt left  -> GRAPH
+      // KANA is a LOCKING key on the real machine, not a held modifier: CSP
+      // toggles it on press and drives a keyboard LED from it
+      // (keyboard.cpp:117-125, alongside CAPS which behaves the same way).
+      // Holding it would be wrong -- software expects kana mode to persist
+      // across keystrokes until it is pressed again.
+      9'h111: if (press_btn) kana_h <= ~kana_h;   // alt right -> KANA (lock)
+      9'h114:         break_h <= press_btn;       // ctrl right -> BREAK
     endcase
   end
 end
+
+// BREAK is a key, not a character: it drives FIRQ on the main CPU and reads
+// back on $fd04 bit 1, and sends no scancode. MAME asserts M6809_FIRQ_LINE and
+// sets its break flag together (fm7.cpp:1183-1189); TIMER.v already ANDs
+// BREAKn into FIRQn and reports it, so wiring the key here is the whole fix.
+assign BREAKn = ~break_h;
 
 always @* begin
 
   if (input_strobe) begin
 
+    // Modifier precedence is CTRL > GRAPH > KANA > plain, with SHIFT selecting
+    // the "_shift" variant within each. That is exactly CSP's order in
+    // KEYBOARD::scan2fmkeycode (keyboard.cpp:157-183), and it matters: with
+    // both CTRL and GRAPH down a real machine sends the control code.
+    //
+    // The tables below are transcribed from
+    // refs/common-src-project/src/vm/fm7/keyboard_tables.h, which is keyed on
+    // the FM-7's own physical key number ("phy", an index into vk_matrix_106).
+    // Our codes are PS/2 sets, so each entry is translated through the same
+    // PS/2 -> physical-key correspondence the unshifted table below already
+    // establishes. Keys the FM-7 has and a PS/2 keyboard does not -- KANJI,
+    // the JIS \_ key next to right shift, CONVERT/NONCONVERT and the numeric
+    // keypad -- have no entry here, which is why some phy numbers are absent.
+
+    // CTRL. For the letters this is just code & $1f; the rest are the JIS
+    // punctuation positions that carry the remaining control codes.
+    if (ctrl_h && press_btn) begin
+      case (code)
+        9'h15: begin { P0, kdata } = 9'h11; end // ctrl-Q
+        9'h1d: begin { P0, kdata } = 9'h17; end // ctrl-W
+        9'h24: begin { P0, kdata } = 9'h05; end // ctrl-E
+        9'h2d: begin { P0, kdata } = 9'h12; end // ctrl-R
+        9'h2c: begin { P0, kdata } = 9'h14; end // ctrl-T
+        9'h35: begin { P0, kdata } = 9'h19; end // ctrl-Y
+        9'h3c: begin { P0, kdata } = 9'h15; end // ctrl-U
+        9'h43: begin { P0, kdata } = 9'h09; end // ctrl-I
+        9'h44: begin { P0, kdata } = 9'h0f; end // ctrl-O
+        9'h4d: begin { P0, kdata } = 9'h10; end // ctrl-P
+        9'h1c: begin { P0, kdata } = 9'h01; end // ctrl-A
+        9'h1b: begin { P0, kdata } = 9'h13; end // ctrl-S
+        9'h23: begin { P0, kdata } = 9'h04; end // ctrl-D
+        9'h2b: begin { P0, kdata } = 9'h06; end // ctrl-F
+        9'h34: begin { P0, kdata } = 9'h07; end // ctrl-G
+        9'h33: begin { P0, kdata } = 9'h08; end // ctrl-H
+        9'h3b: begin { P0, kdata } = 9'h0a; end // ctrl-J
+        9'h42: begin { P0, kdata } = 9'h0b; end // ctrl-K
+        9'h4b: begin { P0, kdata } = 9'h0c; end // ctrl-L
+        9'h1a: begin { P0, kdata } = 9'h1a; end // ctrl-Z
+        9'h22: begin { P0, kdata } = 9'h18; end // ctrl-X
+        9'h21: begin { P0, kdata } = 9'h03; end // ctrl-C
+        9'h2a: begin { P0, kdata } = 9'h16; end // ctrl-V
+        9'h32: begin { P0, kdata } = 9'h02; end // ctrl-B
+        9'h31: begin { P0, kdata } = 9'h0e; end // ctrl-N
+        9'h3a: begin { P0, kdata } = 9'h0d; end // ctrl-M
+
+        9'h54: begin { P0, kdata } = 9'h00; end // ctrl-@ -> NUL
+        9'h5b: begin { P0, kdata } = 9'h1b; end // ctrl-[ -> ESC
+        9'h0e: begin { P0, kdata } = 9'h1d; end // ctrl-] -> GS
+        9'h4e: begin { P0, kdata } = 9'h1e; end // ctrl-- -> RS
+        9'h55: begin { P0, kdata } = 9'h1c; end // ctrl-^ -> FS
+      endcase
+    end
+
+    // GRAPH. The FM-7's semigraphics set, $80-$fd. graph_shift_key is
+    // byte-identical to graph_key except for the four cursor keys and the
+    // function keys, so the differences are folded in inline rather than
+    // duplicating a 50-entry table.
+    else if (graph_h && press_btn) begin
+      case (code)
+        9'h16: begin { P0, kdata } = 9'h0f9; end // 1
+        9'h1e: begin { P0, kdata } = 9'h0fa; end // 2
+        9'h26: begin { P0, kdata } = 9'h0fb; end // 3
+        9'h25: begin { P0, kdata } = 9'h0fc; end // 4
+        9'h2e: begin { P0, kdata } = 9'h0f2; end // 5
+        9'h36: begin { P0, kdata } = 9'h0f3; end // 6
+        9'h3d: begin { P0, kdata } = 9'h0f4; end // 7
+        9'h3e: begin { P0, kdata } = 9'h0f5; end // 8
+        9'h46: begin { P0, kdata } = 9'h0f6; end // 9
+        9'h45: begin { P0, kdata } = 9'h0f7; end // 0
+        9'h4e: begin { P0, kdata } = 9'h08c; end // -
+        9'h55: begin { P0, kdata } = 9'h08b; end // ^
+        9'h5d: begin { P0, kdata } = 9'h0f1; end // \
+        9'h66: begin { P0, kdata } = 9'h008; end // backspace
+        9'h0d: begin { P0, kdata } = 9'h009; end // tab
+
+        9'h15: begin { P0, kdata } = 9'h0fd; end // q
+        9'h1d: begin { P0, kdata } = 9'h0f8; end // w
+        9'h24: begin { P0, kdata } = 9'h0e4; end // e
+        9'h2d: begin { P0, kdata } = 9'h0e5; end // r
+        9'h2c: begin { P0, kdata } = 9'h09c; end // t
+        9'h35: begin { P0, kdata } = 9'h09d; end // y
+        9'h3c: begin { P0, kdata } = 9'h0f0; end // u
+        9'h43: begin { P0, kdata } = 9'h0e8; end // i
+        9'h44: begin { P0, kdata } = 9'h0e9; end // o
+        9'h4d: begin { P0, kdata } = 9'h08d; end // p
+        9'h54: begin { P0, kdata } = 9'h08a; end // @
+        9'h5b: begin { P0, kdata } = 9'h0ed; end // [
+        9'h5a: begin { P0, kdata } = 9'h00d; end // enter
+
+        9'h1c: begin { P0, kdata } = 9'h095; end // a
+        9'h1b: begin { P0, kdata } = 9'h096; end // s
+        9'h23: begin { P0, kdata } = 9'h0e6; end // d
+        9'h2b: begin { P0, kdata } = 9'h0e7; end // f
+        9'h34: begin { P0, kdata } = 9'h09e; end // g
+        9'h33: begin { P0, kdata } = 9'h09f; end // h
+        9'h3b: begin { P0, kdata } = 9'h0ea; end // j
+        9'h42: begin { P0, kdata } = 9'h0eb; end // k
+        9'h4b: begin { P0, kdata } = 9'h08e; end // l
+        9'h4c: begin { P0, kdata } = 9'h099; end // ;
+        9'h52: begin { P0, kdata } = 9'h094; end // :
+        9'h0e: begin { P0, kdata } = 9'h0ec; end // ]
+
+        9'h1a: begin { P0, kdata } = 9'h080; end // z
+        9'h22: begin { P0, kdata } = 9'h081; end // x
+        9'h21: begin { P0, kdata } = 9'h082; end // c
+        9'h2a: begin { P0, kdata } = 9'h083; end // v
+        9'h32: begin { P0, kdata } = 9'h084; end // b
+        9'h31: begin { P0, kdata } = 9'h085; end // n
+        9'h3a: begin { P0, kdata } = 9'h086; end // m
+        9'h41: begin { P0, kdata } = 9'h087; end // ,
+        9'h49: begin { P0, kdata } = 9'h088; end // .
+        9'h4a: begin { P0, kdata } = 9'h097; end // /
+        9'h14a: begin { P0, kdata } = 9'h097; end // keypad /
+
+        9'h29: begin { P0, kdata } = 9'h020; end // spacebar
+        9'h170: begin { P0, kdata } = 9'h012; end // insert
+        9'h17d: begin { P0, kdata } = 9'h005; end // page up  (EL)
+        9'h17a: begin { P0, kdata } = 9'h00c; end // page down (CLS)
+        9'h171: begin { P0, kdata } = 9'h07f; end // delete
+        9'h16c: begin { P0, kdata } = 9'h00b; end // home
+
+        // The four cursor keys are the only entries where graph_shift_key
+        // differs from graph_key.
+        9'h175: begin { P0, kdata } = shift_h ? 9'h019 : 9'h01e; end // up
+        9'h172: begin { P0, kdata } = shift_h ? 9'h01a : 9'h01f; end // down
+        9'h16b: begin { P0, kdata } = shift_h ? 9'h002 : 9'h01d; end // left
+        9'h174: begin { P0, kdata } = shift_h ? 9'h006 : 9'h01c; end // right
+
+        // graph_shift_key has no function-key entries at all.
+        9'h05: begin if (!shift_h) { P0, kdata } = 9'h101; end // f1
+        9'h06: begin if (!shift_h) { P0, kdata } = 9'h102; end // f2
+        9'h04: begin if (!shift_h) { P0, kdata } = 9'h103; end // f3
+        9'h0c: begin if (!shift_h) { P0, kdata } = 9'h104; end // f4
+        9'h03: begin if (!shift_h) { P0, kdata } = 9'h105; end // f5
+        9'h0b: begin if (!shift_h) { P0, kdata } = 9'h106; end // f6
+        9'h83: begin if (!shift_h) { P0, kdata } = 9'h107; end // f7
+        9'h0a: begin if (!shift_h) { P0, kdata } = 9'h108; end // f8
+        9'h01: begin if (!shift_h) { P0, kdata } = 9'h109; end // f9
+        9'h09: begin if (!shift_h) { P0, kdata } = 9'h10a; end // f10
+      endcase
+    end
+
+    // KANA (locking). Half-width katakana, JIS X 0201 $a1-$df. Shifted gives
+    // the small kana and the two voicing marks, which is a genuinely different
+    // and much smaller table, so it is kept separate.
+    else if (kana_h && shift_h && press_btn) begin
+      case (code)
+        9'h26: begin { P0, kdata } = 9'h0a7; end // 3 -> small a
+        9'h25: begin { P0, kdata } = 9'h0a9; end // 4 -> small i
+        9'h2e: begin { P0, kdata } = 9'h0aa; end // 5 -> small u
+        9'h36: begin { P0, kdata } = 9'h0ab; end // 6 -> small e
+        9'h3d: begin { P0, kdata } = 9'h0ac; end // 7 -> small o
+        9'h3e: begin { P0, kdata } = 9'h0ad; end // 8 -> small ya
+        9'h46: begin { P0, kdata } = 9'h0ae; end // 9 -> small yu
+        9'h45: begin { P0, kdata } = 9'h0a6; end // 0 -> small wo
+        9'h24: begin { P0, kdata } = 9'h0a8; end // e -> small yo
+        9'h5b: begin { P0, kdata } = 9'h0a2; end // [ -> opening bracket
+        9'h0e: begin { P0, kdata } = 9'h0a3; end // ] -> closing bracket
+        9'h1a: begin { P0, kdata } = 9'h0af; end // z -> small tsu
+        9'h41: begin { P0, kdata } = 9'h0a4; end // , -> ideographic comma
+        9'h49: begin { P0, kdata } = 9'h0a1; end // . -> ideographic full stop
+        9'h4a: begin { P0, kdata } = 9'h0a5; end // / -> middle dot
+
+        9'h66: begin { P0, kdata } = 9'h008; end // backspace
+        9'h0d: begin { P0, kdata } = 9'h009; end // tab
+        9'h5a: begin { P0, kdata } = 9'h00d; end // enter
+        9'h29: begin { P0, kdata } = 9'h020; end // spacebar
+        9'h170: begin { P0, kdata } = 9'h012; end // insert
+        9'h17d: begin { P0, kdata } = 9'h005; end // page up
+        9'h17a: begin { P0, kdata } = 9'h00c; end // page down
+        9'h171: begin { P0, kdata } = 9'h07f; end // delete
+        9'h16c: begin { P0, kdata } = 9'h00b; end // home
+        9'h175: begin { P0, kdata } = 9'h019; end // up
+        9'h172: begin { P0, kdata } = 9'h01a; end // down
+        9'h16b: begin { P0, kdata } = 9'h002; end // left
+        9'h174: begin { P0, kdata } = 9'h006; end // right
+      endcase
+    end
+
+    else if (kana_h && press_btn) begin
+      case (code)
+        9'h16: begin { P0, kdata } = 9'h0c7; end // 1 -> nu
+        9'h1e: begin { P0, kdata } = 9'h0cc; end // 2 -> fu
+        9'h26: begin { P0, kdata } = 9'h0b1; end // 3 -> a
+        9'h25: begin { P0, kdata } = 9'h0b3; end // 4 -> u
+        9'h2e: begin { P0, kdata } = 9'h0b4; end // 5 -> e
+        9'h36: begin { P0, kdata } = 9'h0b5; end // 6 -> o
+        9'h3d: begin { P0, kdata } = 9'h0d4; end // 7 -> ya
+        9'h3e: begin { P0, kdata } = 9'h0d5; end // 8 -> yu
+        9'h46: begin { P0, kdata } = 9'h0d6; end // 9 -> yo
+        9'h45: begin { P0, kdata } = 9'h0dc; end // 0 -> wa
+        9'h4e: begin { P0, kdata } = 9'h0ce; end // - -> ho
+        9'h55: begin { P0, kdata } = 9'h0cd; end // ^ -> he
+        9'h5d: begin { P0, kdata } = 9'h0b0; end // \ -> prolonged sound mark
+        9'h66: begin { P0, kdata } = 9'h008; end // backspace
+        9'h0d: begin { P0, kdata } = 9'h009; end // tab
+
+        9'h15: begin { P0, kdata } = 9'h0c0; end // q -> ta
+        9'h1d: begin { P0, kdata } = 9'h0c3; end // w -> te
+        9'h24: begin { P0, kdata } = 9'h0b2; end // e -> i
+        9'h2d: begin { P0, kdata } = 9'h0bd; end // r -> su
+        9'h2c: begin { P0, kdata } = 9'h0b6; end // t -> ka
+        9'h35: begin { P0, kdata } = 9'h0dd; end // y -> n
+        9'h3c: begin { P0, kdata } = 9'h0c5; end // u -> na
+        9'h43: begin { P0, kdata } = 9'h0c6; end // i -> ni
+        9'h44: begin { P0, kdata } = 9'h0d7; end // o -> ra
+        9'h4d: begin { P0, kdata } = 9'h0be; end // p -> se
+        9'h54: begin { P0, kdata } = 9'h0de; end // @ -> voiced mark
+        9'h5b: begin { P0, kdata } = 9'h0df; end // [ -> semi-voiced mark
+        9'h5a: begin { P0, kdata } = 9'h00d; end // enter
+
+        9'h1c: begin { P0, kdata } = 9'h0c1; end // a -> chi
+        9'h1b: begin { P0, kdata } = 9'h0c4; end // s -> to
+        9'h23: begin { P0, kdata } = 9'h0bc; end // d -> shi
+        9'h2b: begin { P0, kdata } = 9'h0ca; end // f -> ha
+        9'h34: begin { P0, kdata } = 9'h0b7; end // g -> ki
+        9'h33: begin { P0, kdata } = 9'h0b8; end // h -> ku
+        9'h3b: begin { P0, kdata } = 9'h0cf; end // j -> ma
+        9'h42: begin { P0, kdata } = 9'h0c9; end // k -> no
+        9'h4b: begin { P0, kdata } = 9'h0d8; end // l -> ri
+        9'h4c: begin { P0, kdata } = 9'h0da; end // ; -> re
+        9'h52: begin { P0, kdata } = 9'h0b9; end // : -> ke
+        9'h0e: begin { P0, kdata } = 9'h0d1; end // ] -> mu
+
+        9'h1a: begin { P0, kdata } = 9'h0c2; end // z -> tsu
+        9'h22: begin { P0, kdata } = 9'h0bb; end // x -> sa
+        9'h21: begin { P0, kdata } = 9'h0bf; end // c -> so
+        9'h2a: begin { P0, kdata } = 9'h0cb; end // v -> hi
+        9'h32: begin { P0, kdata } = 9'h0ba; end // b -> ko
+        9'h31: begin { P0, kdata } = 9'h0d0; end // n -> mi
+        9'h3a: begin { P0, kdata } = 9'h0d3; end // m -> mo
+        9'h41: begin { P0, kdata } = 9'h0c8; end // , -> ne
+        9'h49: begin { P0, kdata } = 9'h0d9; end // . -> ru
+        9'h4a: begin { P0, kdata } = 9'h0d2; end // / -> me
+
+        9'h29: begin { P0, kdata } = 9'h020; end // spacebar
+        9'h170: begin { P0, kdata } = 9'h012; end // insert
+        9'h17d: begin { P0, kdata } = 9'h005; end // page up
+        9'h17a: begin { P0, kdata } = 9'h00c; end // page down
+        9'h171: begin { P0, kdata } = 9'h07f; end // delete
+        9'h16c: begin { P0, kdata } = 9'h00b; end // home
+        9'h175: begin { P0, kdata } = 9'h01e; end // up
+        9'h172: begin { P0, kdata } = 9'h01f; end // down
+        9'h16b: begin { P0, kdata } = 9'h01d; end // left
+        9'h174: begin { P0, kdata } = 9'h01c; end // right
+
+        9'h05: begin { P0, kdata } = 9'h101; end // f1
+        9'h06: begin { P0, kdata } = 9'h102; end // f2
+        9'h04: begin { P0, kdata } = 9'h103; end // f3
+        9'h0c: begin { P0, kdata } = 9'h104; end // f4
+        9'h03: begin { P0, kdata } = 9'h105; end // f5
+        9'h0b: begin { P0, kdata } = 9'h106; end // f6
+        9'h83: begin { P0, kdata } = 9'h107; end // f7
+        9'h0a: begin { P0, kdata } = 9'h108; end // f8
+        9'h01: begin { P0, kdata } = 9'h109; end // f9
+        9'h09: begin { P0, kdata } = 9'h10a; end // f10
+      endcase
+    end
+
     // SHIFT. JIS layout, matching the unshifted table below: the codes here are
     // what the FM-7 keyboard MCU sends, i.e. plain ASCII for these keys.
-    // CTRL / GRAPH / KANA are still unimplemented -- see TODO.md P2-1.
-    if (shift_h && press_btn) begin
+    else if (shift_h && press_btn) begin
       case (code)
         9'h1c: begin { P0, kdata } = 9'h41; end // A
         9'h32: begin { P0, kdata } = 9'h42; end // B

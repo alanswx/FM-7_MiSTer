@@ -403,32 +403,87 @@ static bool name_to_ps2(const std::string& n, KeyMap& out) {
 }
 
 // Expand one --key action into frame-stamped press/release events.
+//
+// The text may carry one or more modifier prefixes -- "@CTRL+", "@GRAPH+",
+// "@KANA+" or "@SHIFT+" -- which are held down for the whole of the rest of the
+// string. That is the only way to reach KEYBOARD.v's CTRL and GRAPH tables:
+// those modifiers are momentary, so
+//
+//     --key 400:@CTRL  --key 410:a
+//
+// releases CTRL long before the 'a' arrives and simply types a lower-case a.
+// With the prefix, "--key 400:@CTRL+a" delivers $01 as it should.
+//
+// KANA is a LOCKING key in the hardware -- KEYBOARD.v toggles it on press, the
+// way CSP does (keyboard.cpp:117-125) -- so "@KANA+abc" leaves kana mode ON
+// afterwards, which is what a real machine does. A bare "--key <f>:@KANA"
+// toggles it back off.
+static bool is_modifier_name(const std::string& u) {
+	return u == "CTRL" || u == "GRAPH" || u == "KANA" || u == "SHIFT";
+}
+
 static void schedule_key_action(const KeyAction& a) {
-	std::vector<KeyMap> seq;
-	if (a.text.size() > 1 && a.text[0] == '@') {
+	std::string text = a.text;
+	std::vector<KeyMap> mods;
+	bool shift_held = false;
+
+	// Peel off leading "@NAME+" modifier prefixes. Anything else -- "@RETURN",
+	// "@F1", or ordinary text like "print 1+1" -- falls straight through, since
+	// those either do not start with '@' or carry no '+'.
+	for (;;) {
+		if (text.size() < 2 || text[0] != '@') break;
+		size_t plus = text.find('+');
+		if (plus == std::string::npos || plus < 2) break;
+		std::string name = text.substr(1, plus - 1);
+		std::string u = name;
+		std::transform(u.begin(), u.end(), u.begin(), ::toupper);
+		if (!is_modifier_name(u)) break;
 		KeyMap km;
-		if (name_to_ps2(a.text.substr(1), km)) seq.push_back(km);
-		else printf("Unknown key name: %s\n", a.text.c_str() + 1);
+		if (!name_to_ps2(name, km)) break;
+		if (u == "SHIFT") shift_held = true;
+		mods.push_back(km);
+		text = text.substr(plus + 1);
+	}
+
+	std::vector<KeyMap> seq;
+	if (text.size() > 1 && text[0] == '@') {
+		KeyMap km;
+		if (name_to_ps2(text.substr(1), km)) seq.push_back(km);
+		else printf("Unknown key name: %s\n", text.c_str() + 1);
 	} else {
-		for (char c : a.text) {
+		for (char c : text) {
 			KeyMap km;
 			if (ascii_to_ps2(c, km)) seq.push_back(km);
 			else printf("No scancode for '%c' (0x%02x)\n", c, (unsigned char)c);
 		}
 	}
+
 	int f = a.frame;
+
+	// Modifiers go down first and stay down for the whole string.
+	for (size_t i = 0; i < mods.size(); i++)
+		pending_keys.push_back({f + (int)i, mods[i].code, mods[i].extended, true});
+	f += (int)mods.size();
+
 	for (const KeyMap& km : seq) {
 		// Shift must be down before the key and released after it: KEYBOARD.v
-		// samples shift_h at the moment the key's press event is decoded.
-		if (km.shift) pending_keys.push_back({f, 0x12, false, true});
-		pending_keys.push_back({f + (km.shift ? 1 : 0), km.code, km.extended, true});
+		// samples shift_h at the moment the key's press event is decoded. Skip
+		// the per-character shift when an explicit @SHIFT+ prefix already holds
+		// it, or the two would fight over the same scancode.
+		bool need_shift = km.shift && !shift_held;
+		if (need_shift) pending_keys.push_back({f, 0x12, false, true});
+		pending_keys.push_back({f + (need_shift ? 1 : 0), km.code, km.extended, true});
 		pending_keys.push_back({f + key_hold_frames, km.code, km.extended, false});
-		if (km.shift) pending_keys.push_back({f + key_hold_frames + 1, 0x12, false, false});
+		if (need_shift) pending_keys.push_back({f + key_hold_frames + 1, 0x12, false, false});
 		// Gap between characters so the machine sees a clean release. KEYBOARD.v
 		// latches on the RISING edge of press_btn, so two presses with no
 		// release between them produce only one keystroke.
 		f += key_hold_frames * 2;
 	}
+
+	// ...and back up once the string is done.
+	for (size_t i = 0; i < mods.size(); i++)
+		pending_keys.push_back({f + 1 + (int)i, mods[i].code, mods[i].extended, false});
 }
 
 //----------------------------------------------------------------------------
@@ -510,6 +565,10 @@ static void print_usage(const char* argv0) {
 	printf("  --screenshot-prefix <s>   Filename prefix (default \"screenshot\")\n");
 	printf("\nInput injection (frame-scheduled):\n");
 	printf("  --key <frame>:<text>      Type text, or @NAME for a named key.\n");
+	printf("                            Prefix with @CTRL+ @GRAPH+ @KANA+ @SHIFT+\n");
+	printf("                            to hold that modifier for the whole string,\n");
+	printf("                            e.g. --key '400:@GRAPH+abc'. KANA locks, so\n");
+	printf("                            it stays on until toggled off again.\n");
 	printf("                            Names: SPACE RETURN TAB BS ESC CAPS UP DOWN\n");
 	printf("                                   LEFT RIGHT HOME INS DEL CTRL SHIFT\n");
 	printf("                                   GRAPH KANA BREAK F1..F10\n");
