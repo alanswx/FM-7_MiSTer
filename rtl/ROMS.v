@@ -57,13 +57,38 @@ assign BTROMn   = FCXXn ? 1'b1 : m139_q[2];
 assign RAM1HB1n = FCXXn ? 1'b1 : m139_q[3];
 assign RAM1HB2n = m107_q;
 
-wire pre = ~RFD0Fn;
-wire clr = ~WFD0Fn;
-wire ck  = ~RESETBn;
-always @(posedge pre, posedge clr, posedge ck) begin
-  if (pre) ff_q <= 1'b1;
-  else if (clr) ff_q <= 1'b0;
-  else ff_q <= m120_q;
+// The boot-ROM/RAM switch at $fd0f: reading it maps the F-BASIC ROM at
+// $8000-$fbff, writing it maps RAM there. CSP describes exactly that
+// (fm7_mainio.cpp:771) and this core matches it.
+//
+// This used to be three asynchronous edges, and one of them was
+//
+//     wire ck = ~RESETBn;   // a flip-flop CLOCKED BY RESET BEING ASSERTED
+//
+// which only loads the power-on default `m120_q` on a RISING edge of ~RESETBn,
+// i.e. on RESETBn FALLING. If RESETBn is already low when the FPGA comes out of
+// configuration there is never such an edge: ff_q keeps whatever Quartus
+// powered it up as, RAM1HB2n stays high, the F-BASIC ROM is never chip-selected,
+// every read of $8000-$fbff returns $00, and the boot ROM's `LDX $fbfe / JMP ,X`
+// jumps to $0000 and executes zeroed RAM forever.
+//
+// vsim never showed this because sim_main.cpp deliberately runs a power-on pulse
+// -- `top->reset = (reset_prologue == 0) && (reset_hold > 0)` at :986 holds
+// reset LOW for 64 cycles and only then asserts it, manufacturing the edge. On
+// hardware FM-7_MiSTer.sv takes `reset = RESET | status[0] | buttons[1]` and
+// sys/ asserts RESET at power-on, so the edge was never guaranteed and the
+// design was leaning on a Quartus power-up state. See TODO.md P0-2.
+//
+// Now an ordinary synchronous reset-and-load. Read still wins over write, as
+// before. The strobes are many CLKSYS cycles wide (E is 1.2288 MHz against a
+// 48 MHz CLKSYS), so edge-detecting them here is safe.
+reg rfd0f_d, wfd0f_d;
+always @(posedge CLKSYS) begin
+  rfd0f_d <= RFD0Fn;
+  wfd0f_d <= WFD0Fn;
+  if (~RESETBn)               ff_q <= m120_q;   // held loaded for the whole reset
+  else if (rfd0f_d & ~RFD0Fn) ff_q <= 1'b1;     // read  $fd0f -> F-BASIC ROM
+  else if (wfd0f_d & ~WFD0Fn) ff_q <= 1'b0;     // write $fd0f -> RAM
 end
 
 m139 m139_u1(
