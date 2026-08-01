@@ -47,6 +47,7 @@ wire [7:0] RS232_dout;
 wire [7:0] PALDATA;
 wire [7:0] MKDATA;
 wire [7:0] SOUND_dout;
+wire [7:0] KANJI_dout;
 
 wire [15:0] SADDRBUS;
 wire [7:0] SDATABUS_in;
@@ -105,6 +106,10 @@ wire RFD03n;
 wire RFD05n;
 wire RFD0En;
 wire RFD0Fn;
+wire WFD20n;
+wire WFD21n;
+wire RFD22n;
+wire RFD23n;
 wire BUZZERn;
 wire ATTENTn;
 wire BUSY;
@@ -223,6 +228,10 @@ assign MDATABUS_in =
   ~(IOSn | FD1Fn) ? MFD_out :
   ~(IOSn | FD_CSn) ? MFD_out :
   ~(IOSn | RS232_CEn) ? RS232_dout :
+  // $fd22/$fd23, the kanji ROM data pair. $fd20/$fd21 are write-only and are
+  // deliberately NOT decoded here, so they fall through to the $ff default --
+  // which is exactly what MAME's kanji_r returns for them.
+  ~(RFD22n & RFD23n) ? KANJI_dout :
   ~PLTREGn ? PALDATA :
   ~IOSn ? 8'hff :
 
@@ -339,7 +348,24 @@ MDECODE u_MDECODE(
   .RFD03n   ( RFD03n   ),
   .RFD05n   ( RFD05n   ),
   .RFD0En   ( RFD0En   ),
-  .RFD0Fn   ( RFD0Fn   )
+  .RFD0Fn   ( RFD0Fn   ),
+  .WFD20n   ( WFD20n   ),
+  .WFD21n   ( WFD21n   ),
+  .RFD22n   ( RFD22n   ),
+  .RFD23n   ( RFD23n   )
+);
+
+// Kanji ROM at $fd20-$fd23 (P3-3). Optional expansion hardware on a real FM-7,
+// but software probes for it and there is no reason to advertise its absence.
+KANJI u_KANJI(
+  .CLKSYS       ( CLKSYS       ),
+  .RESETBn      ( RESETBn      ),
+  .MDATABUS_in  ( MDATABUS_out ),
+  .WFD20n       ( WFD20n       ),
+  .WFD21n       ( WFD21n       ),
+  .RFD22n       ( RFD22n       ),
+  .RFD23n       ( RFD23n       ),
+  .MDATABUS_out ( KANJI_dout   )
 );
 
 MCPU u_MCPU(

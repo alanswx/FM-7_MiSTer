@@ -70,7 +70,7 @@ rather than trying to glob the brackets — that is what the sweep script does.
 | **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. Fold into P4-15 — it is probably the same bug. |
 | **P4-14** | The rest of the 46 blanks | 62 of 87 never touch the sub handshake at all. Upstream of the display; do not chase the video path. |
 | **P4-3** | PSG `sel_n_i` pitch | Needs a human ear, cannot be settled in sim. |
-| **P3-3** | Kanji ROM `$fd20-$fd23` | Not decoded at all, and `rtl/roms/` has no kanji ROM. **Blocked**: needs a ROM image the repo does not have. |
+| **P4-14 re-sweep** | Confirm the kanji ROM changed nothing | P3-3 added optional hardware that software *probes for*. The 8-row regression is unchanged, but the 350-image sweep has not been re-run against it. |
 | | second drive, 2DD, multi-disk `.d88` | Unstarted. Scoped in P4-1. |
 | | `$fd04` bit 2 | Carries BUSY here; no reference puts it there. Recorded in P3-2, not acted on. |
 
@@ -266,6 +266,7 @@ P4-14 for the full table. The ones worth calling out:
 | `6aad4a8` | CTRL / GRAPH / KANA keyboard tables from CSP, and the break key wired through (P2-1, P2-3). `vsim` gained `--key '400:@CTRL+ac'` modifier chords, without which the tables cannot be tested at all. |
 | `5ac7684` | `ROMS.v`'s boot-ROM/RAM switch was a flip-flop **clocked by reset being asserted**, so it depended on a power-up edge the FPGA build never guaranteed (P0-2). Now a plain synchronous reset-and-load. Cannot be proved in sim — `vsim` manufactures that exact edge — so the evidence is "no regression" plus the argument. |
 | `47abd60` | The keypad `/` is a different FM-7 key from the main `/` and takes a different GRAPH code. Found by `vsim/sweep/check_kbd.py` diffing the tables against CSP; all 202 entries now match exactly (P2-1). |
+| *(pending)* | **Kanji ROM at `$fd20-$fd23` (P3-3).** Never actually blocked — `refs/fm7.zip` had `kanji.rom` (crc32 `62402ac9`, matching MAME and *not* a `BAD_DUMP`) all along, just never extracted. New `rtl/KANJI.v` plus the decode in `MDECODE.v`. Verified from BASIC at two addresses. |
 | `ab290b7` | FDC dropped one of two back-to-back register writes. The core edge-detects `wr` *as it samples it*, so a strobe that goes low and high between two `ce` ticks is never an edge. Ys sets track+sector with one 16-bit store and lost every sector write. |
 | `9026de8` | `files.qip` was missing `rtl/wd1793.sv` — **the Quartus build could not have compiled the FDC**. |
 | `a5a9b27` | `(int)main_time` overflowed INT_MAX at frame ~2666, so `BeforeEval`'s `cycles < 2000` guard went permanently true and the block device silently stopped serving. Invalidated every long run. |
@@ -1784,13 +1785,70 @@ disagree with CSP about bit 7. This core is schematic-derived rather than
 modelled on any of them, and nothing measured reads the bit, so it is recorded
 here rather than churned on a disagreement between references.
 
-### P3-3 [read] Kanji ROM (`$fd20-$fd23`) missing entirely
+### P3-3 [FIXED] Kanji ROM (`$fd20-$fd23`)
 
-MAME maps `$fd20-$fd23` (`kanji_r`/`kanji_w`): `$fd20`/`$fd21` write the
-address, `$fd22`/`$fd23` read the two bytes of the 16x16 glyph. `MDECODE.v`
-does not decode `$fd20-$fd23` at all and `rtl/roms/` contains no kanji ROM.
+`MDECODE.v` did not decode `$fd20-$fd23` at all and `rtl/roms/` held no kanji
+ROM. Both are now in: `rtl/KANJI.v`, with the decode alongside `WFD37n` in
+`MDECODE.v`.
 
-Needed for any Japanese text. CSP `kanjirom.cpp` is the cleanest model.
+**It was never actually blocked, and an earlier version of this entry was
+wrong to imply otherwise.** `refs/fm7.zip` — a MAME ROM set sitting in the repo
+— contains `kanji.rom`, 131072 bytes, **crc32 `62402ac9`**, an exact match for
+MAME's `ROM_LOAD_OPTIONAL("kanji.rom", 0x0000, 0x20000, CRC(62402ac9))`. Unlike
+the four FM-7 ROMs this core already uses, MAME does **not** mark it
+`BAD_DUMP`. It had simply never been extracted. Worth remembering when
+something looks ROM-blocked: check `refs/*.zip` first.
+
+The interface, on which MAME and CSP agree exactly:
+
+| | |
+|---|---|
+| `$fd20` write | glyph address, high byte |
+| `$fd21` write | glyph address, low byte |
+| `$fd22` read | first byte of the 16x16 glyph |
+| `$fd23` read | second byte |
+
+with the ROM index being `(address << 1) | bytesel` — MAME `kanji_r`
+(`fm7.cpp:1054`), CSP `data_table[(kanjiaddr.d << 1) & 0x1ffff]`
+(`kanjirom.cpp:83`). `$fd20`/`$fd21` are write-only and `$fd22`/`$fd23`
+read-only; the write-only pair is deliberately not decoded for reads, so it
+falls through to `core.v`'s `~IOSn ? 8'hff` default, which is what MAME returns.
+
+**Two traps avoided, both of which this project has already paid for once:**
+
+- The address register latches on the **leading** edge of the write strobe. The
+  `$fd37` register latched on the trailing edge and read back `$00` for ever
+  (P1-4) — a 74LS374 captures there on the schematic and the 6809's data-hold
+  window covers it, but in zero-delay RTL the CPU has already released the bus.
+- The read strobes are qualified by `RDEn`, which `core.v` wires to `RDQEn` —
+  the strobe that spans the edge `mc6809i` latches on. An `E`-qualified read
+  strobe is P0-1, and it has cost three separate bugs (P0-1, P0-4, P4-1e).
+
+**Verified end to end from F-BASIC**, `$fd20` = 64800 through `$fd23` = 64803:
+
+```
+poke64800,8:poke64801,5
+print peek(64802);peek(64803)
+ 238   68              <- $ee $44, exactly kanji.rom[$0805 << 1]
+
+poke64800,16:poke64801,0
+print peek(64802);peek(64803)
+ 0   16                <- $00 $10, exactly kanji.rom[$1000 << 1]
+
+print peek(64800)
+ 255                   <- $ff, write-only, as MAME returns
+```
+
+Two different addresses, so this is not a fixed value. `run_tests.sh` unchanged.
+
+**Two things to know about the cost.** The ROM is 128 KB = **1 Mbit of block
+RAM**, against roughly 5.5 Mbit of M10K on the DE10-Nano's Cyclone V — a real
+fraction of the budget, and it wants watching after the flip-flop blowup that
+`d5b09ca` had to fix in the FDC sector index. And the kanji ROM is *optional*
+expansion hardware on a real FM-7 (MAME loads it `ROM_LOAD_OPTIONAL`, CSP gates
+it behind `connect_kanjiroml1`), so **software probes for it** — making it
+present can change what a title does. The 8-row regression is unchanged, but a
+re-sweep against P4-14's numbers is the honest check and has not been run yet.
 
 ### P3-4 [read] `$fd06`/`$fd07` claim to be an 8251 but are a stub
 

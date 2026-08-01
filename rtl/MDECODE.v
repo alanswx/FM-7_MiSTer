@@ -25,7 +25,11 @@ module MDECODE (
   output RFD03n,
   output RFD05n,
   output RFD0En,
-  output RFD0Fn
+  output RFD0Fn,
+  output WFD20n,
+  output WFD21n,
+  output RFD22n,
+  output RFD23n
 );
 
 wire m55_q8 = ~&{ MADDRBUS[15:10], ~MADDRBUS[9], MADDRBUS[8] };
@@ -94,6 +98,34 @@ x74138 x74138_m52 (
 // from $fd30-$fd37, MADDRBUS[2:0] == 7 picks $fd37, and WTQEn qualifies it as a
 // write so the strobe is asserted only while the CPU is driving data.
 assign WFD37n = ~(m22_q8 & ~MADDRBUS[3] & (&MADDRBUS[2:0]) & ~WTQEn);
+
+// $fd20-$fd23, the kanji ROM window (P3-3).
+//
+//   $fd20 write : glyph address, high byte
+//   $fd21 write : glyph address, low byte
+//   $fd22 read  : first  byte of the 16x16 glyph
+//   $fd23 read  : second byte
+//
+// MAME `kanji_r`/`kanji_w` (fm7.cpp:1054-1094) and CSP `kanjirom.cpp:83` agree
+// exactly, including that $fd20/$fd21 are write-only and $fd22/$fd23 are
+// read-only. Nothing decodes the write-only pair for reads here, so they fall
+// through to core.v's `~IOSn ? 8'hff` default, which is what MAME returns.
+//
+// The address term: inside IOSn, bits 7:6 = 00 (m54_q11 low), bit 5 = 1,
+// bit 4 = 0, bits 3:2 = 00. That is $fd20-$fd23 with bits 1:0 selecting the
+// register. Note this deliberately does NOT reuse m22_q8, which is the
+// $fd30-$fd3f term.
+wire fd2xn = m55_q8 | m54_q11 | ~MADDRBUS[5] | MADDRBUS[4]
+                    | MADDRBUS[3] | MADDRBUS[2];
+
+// Writes are qualified by WTQEn so the strobe is asserted only while the CPU is
+// driving data, and reads by RDEn -- which core.v wires to RDQEn, the strobe
+// that spans the edge mc6809i latches on. Getting that wrong is P0-1, and it
+// has already cost this project three separate bugs.
+assign WFD20n = ~(~fd2xn & ~MADDRBUS[1] & ~MADDRBUS[0] & ~WTQEn);
+assign WFD21n = ~(~fd2xn & ~MADDRBUS[1] &  MADDRBUS[0] & ~WTQEn);
+assign RFD22n = ~(~fd2xn &  MADDRBUS[1] & ~MADDRBUS[0] & ~RDEn);
+assign RFD23n = ~(~fd2xn &  MADDRBUS[1] &  MADDRBUS[0] & ~RDEn);
 
 // This part was supposed to be implemented in the SOUND page if we follow schematics.
 

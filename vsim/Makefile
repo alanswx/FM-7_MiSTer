@@ -169,6 +169,7 @@ V_SRC = \
 	$(RTL)/FDC.v \
 	$(RTL)/FLAGS.v \
 	$(RTL)/KEYBOARD.v \
+	$(RTL)/KANJI.v \
 	$(RTL)/m139.v \
 	$(RTL)/MB60H010.v \
 	$(RTL)/mc6809i.v \
