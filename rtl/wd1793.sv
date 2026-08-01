@@ -832,16 +832,16 @@ reg        scan_active = 0;
 reg [19:0] scan_addr;
 reg        scan_wr;
 
-reg  [1:0] edsk_sizecode = 0;      // sector size: 0=128K, 1=256K, 2=512K, 3=1024K
+wire [1:0] edsk_sizecode;          // sector size: 0=128K, 1=256K, 2=512K, 3=1024K
 // LOCAL ADDITION (FM-7_MiSTer): {ID CRC error, data CRC error} for this sector,
 // from the .d77 per-sector status byte. Always 0 for EDSK, which has no
 // equivalent field.
-reg  [1:0] edsk_crc = 0;
-reg        edsk_side = 0;          // Side number (0 or 1)
-reg  [6:0] edsk_track = 0;         // Track number
-reg  [7:0] edsk_sector = 0;        // Sector number 0..15
-reg [19:0] edsk_offset = 0;
-reg  [7:0] edsk_trackf = 0, edsk_sidef = 0;
+wire [1:0] edsk_crc;
+wire       edsk_side;              // Side number (0 or 1)
+wire [6:0] edsk_track;             // Track number
+wire [7:0] edsk_sector;            // Sector number 0..15
+wire[19:0] edsk_offset;
+wire [7:0] edsk_trackf, edsk_sidef;
 
 reg [10:0] edsk_addr, edsk_start;
 
@@ -869,12 +869,38 @@ assign     fmt_wp = d77_wp;
 generate
 	if(EDSK) begin
 		wire [7:0] scan_data = RWMODE ? buff_dout : input_data;
-		// 56 rather than the original 54 bits: the extra two are edsk_crc.
-		reg [55:0] edsk[1992];
+		// The sector index has two independent producers (EDSK and D77), which
+		// prevented Quartus 17 from inferring the old reg [55:0] edsk[1992] as
+		// RAM. It became 111,552 flip-flops and made the design require 278% of
+		// the device. Funnel both parsers through one registered write port and
+		// use the core's explicit Cyclone V altsyncram wrapper.
+		reg         edsk_wren = 0;
+		reg  [10:0] edsk_wraddr;
+		reg  [55:0] edsk_wrdata;
+		wire [55:0] edsk_q;
+
+		dpram #(
+			.DATAWIDTH(56),
+			.ADDRWIDTH(11),
+			.NUMWORDS(2048)
+		) edsk_ram (
+			.clock     (clk_sys),
+			.address_a (edsk_wraddr),
+			.data_a    (edsk_wrdata),
+			.wren_a    (edsk_wren),
+			.q_a       (),
+			.address_b (edsk_addr),
+			.data_b    (56'd0),
+			.wren_b    (1'b0),
+			.q_b       (edsk_q)
+		);
+
+		assign {edsk_track,edsk_side,edsk_trackf,edsk_sidef,edsk_sector,
+		        edsk_sizecode,edsk_crc,edsk_offset} = edsk_q;
+
 		reg  [7:0] spt[166];
 
 		always @(posedge clk_sys) begin
-			{edsk_track,edsk_side,edsk_trackf,edsk_sidef,edsk_sector,edsk_sizecode,edsk_crc,edsk_offset} <= edsk[edsk_addr];
 			edsk_spt <= spt[spt_addr];
 		end
 
@@ -968,6 +994,7 @@ generate
 			reg        clr_run;
 
 			old_active <= scan_active;
+			edsk_wren <= 0;
 `ifdef DEBUG_FDC_SCAN
 			if(~scan_active & old_active)
 				$display("D77SCAN done: fmt=%0d bytes=%0d tracks=%0d sectors=%0d spt_size=%0d wp=%0d",
@@ -1133,7 +1160,9 @@ generate
 												// still reports the lie to READ ADDRESS.
 												// Data begins at the very next byte.
 												if(edsk_size < 11'd1992) begin
-													edsk[edsk_size] <= {d_track, d_side, d_C, d_H, d_R, d_N, d_crc, scan_addr + 20'd1};
+													edsk_wren   <= 1;
+													edsk_wraddr <= edsk_size;
+													edsk_wrdata <= {d_track, d_side, d_C, d_H, d_R, d_N, d_crc, scan_addr + 20'd1};
 													edsk_size <= edsk_size + 1'd1;
 `ifdef DEBUG_FDC_SCAN
 													$display("D77SEC %0d %0d %0d %0d %0d %0d %0d %0d",
@@ -1204,7 +1233,9 @@ generate
 										6: size_lo <= scan_data;
 										7: begin
 												if({scan_data, size_lo}) begin
-													edsk[secpos] <= {track,side,trackf,sidef,sector,sizecode,2'b00,offset1};
+													edsk_wren   <= 1;
+													edsk_wraddr <= secpos;
+													edsk_wrdata <= {track,side,trackf,sidef,sector,sizecode,2'b00,offset1};
 													edsk_size <= edsk_size + 1'd1;
 													offset <= offset + {scan_data, size_lo};
 												end

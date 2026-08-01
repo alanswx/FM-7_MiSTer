@@ -281,13 +281,11 @@ If it reappears, delete it again; it is not the list to maintain. Nothing was
 lost: every entry was already in `files.qip`, including `rtl/pll.v -library pll`,
 which `rtl/pll.qip` supplies properly with the library qualifier anyway.
 
-**`rtl/wd1793_dpram.v` is deliberately NOT in `files.qip`.** The name is
-misleading: it defines a module called `dpram`, an `altsyncram` wrapper that
-nothing instantiates. The `wd1793_dpram` that `wd1793.sv` actually uses is
-defined at the bottom of `wd1793.sv` itself as inferred dual-port RAM, so the
-file is self-contained. Listing the stray file would only drag an unused Altera
-primitive into synthesis. It is still in the `vsim` file list, harmlessly, since
-Verilator never elaborates an uninstantiated module.
+**`rtl/wd1793_dpram.v` is now in `files.qip`.** Its `dpram` module wraps
+Cyclone V `altsyncram` and implements the 2048 x 56-bit EDSK/D77 sector index.
+Quartus 17 could not infer that table from the two parser write paths and instead
+created 111,552 flip-flops. The wrapper has a behavioral `VERILATOR` branch so
+the same WD1793 instantiation remains usable in simulation.
 
 Verified both tops connect every one of `core`'s 28 ports, with none left over.
 

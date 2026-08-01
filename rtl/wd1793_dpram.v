@@ -14,6 +14,30 @@ module dpram #(parameter DATAWIDTH=8, ADDRWIDTH=8, NUMWORDS=1<<ADDRWIDTH, MEM_IN
 	output [DATAWIDTH-1:0] q_b
 );
 
+`ifdef VERILATOR
+reg [DATAWIDTH-1:0] ram [0:NUMWORDS-1];
+reg [DATAWIDTH-1:0] q_a_r;
+reg [DATAWIDTH-1:0] q_b_r;
+
+assign q_a = q_a_r;
+assign q_b = q_b_r;
+
+always @(posedge clock) begin
+	if(wren_a) begin
+		ram[address_a] <= data_a;
+		q_a_r <= data_a;
+	end else begin
+		q_a_r <= ram[address_a];
+	end
+
+	if(wren_b) begin
+		ram[address_b] <= data_b;
+		q_b_r <= data_b;
+	end else begin
+		q_b_r <= ram[address_b];
+	end
+end
+`else
 altsyncram	altsyncram_component (
 			.address_a (address_a),
 			.address_b (address_b),
@@ -67,6 +91,7 @@ defparam
 	altsyncram_component.read_during_write_mode_mixed_ports = "DONT_CARE",
 	altsyncram_component.read_during_write_mode_port_a = "NEW_DATA_NO_NBE_READ",
 	altsyncram_component.read_during_write_mode_port_b = "NEW_DATA_NO_NBE_READ";
+`endif
 
 
 endmodule
