@@ -649,10 +649,17 @@ disks that *should not* boot:
 |---|---|
 | 108 | FM-7 images at a healthy rate with a blank screen |
 | −13 | boot sector is a deliberate **halt stub** — not bootable by design |
-| −8 | user/save/`{run NAME}` disks by name, not caught by the stub test |
-| **87** | genuine "should boot and does not" |
-| (17) | of those 87 are marked `[b]`, a known-bad dump |
-| **70** | good dumps of bootable disks that come up blank |
+| −35 | **secondary disk of a multi-disk set** — `(Disk 2..9)`, `(Disk B..Z)`, `- Data)`, `- Scenario)`, `(User disk)`, `{run NAME}` |
+| **60** | genuine "should boot and does not" |
+| (14) | of those 60 are marked `[b]`, a known-bad dump |
+| **46** | primary, good-dump disks that should boot and come up blank |
+
+The secondary disks are worth understanding rather than just filtering. Their
+boot sector is not a halt stub, it is simply **not code** — `DNA (Disk B)` is
+256 zero bytes, `Take Out Vol. 7 (Disk B)` is pattern data, `Alpha` is
+`86 b9 b7 ff f5 ...`. The boot ROM loads it at `$0100` and jumps in, so the
+machine executes data as instructions and falls quiet at ~3518 I/O cycles.
+That is what real hardware does with a data disk, and it is not a defect.
 
 **The halt-stub finding is the useful part**, and `vsim/sweep/bootsector.py`
 tests for it directly from the image. 31 disks in the collection have a track 0
@@ -672,9 +679,48 @@ loop and shows a blank screen, which is **exactly right**. Their signature is
 main 6399 / sub 8721 / 3519 I/O cycles, identical across every one of them, and
 a `--pc-profile` puts 3841350 of the main CPU's instructions on `$0107` alone.
 
-So the honest remaining target is **70** titles, not 108. That is still the
-biggest bucket and still the P4-8 shape — loads fine, never transfers control —
-but do not chase a disk whose boot sector asked to halt.
+So the honest remaining target is **46** titles, not 108.
+
+**And those 46 are not one bug.** Measuring the sub handshake state at the end
+of each run splits them cleanly:
+
+| | |
+|---|---|
+| 62 of 87 | `BUSY=0`, sub not halted, **fewer than 20 `$d40a` accesses in 700 frames** — the main CPU never talks to the sub at all |
+| 10 | `BUSY=1` with real `$d40a` traffic — a live handshake that has not finished |
+| 2 | the 1942 signature: `BUSY=1`, `SHALTACn=1`, near-zero `$d40a` |
+
+So the dominant failure is **upstream of the display entirely**: the main CPU
+never gets far enough to ask the sub to draw. Chasing the video path for these
+is wasted effort.
+
+**A large sub-group of those is a main-CPU runaway, and it has a signature.**
+Titles with a *low* main rate (~3700, below the 4400-5800 healthy band), sub
+**exactly 8721**, and a *huge* I/O count (2-4M) turn out to be executing
+zeroed memory:
+
+```
+$00f2  00 00    NEG  <$00
+$00f4  00 00    NEG  <$00
+$00f6  00 00    NEG  <$00
+```
+
+Opcode `00 00` is `NEG` direct-page — i.e. the CPU jumped into cleared RAM and
+is executing zeros. With `DP=$fd` the operand is `$fd00`, so every one of those
+is a read-modify-write on an I/O port, which is exactly why the I/O count is in
+the millions and the instruction rate is *below* normal: `NEG` is slow. Sub
+= 8721 exactly is the sub sitting in its ROM idle loop at `$e13e`-`$e148`,
+never given work.
+
+Confirmed on Xevious (`$00b8`), Tritorn (`$00f2`) and Hokuto no Ken (`$e5db`).
+Wing Man 2 and Thunder Force share the rate/IO profile; Thunder Force is
+actually different — a decrypt loop at `$010a LDA ,X / EORA #$93 / BNE` — so
+check each rather than assuming.
+
+**This is the same class as P4-7 (CHAN.POP) and P4-11 (Arion)**, and it now has
+five or six more instances to compare against, which is a much better position
+than one title. `sub == 8721` and `NEG <$00` in the instruction tail are the two
+things to grep for.
 
 *(A trap in the tooling itself, worth the same warning as the rest: some of
 these archives unpack into an `alts/` subdirectory, so a flat `os.listdir` over
