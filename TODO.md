@@ -221,6 +221,63 @@ and F set waits forever by definition, which is exactly right behaviour.
 So nothing to fix here. What remains is why Arion crashes into page zero in the
 first place, which is an ordinary per-title question and low priority.
 
+### P4-12 [verified] Second breadth sweep: 18 titles, triaged by instruction rate
+
+Sorted by main/frame rather than by screenshot, per the lesson from P4-11. The
+rate turns out to separate three distinct failure modes that a screenshot cannot:
+
+| main/f | sub/f | png | title |
+|---|---|---|---|
+| **1049** | 8721 | 3790 | Solitaire Royale |
+| 1913 | 8718 | 3976 | Daisenryaku FM |
+| 1965 | 7011 | 3790 | Miner 2049er |
+| 2021 | 8529 | 4401 | Psy-O-Blade (FM77AV) |
+| 3690-4963 | ~8700 | 3790 | Hokuto no Ken, Relics, Penguin-kun Wars, Riglas, Lupin Sansei, Might and Magic |
+| 4836 | 7983 | 5068 | Castle Excellent |
+| 4858 | 8117 | 5228 | Soukoban 2 |
+| 5018 | 6630 | **7832** | **The Castle & Castle Excellent** |
+| 5278 | 7871 | **26335** | **Hydlide II** |
+| 4474 | 8424 | 4831 | Space Harrier (FM77AV) |
+
+**Reading it:** a *low* rate with a *blank* screen is the P4-11 crash signature
+(Solitaire Royale at 1049 matches Arion's 1087 almost exactly -- expect a `CWAI`
+in page zero). A low rate *with* content is a title idling at a screen it has
+already drawn (Daisenryaku, Psy-O-Blade). A *normal* rate with a blank screen is
+something else again -- those titles are executing happily and choosing not to
+draw.
+
+**Two new titles render properly:**
+
+- **The Castle & Castle Excellent** -- a clean menu, colour, and Japanese
+  katakana, all legible.
+- **Hydlide II** -- by far the richest screen the core has produced: the
+  HYDLIDE logo, an ornate full-screen border, a story panel and a right-hand
+  status bar (LIFE / STR / MAGIC / FORTH / EXP / STATUS / ATTACK).
+
+### P4-13 [NEXT] Hydlide II drops characters -- a visible handle on the byte loss
+
+Hydlide II's story text comes out with characters missing:
+
+```
+T  S  S A STORY OCCURR N N
+  WAS AT WONACR UL WORL
+```
+
+against something like "THIS IS A STORY OCCURRED IN ... WAS A WONDERFUL WORLD".
+Whole glyphs are absent, not corrupted.
+
+**This is the best regression target yet for P4-1's residual byte loss** (the
+~3-of-433 the shared-window pump still costs Thexder). It is visible directly,
+there is a screenful of it to compare rather than three bytes, and it is
+deterministic.
+
+Worth noting what it is *not*: The Castle & Castle Excellent draws a page of
+console text on the same core with only one dropped character, so this is not a
+blanket text failure. Hydlide II draws its text as graphics inside a framed
+panel, so the loss is in that path -- either draw commands lost across the
+main/sub window, or VRAM writes lost under it. Comparing the two titles' paths
+is the obvious way in.
+
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
 `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip` holds **156 floppy titles**
