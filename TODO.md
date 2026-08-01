@@ -16,6 +16,98 @@ Reference shorthand:
 
 ---
 
+## Handoff — read this first
+
+**State.** The core boots F-BASIC (cassette and disk), runs games from `.d77`,
+and boots OS-9's kernel. Six titles render real screens. The FDC, the main/sub
+handshake, the shared-RAM aperture, both keyboard routings and the boot-ROM bank
+select are all verified working against the reference emulators. What remains is
+mostly per-title software archaeology plus a handful of scoped RTL items.
+
+**Build and run.**
+
+```sh
+cd vsim && make                 # then ./obj_dir/Vemu --help
+./run_tests.sh                  # 8-row regression; screenshots land in shots/
+```
+
+`run_tests.sh` is the guard rail — run it before and after any RTL change and
+diff the numbers, not just the screenshots. All 8 rows should be unchanged
+unless you meant to change them.
+
+**Test images.** `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip` holds **156
+floppy titles** as nested `.7z` per game. Extract with a *bracket-free* pattern —
+`[FD]` is a shell/unzip character class, so `*[FD]*.7z` silently matches the
+wrong entries:
+
+```sh
+unzip -o -j -q "$Z" "*Hydlide II*FD*.7z" -d . && 7z x -y -o. *.7z
+```
+
+**Open work, in the order I would take it:**
+
+| | where | why |
+|---|---|---|
+| **P4-13** | Hydlide II drops characters | Best handle on the long-standing shared-window byte loss. Two mechanisms already eliminated by measurement; the command-block protocol is what is left. The Castle & Castle Excellent is the working control. |
+| **P2-1** | Ctrl / Graph / Kana tables | Mechanical, well-scoped, and now clearly worth it since interrupt-driven keyboard delivery works on both routes. |
+| **P4-10** | OS-9 stops after its kernel banner | Kernel runs, console appears briefly, input never lands. Not a hang. |
+| **P4-8** | Ys never enters its loaded program | Loads 24 KB to `$8000-$dfff` correctly, then never jumps there. |
+| **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. |
+| **P4-3** | PSG `sel_n_i` pitch | Needs a human ear, cannot be settled in sim. |
+| | second drive, 2DD, multi-disk `.d88` | Unstarted. |
+
+### Measurement traps — every one of these cost real time
+
+More bugs in this project were *mis-diagnosed* than were hard to fix. All of
+these produced a confident wrong answer at least once:
+
+1. **A trace that hits `--trace-max` is truncated from the START of the run.**
+   If the line count equals the cap, you are looking at the earliest frames, not
+   the ones you asked for. Always check the frame range in the output.
+2. **`--trace-cpu` prints one instruction late.** The log therefore does *not*
+   contain the instruction that stopped the CPU. For "why did execution end",
+   read the CPU state (`--vcd`), not the disassembly.
+3. **`DEBUG_*` and `TRACE` become `+define+` args baked in when Verilator runs.**
+   `make DEBUG_FDC=1` after a plain `make` relinks the old model with the old
+   defines — clean build, clean run, no output, indistinguishable from a real
+   null result. `touch` a file in the target module first and verify with
+   `grep -l <MARKER> obj_dir/*.cpp`.
+4. **Check frame numbers line up before concluding a value did not propagate.**
+   Comparing a sub-CPU read at frame 1074 against a main-CPU write at frame 1076
+   "proves" a lost write that was never lost.
+5. **A low VRAM write count proves nothing.** Thexder displays a full title
+   screen while writing *zero* VRAM bytes — the image is already there. Only a
+   cumulative count from reset, with the data values checked, means anything.
+6. **Reconstructing state from a bus log is not the same as asking the RTL.** A
+   Python decoder inferring `(track, side, sector)` from `$fd18-$fd1b` traffic
+   reported sectors returning the wrong side's data; a `$display` in the RTL's
+   own match arm showed all 19 matches exact. Instrument the decision, not its
+   inputs.
+7. **Triage a sweep by `main/frame`, not by screenshot.** Healthy titles sit at
+   4400-5800. Low rate + blank screen is a crash (expect a `CWAI` in page zero);
+   low rate + content is a title idling at a screen it already drew; normal rate
+   + blank is something else again. A screenshot cannot tell these apart.
+
+### Working practices
+
+- **Do not assume MAME is correct.** It is the most readable I/O map, but its
+  FM-7 driver is unreliable and its VRAM plane order is the odd one out (P1-5).
+  CSP is the primary authority; 77AVEMU is the tiebreaker.
+- **These files are CRLF** and must stay that way: `rtl/FLAGS.v`, `rtl/MFD.v`,
+  `rtl/SRAM.v`, `rtl/ROMS.v`, `rtl/CLKCTRL.v`, `files.qip`, `FM-7_MiSTer.qsf`.
+  Check with `file` after any scripted edit.
+- **`files.qip` is the canonical Quartus file list**, not the `.qsf` — the qsf
+  sources it, and the IDE re-injects a duplicate list whenever the project is
+  opened in the GUI. Delete that when it reappears (P4-6).
+- **macOS `awk` is BSD awk**, not gawk: no `asort()`, no 3-arg `match()`. A
+  script using them fails silently if stderr is discarded.
+- **`--vcd` exists** (`make clean && make TRACE=1`) and is windowed by
+  `--trace-from`/`--trace-until`. Two frames is ~700 MB, so always window it. It
+  has settled two questions that several rounds of `$display` could not — reach
+  for it after the second failed printf, not the fifth.
+
+---
+
 ## Where the core is right now
 
 **The core boots F-BASIC and runs programs.**
@@ -99,6 +191,30 @@ which is the right shape.
 **The 77AVEMU demo disk boots too**, showing `YS-DOS V1.0 by CaptainYS 2019`,
 which is a useful independent check: it is the reference emulator author's own
 image, not a commercial title.
+
+### What renders today
+
+| title | what you get |
+|---|---|
+| **Thexder** (Game Arts) | full title artwork and credit line |
+| **Archon** (BPS) | full title screen -- logo, artwork, border |
+| **Hydlide II** (T&E Soft) | richest screen the core produces: logo, ornate border, story panel, LIFE/STR/MAGIC status bar. **Drops characters in the story text -- see P4-13** |
+| **The Castle & Castle Excellent** | clean menu, colour, Japanese katakana |
+| **`[OS]` F-BASIC v3.0 L10** (Fujitsu) | official first-party disk, boots Disk BASIC |
+| `[Compilation]` Game 013 | Disk BASIC to `Ready`; `FILES` lists the directory |
+| **`[OS]` OS-9 Level 1** | `* OS-9 Kernel Started !` with `--bootrom 2`. Stops there -- P4-10 |
+| Amnork, A-Train, Castle Excellent, Soukoban 2 | credits / load progress / partial screens |
+
+### Fixes this session
+
+| | |
+|---|---|
+| `ab290b7` | FDC dropped one of two back-to-back register writes. The core edge-detects `wr` *as it samples it*, so a strobe that goes low and high between two `ce` ticks is never an edge. Ys sets track+sector with one 16-bit store and lost every sector write. |
+| `9026de8` | `files.qip` was missing `rtl/wd1793.sv` — **the Quartus build could not have compiled the FDC**. |
+| `a5a9b27` | `(int)main_time` overflowed INT_MAX at frame ~2666, so `BeforeEval`'s `cycles < 2000` guard went permanently true and the block device silently stopped serving. Invalidated every long run. |
+| `f92d112` | `$fd03` bit 2 read the opposite sense to its three neighbours, costing keyboard input to any game with its own ISR. |
+| `bb25cba` | M152 bank select — the OSD's four boot-ROM settings are now four real banks. Boots OS-9. Also found `boot_bas.rom` is a **bad dump** whose last two bytes are a corrupt reset vector. |
+| `e8af46c` | Windowed VCD tracing — the Makefile advertised `TRACE=1` but no VCD code existed. |
 
 ### P4-6 [FIXED] The Quartus build could not have compiled the FDC
 
