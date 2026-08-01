@@ -190,7 +190,11 @@ always @* begin
         9'h41: begin { P0, kdata } = 9'h087; end // ,
         9'h49: begin { P0, kdata } = 9'h088; end // .
         9'h4a: begin { P0, kdata } = 9'h097; end // /
-        9'h14a: begin { P0, kdata } = 9'h097; end // keypad /
+        // The keypad '/' is its own physical key on an FM-7 (phy $37) and
+        // graph_key gives it $91, not the main '/' key's $97. The unshifted
+        // table conflates the two because they both type '/'; under GRAPH they
+        // differ. The rest of the numeric keypad has no PS/2 mapping at all.
+        9'h14a: begin { P0, kdata } = 9'h091; end // keypad /
 
         9'h29: begin { P0, kdata } = 9'h020; end // spacebar
         9'h170: begin { P0, kdata } = 9'h012; end // insert
@@ -240,6 +244,7 @@ always @* begin
         9'h41: begin { P0, kdata } = 9'h0a4; end // , -> ideographic comma
         9'h49: begin { P0, kdata } = 9'h0a1; end // . -> ideographic full stop
         9'h4a: begin { P0, kdata } = 9'h0a5; end // / -> middle dot
+        9'h14a: begin { P0, kdata } = 9'h02f; end // keypad / (phy $37) stays '/'
 
         9'h66: begin { P0, kdata } = 9'h008; end // backspace
         9'h0d: begin { P0, kdata } = 9'h009; end // tab
@@ -312,6 +317,7 @@ always @* begin
         9'h41: begin { P0, kdata } = 9'h0c8; end // , -> ne
         9'h49: begin { P0, kdata } = 9'h0d9; end // . -> ru
         9'h4a: begin { P0, kdata } = 9'h0d2; end // / -> me
+        9'h14a: begin { P0, kdata } = 9'h02f; end // keypad / (phy $37) stays '/'
 
         9'h29: begin { P0, kdata } = 9'h020; end // spacebar
         9'h170: begin { P0, kdata } = 9'h012; end // insert
