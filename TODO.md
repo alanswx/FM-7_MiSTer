@@ -19,10 +19,17 @@ Reference shorthand:
 ## Handoff — read this first
 
 **State.** The core boots F-BASIC (cassette and disk), runs games from `.d77`,
-and boots OS-9's kernel. Six titles render real screens. The FDC, the main/sub
-handshake, the shared-RAM aperture, both keyboard routings and the boot-ROM bank
-select are all verified working against the reference emulators. What remains is
-mostly per-title software archaeology plus a handful of scoped RTL items.
+and boots OS-9's kernel. **33 of the 221 FM-7 disk images in the Neo Kobe
+collection render a real screen** (P4-14). The FDC, the main/sub handshake and
+its BUSY completion flag, the shared-RAM aperture, the full keyboard (both
+routings, shift/ctrl/graph/kana/break) and the boot-ROM bank select are all
+verified working against the reference emulators. What remains is mostly
+per-title software archaeology plus a handful of scoped RTL items.
+
+The single biggest remaining bucket is **108 FM-7 images that run at a healthy
+4400-5800 instructions/frame and draw nothing** — the P4-8 shape, "loads
+correctly, never transfers control", not a crash. That is one shared cause away
+from being a large win, or a hundred separate ones.
 
 **Build and run.**
 
@@ -35,25 +42,28 @@ cd vsim && make                 # then ./obj_dir/Vemu --help
 diff the numbers, not just the screenshots. All 8 rows should be unchanged
 unless you meant to change them.
 
-**Test images.** `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip` holds **156
-floppy titles** as nested `.7z` per game. Extract with a *bracket-free* pattern —
-`[FD]` is a shell/unzip character class, so `*[FD]*.7z` silently matches the
-wrong entries:
+**Test images.** `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip` holds 630
+`.7z` archives, of which **195 are `[FD]` floppy sets** unpacking to **350 disk
+images** (221 FM-7, 129 FM77AV). Extract with a *bracket-free* pattern — `[FD]`
+is a shell/unzip character class, so `*[FD]*.7z` silently matches the wrong
+entries:
 
 ```sh
 unzip -o -j -q "$Z" "*Hydlide II*FD*.7z" -d . && 7z x -y -o. *.7z
 ```
 
+For the whole collection, extract every `.7z` and filter by name afterwards
+rather than trying to glob the brackets — that is what the sweep script does.
+
 **Open work, in the order I would take it:**
 
 | | where | why |
 |---|---|---|
-| **P4-13** | Hydlide II drops characters | Best handle on the long-standing shared-window byte loss. Two mechanisms already eliminated by measurement; the command-block protocol is what is left. The Castle & Castle Excellent is the working control. |
-| **P2-1** | Ctrl / Graph / Kana tables | Mechanical, well-scoped, and now clearly worth it since interrupt-driven keyboard delivery works on both routes. |
-| **P4-10** | OS-9 stops after its kernel banner | Kernel runs, console appears briefly, input never lands. Not a hang. |
+| **P4-10** | OS-9 stops after its kernel banner | Kernel runs, a cursor now appears on disk 1, input never lands. Not a hang. |
 | **P4-8** | Ys never enters its loaded program | Loads 24 KB to `$8000-$dfff` correctly, then never jumps there. |
 | **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. |
 | **P4-3** | PSG `sel_n_i` pitch | Needs a human ear, cannot be settled in sim. |
+| **P3-3** | Kanji ROM `$fd20-$fd23` | Not decoded at all, and `rtl/roms/` has no kanji ROM. Needed for any real Japanese text. |
 | | second drive, 2DD, multi-disk `.d88` | Unstarted. |
 
 ### Measurement traps — every one of these cost real time
@@ -87,6 +97,32 @@ these produced a confident wrong answer at least once:
    4400-5800. Low rate + blank screen is a crash (expect a `CWAI` in page zero);
    low rate + content is a title idling at a screen it already drew; normal rate
    + blank is something else again. A screenshot cannot tell these apart.
+8. **A proxy metric can stay flat while the bug is being fixed.** P4-13 was
+   framed around "the main writes 6891 payload bytes and the sub reads 5833, a
+   15% shortfall". The fix took that to 5878/6891 — 84.6% to 85.3%, near enough
+   nothing — while the screen went from unreadable to correct. Commands vary in
+   length, so the sub never had to read every byte of every block and the ratio
+   was never measuring what it looked like it measured. Check the *outcome*, and
+   only trust a proxy you have shown tracks it.
+9. **`vsim` must be run from `vsim/`, and running it from anywhere else fails
+   *silently and plausibly*.** The Verilog loads every ROM with `$readmem` on
+   the relative path `./roms/...`. From another directory Verilator prints
+   `$readmem file not found` as a **warning**, not an error; the ROMs come up
+   empty, the machine runs away into the `$fdxx` window, and the run still
+   completes, still writes a screenshot, and still reports plausible instruction
+   counts. A 350-title sweep driven from the repo root returned **3355 main /
+   2923 sub and a blank 3790-byte PNG for every single title** — which reads as
+   a uniform "nothing boots on this core" result rather than as a broken
+   harness, and is far more dangerous than a crash. Any script driving the
+   simulator must `cd` to `vsim/` and check its log for `readmem file not
+   found`.
+10. **`grep` a trace for a hex address and you will match cycle counters.**
+   `grep -c d404` over a `--trace-mem-sub` log reports a healthy count of lines
+   like `cycles 86d4041 reading D0` — the address appears as a substring of a
+   cycle number. It reads exactly like "the port is being used". Anchor on the
+   trace format instead: `grep -cE 'smem .* \$d404'`. Related: the main-CPU
+   trace prints `mem` followed by **two** spaces, so `grep ' mem W '` silently
+   matches nothing and looks like a clean null result.
 
 ### Working practices
 
@@ -134,9 +170,9 @@ read path ever misbehaves, check its qualifier first.
 
 What works now: both `mc6809i` cores; the `m139` main-bus decode and the
 `SDECODE` sub-side I/O map (both byte-for-byte what MAME maps); the shared-RAM
-aperture and the main/sub halt handshake; the raster, character generator and
-palette; the `$fd03` interrupt cause register; and the keyboard, for the
-unshifted character set.
+aperture, the main/sub halt handshake and its BUSY completion flag; the raster,
+character generator and palette; the `$fd03` interrupt cause register; and the
+keyboard in full — unshifted, shift, ctrl, graph, kana and the break key.
 
 **The floppy path now works.** `.d77` images mount, are parsed into a per-sector
 table at mount time, and the DOS boot ROM reads real sector data out of them —
@@ -194,21 +230,34 @@ image, not a commercial title.
 
 ### What renders today
 
+**33 of the 221 FM-7 disk images in the collection render a real screen** — see
+P4-14 for the full table. The ones worth calling out:
+
 | title | what you get |
 |---|---|
-| **Thexder** (Game Arts) | full title artwork and credit line |
+| **Thexder** (Game Arts) | full title artwork and credit line. Richest screen in the collection |
+| **Hydlide II** (T&E Soft) | logo, ornate border, story panel, LIFE/STR/MAGIC status bar, and **the story text now reads correctly** (was P4-13) |
+| **Ys** (Falcom) | in-game furniture: ornate border, `H.P / EXP / GOLD`, PLAYER and ENEMY gauges. Needs `--key '820:@SPACE'`. Play area still empty -- P4-8 |
 | **Archon** (BPS) | full title screen -- logo, artwork, border |
-| **Hydlide II** (T&E Soft) | richest screen the core produces: logo, ornate border, story panel, LIFE/STR/MAGIC status bar. **Drops characters in the story text -- see P4-13** |
+| **Mugen no Shinzou II** | title artwork with kanji logo |
+| **The Knight of Wonderland** | HummingBird Soft logo and artwork |
+| **Dezeni Land** (Hudson) | HUDSON SOFT splash |
 | **The Castle & Castle Excellent** | clean menu, colour, Japanese katakana |
+| **`[Utility]` File Master FM** | seven dated revisions, all render |
 | **`[OS]` F-BASIC v3.0 L10** (Fujitsu) | official first-party disk, boots Disk BASIC |
 | `[Compilation]` Game 013 | Disk BASIC to `Ready`; `FILES` lists the directory |
-| **`[OS]` OS-9 Level 1** | `* OS-9 Kernel Started !` with `--bootrom 2`. Stops there -- P4-10 |
-| Amnork, A-Train, Castle Excellent, Soukoban 2 | credits / load progress / partial screens |
+| **`[OS]` OS-9 Level 1** | `* OS-9 Kernel Started !` with `--bootrom 2`, plus a cursor. Stops there -- P4-10 |
+| Voodoo Castle, The Palms, Mission Impossible, Strange Odyssey, The Count, DNA, Genmu no Shiro, Pop Lemon, Lovely Gal, Cream Lemon, Templo del Sol, Team AB music disks | title or menu screens |
 
 ### Fixes this session
 
 | | |
 |---|---|
+| `9fc762b` | **The sub BUSY flag was inverted against both references.** `FLAGS.v` held it asynchronously *cleared* for the whole time the sub was halted; MAME and CSP both *set* it on the halt request and hold it until the sub reads `$d40a`. That is the completion handshake, so the main CPU saw "sub idle" the instant it released a halt and could overwrite command blocks the sub had not consumed. **Hydlide II's story text is now legible** — see P4-13. |
+| `c72a312` | `$fd04`'s attention latch was held cleared except during its own read, so the sub's `$d404` attention never reached the main CPU as a FIRQ, and bit 0 read a constant "no interrupt" (P3-2). Correctness only — nothing measured uses it. |
+| `6aad4a8` | CTRL / GRAPH / KANA keyboard tables from CSP, and the break key wired through (P2-1, P2-3). `vsim` gained `--key '400:@CTRL+ac'` modifier chords, without which the tables cannot be tested at all. |
+| `5ac7684` | `ROMS.v`'s boot-ROM/RAM switch was a flip-flop **clocked by reset being asserted**, so it depended on a power-up edge the FPGA build never guaranteed (P0-2). Now a plain synchronous reset-and-load. Cannot be proved in sim — `vsim` manufactures that exact edge — so the evidence is "no regression" plus the argument. |
+| `47abd60` | The keypad `/` is a different FM-7 key from the main `/` and takes a different GRAPH code. Found by `vsim/sweep/check_kbd.py` diffing the tables against CSP; all 202 entries now match exactly (P2-1). |
 | `ab290b7` | FDC dropped one of two back-to-back register writes. The core edge-detects `wr` *as it samples it*, so a strobe that goes low and high between two `ce` ticks is never an edge. Ys sets track+sector with one 16-bit store and lost every sector write. |
 | `9026de8` | `files.qip` was missing `rtl/wd1793.sv` — **the Quartus build could not have compiled the FDC**. |
 | `a5a9b27` | `(int)main_time` overflowed INT_MAX at frame ~2666, so `BeforeEval`'s `cycles < 2000` guard went permanently true and the block device silently stopped serving. Invalidated every long run. |
@@ -293,6 +342,20 @@ both the main (`$fd03` bit 0 -> `$fd01`) and the sub (`$d401` via FIRQ) is
 verified working by other titles (P4-9). OS-9 installs its own drivers, so the
 question is which route its console driver expects and what it polls.
 
+**[UPDATED after the BUSY fix]** With `9fc762b` (P4-13) the picture improves
+slightly but does not resolve: **disk 1 now shows a cursor block on the third
+line**, where before only disk 2 did and disk 1 never did. Rates are 5269 main /
+5975 sub per frame at frame 1380, and the banner is still printed twice with no
+shell. So the console comes up more completely than it did, and the remaining
+problem is still input.
+
+Also measured, and it narrows the question usefully: **OS-9 never writes `$fd02`
+at all** over 1500 frames, so it never selects a keyboard route and simply
+inherits whatever the boot ROM left. Worth confirming which that is and whether
+the console driver agrees with it. *(This one measurement was taken from a run
+that was later killed; the `$fd02` half had completed and printed no matches,
+but re-run it before building on it.)*
+
 Next: find what `$0368`-`$036e` does between the `$fd05` polls -- that is the
 only main-CPU code running besides the wait, so the console loop is in there --
 and check whether OS-9 ever touches `$fd00`/`$fd01`/`$fd02` at all after the
@@ -370,33 +433,81 @@ draw.
   HYDLIDE logo, an ornate full-screen border, a story panel and a right-hand
   status bar (LIFE / STR / MAGIC / FORTH / EXP / STATUS / ATTACK).
 
-### P4-13 [NEXT] Hydlide II drops characters -- a visible handle on the byte loss
+### P4-13 [FIXED] Hydlide II dropped characters -- the sub BUSY flag was inverted
 
-Hydlide II's story text comes out with characters missing:
+Hydlide II's story text used to come out with characters missing:
 
 ```
 T  S  S A STORY OCCURR N N
   WAS AT WONACR UL WORL
 ```
 
-against something like "THIS IS A STORY OCCURRED IN ... WAS A WONDERFUL WORLD".
-Whole glyphs are absent, not corrupted.
+It now reads:
 
-**This is the best regression target yet for P4-1's residual byte loss** (the
-~3-of-433 the shared-window pump still costs Thexder). It is visible directly,
-there is a screenful of it to compare rather than three bytes, and it is
-deterministic.
+```
+THIS IS A STORY OCCURRED IN
+DIFFERENT WORLD FROM OUR LIVE.
+IT WAS A WONDERFUL WORLD
+DOMINATED BY THE SWORD AND
+THE MAGIC. MOST OF WHICH FOUND
+THAT WORLD CALLED FAIRLAND.
+```
 
-Worth noting what it is *not*: The Castle & Castle Excellent draws a page of
-console text on the same core with only one dropped character, so this is not a
-blanket text failure. Hydlide II draws its text as graphics inside a framed
-panel, so the loss is in that path.
+**The cause was `FLAGS.v` clearing the sub-system BUSY flag while the sub was
+halted, when it should have been SET by the halt request.** The old line was
 
-**Measured so far.** Hydlide II does not use Thexder's byte-at-a-time pump; it
-writes structured command blocks to `$fc80`-`$fc8c`. Over 700 frames the main
-writes **6891** payload bytes to `$fc83`-`$fc8f` and the sub reads **5833** back
--- a 15% shortfall. (Not conclusive on its own: commands vary in length, so the
-sub need not read every byte of every block.)
+```verilog
+wire s3 = RESETBn & SHALTACn;   // held the BUSY flip-flop cleared for the halt
+```
+
+Both references do the opposite, and it is the whole completion handshake:
+
+| | |
+|---|---|
+| **MAME** | `subintf_w`: `m_video.sub_halt = data & 0x80; if(data & 0x80) m_video.sub_busy = data & 0x80;` and `sub_busyflag_r` only clears `if(m_video.sub_halt == 0)` |
+| **CSP** | `display.cpp:1879` -- `case SIG_FM7_SUB_HALT: if(flag) { sub_busy = true; }` |
+
+The intended sequence is
+
+```
+main: poll $fd05 bit 7 until CLEAR      -- sub is idle
+main: $fd05 <- $80                      -- halt requested, AND BUSY SET
+main: write the command block to $fc80+
+main: $fd05 <- $00                      -- halt released; BUSY STAYS SET
+sub:  wakes, consumes the command, draws
+sub:  returns to its ROM idle loop, reads $d40a -> BUSY clears
+main: sees bit 7 clear and may send the next command
+```
+
+With BUSY force-cleared during the halt, bit 7 read 0 **the instant the main
+released the halt** -- "sub idle" -- although the sub had not yet executed a
+single instruction of the command. A main CPU looping "wait for idle, halt,
+write, release" therefore overwrote command blocks the sub had not consumed.
+Being a race it cost *some* commands and not others, which is exactly the
+symptom: whole glyphs absent, not corrupted.
+
+The flag is now clocked rather than assembled from a stack of asynchronous
+edges, since it has three inputs (the halt request plus the sub's read and
+write of `$d40a`), so `FLAGS` gains a `CLKSYS` port. `TIMER.v`'s
+`BUSY | ~SHALTACn` for bit 7 stays -- redundant now that the request sets BUSY,
+but MAME ORs `sub_halt` in the same way.
+
+**Thexder improved too**, which is the corroborating evidence: its title
+artwork gains detail and its rate moves 5005 -> 5008 main/frame. That is the
+same residual byte loss (the ~3-of-433 the pump used to cost) easing on the
+title that leans hardest on this window.
+
+**A metric that did NOT show the fix, worth recording.** The write/read ratio
+this entry was originally built on barely moved: the main still writes 6891
+payload bytes to `$fc83`-`$fc8f` over 700 frames and the sub now reads 5878
+against 5833 before -- 84.6% to 85.3%. The screen went from unreadable to
+correct over that same change. Commands vary in length so the sub need not read
+every byte of every block, and the ratio was never a proxy for whether a
+command survived. **Look at the rendered result, not at the byte counts.**
+
+Two mechanisms had already been eliminated by measurement before this, and both
+eliminations were correct -- they are kept below because the measurements are
+reusable.
 
 **The sub-CPU VRAM wait state is NOT the cause -- ruled out by experiment.** The
 theory was that `sub_vram_wait` throttles drawing badly enough to starve the
@@ -437,6 +548,114 @@ the working control to compare against.
 looked like a clean null result. The `DEBUG_SRAM` define had not actually been
 compiled in -- see the warning now at the top of the flag section in
 `vsim/Makefile`. Check `grep -l SRAMSUM obj_dir/*.cpp` before believing silence.)*
+
+### P4-14 [verified] Third breadth sweep: the whole Neo Kobe floppy collection
+
+Every `[FD]` archive in `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip`,
+unpacked to **350 disk images**, each booted at `--bootrom 0` for 700 frames
+with a screenshot at 680. Run against commit `6aad4a8`.
+
+**Split FM-7 from FM77AV before reading any of it.** 129 of the 350 images are
+FM77AV software — a different machine (MMR paging, the MB61VH010 drawing ALU,
+analog palette, 4096-colour mode, YM2203), none of which this core implements
+(P5). Counting those as FM-7 failures is meaningless, and the split is its own
+sanity check on the sweep: FM-7 images produce 33 rich screens, FM77AV images
+produce **one**.
+
+| | FM-7 (221) | FM77AV (129) |
+|---|---|---|
+| renders a rich screen | **33** | 1 |
+| healthy rate, some content | 48 | 30 |
+| healthy rate, drawing nothing | 108 | 82 |
+| low rate with content (idling) | 1 | 2 |
+| low rate, blank (crash — expect a `CWAI`) | 15 | 6 |
+| did not boot, fell back to cassette F-BASIC | 16 | 8 |
+
+**The 33 FM-7 images that render** (main/frame, sub/frame, PNG bytes — PNG size
+is the content proxy; a blank 640x200 raster compresses to ~3790):
+
+| main | sub | png | title |
+|---|---|---|---|
+| 4859 | 6739 | 57826 | **Thexder** |
+| 5277 | 7865 | 28715 | **Hydlide II** (and `[Set 1]`) |
+| 4519 | 4481 | 26146 | **Ys (FM7) (Disk A)** — new, see P4-8 |
+| 4918 | 7318 | 16957 | **Mugen no Shinzou II** — title artwork, kanji logo |
+| 5456 | 6662 | 12286 | Cream Lemon - SF Choujigen Densetsu Rall (Disk 2) |
+| 4420 | 7557 | 11156 | **Archon** |
+| 5035 | 7319 | 10167 | **The Knight of Wonderland** — HummingBird Soft logo |
+| 4915 | 6556 | 9814 | Pop Lemon (Disk 1) |
+| 4960 | 7769 | 9791 | DNA (Disk A) |
+| 4930 | 7182 | 8840 | Voodoo Castle |
+| 5173 | 7171 | 8767 | The Palms |
+| 5072 | 7042 | 8529 | **Dezeni Land** — HUDSON SOFT splash |
+| 4920 | 7230 | 8407 | Mission Impossible |
+| 5059 | 8610 | 8328 | `[Utility]` Expert FM (Construction 2) |
+| 4864 | 7447 | 8080 | Strange Odyssey |
+| 4930 | 7146 | 7939 | Genmu no Shiro |
+| 5018 | 6630 | 7832 | **The Castle & Castle Excellent** |
+| 5131 | 6208 | 7358-7421 | `[Utility]` The File Master FM — seven dated revisions |
+| 4920 | 7402 | 7105 | The Count |
+| 4894 | 7139 | 6763 | Lovely Gal (Disk 1) |
+| 4615-5017 | 6565-8463 | 6373-6607 | Team AB Music Disk — four variants |
+| 4242 | 3265 | 6407 | Templo del Sol - Asteka II (Disk A) |
+
+Spot-checked by eye rather than trusted from the byte count: Thexder, Hydlide II,
+Ys, Archon, Mugen no Shinzou II, The Knight of Wonderland and Dezeni Land all
+show real, legible artwork.
+
+**The largest single failure mode is "healthy rate, drawing nothing"** — 108 of
+221. Those titles are executing at 4400-5800 instructions/frame and choosing not
+to draw, which is the P4-8 shape (loads fine, never transfers control) rather
+than a crash. That is where the next per-title work is.
+
+**The sweep reproduces the earlier numbers exactly**, which is the check that
+the harness is honest: Arion 1087, Solitaire Royale 1049, Miner 2049er 1965,
+Daisenryaku FM 1913, The Castle & Castle Excellent 5018/6630/7832 — all
+identical to what P4-11 and P4-12 recorded.
+
+**A new diagnostic falls out of the crash bucket: `sub = 8721`.** Ten of the
+fifteen crashed FM-7 images report *exactly* 8721 sub instructions/frame, and
+that is the sub CPU idling in its ROM loop with nothing to do. So the pair
+"low main + sub exactly 8721" is a sharper crash signature than the rate alone:
+it says the main died and the sub was never given work, as opposed to the sub
+also being off in a game's own code. The handful with a *different* low sub
+rate — Take Out Vol. 4 (2021/3043), Take Out Vol. 7 (2276/3523), Game 4
+(1866/3633) — are a different failure and worth separating.
+
+**50 images tripped the `RUNAWAY-INTO-IO` guard**, i.e. the main CPU fetched
+instructions from the `$fdxx` window. Undecoded I/O reads return `$ff`, which
+never traps, so a runaway there executes forever instead of crashing. Worth
+noting `Thexder [Alt 1] [b]` is among them while plain `Thexder [b]` is the best
+render in the collection — so it is a per-dump property, not a per-title one.
+
+**Caveats on this sweep, all of which under-report:**
+
+- **One configuration only.** Everything ran at `--bootrom 0` with no keyboard
+  input. Three images are marked `{boot DOS mode}` and need `--bootrom 2`; OS-9
+  is one of them and correctly shows up here as "did not boot".
+- **No input.** Titles waiting at a "press any key" prompt score as blank. Ys
+  needed `--key '820:@SPACE'` to reach the screen credited above and would have
+  scored blank without it.
+- **700 frames.** A slow loader is indistinguishable from one that never draws.
+- Multi-disk sets are counted per image, so a game with a program disk and a
+  scenario disk contributes two rows.
+
+Reproduce:
+
+```sh
+vsim/sweep/sweep.sh /tmp/sweep 12 700      # extract, run, write results.tsv
+vsim/sweep/triage.py /tmp/sweep/results.tsv fm7   # or 'av', or 'all'
+```
+
+**The harness must `cd` to `vsim/` — see measurement trap 9; the first run of
+this sweep produced 350 rows of uniform garbage because it did not.**
+`sweep_one.sh` now does that itself and flags `NOROM` if a run's log mentions
+`readmem file not found`, so the failure cannot be silent a second time.
+
+`vsim/sweep/check_kbd.py` is unrelated to the sweep but lives here for the same
+reason: it diffs `KEYBOARD.v`'s CTRL/GRAPH/KANA tables against CSP's header
+through the PS/2 ↔ physical-key mapping, and it caught a real transcription
+error (P2-1).
 
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
@@ -591,7 +810,56 @@ timer interrupt now being recognised. (A separate attempt to confirm through the
 BASIC clock failed for a silly reason: `print time` is a syntax error, it needs
 `TIME$` and the `$` needs shift.)
 
-### P4-8 [NEXT] Ys runs its own code for thousands of frames and draws nothing
+### P4-8 [NEXT] Ys draws its HUD now, but still never enters its loaded program
+
+**[UPDATED after the BUSY fix]** With `9fc762b` (P4-13) Ys stops being a blank
+screen. At frame 1980, with `--key '820:@SPACE'`, it renders **its in-game
+furniture**: an ornate full-screen border, and a status bar reading
+`H.P  /   EXP  /   GOLD` with `PLAYER` and `ENEMY` gauge bars. 4550 main / 6543
+sub per frame.
+
+```sh
+cd vsim && ./obj_dir/Vemu --headless --bootrom 0 \
+    --disk "Ys (FM7) (Disk A).d77" --key '820:@SPACE' \
+    --stop-at-frame 2000 --screenshot 1980
+```
+
+**The central finding below still stands, though: execution never reaches
+`$8000-$dfff`.** A `--pc-profile` over 2000 frames puts every hot address in
+`$02xx`, `$08xx`, `$10xx`-`$15xx` and `$ff4x`:
+
+| address | count | |
+|---|---|---|
+| `$1155`/`$1158` | 884839 | **now the hottest thing in the run** — the halt-the-sub routine |
+| `$1113`-`$111b` | 662283 | a two-flag wait loop, see below |
+| `$15ef`/`$15f1` | 589824 | |
+| `$ff4d`/`$ff4f` | 317491 | boot ROM |
+| `$1026`-`$102f` | 113422 | the key-wait loop from before |
+
+*(Careful with the "fetched from: RAM 8384178 ROM 720498" line in the run stats
+— it is tempting to read 92%-from-RAM as "it is running the program it loaded
+into `$8000+`", and that is wrong. `$1113` is RAM too. Only the histogram
+answers this.)*
+
+**The new lead is the wait loop at `$1113`:**
+
+```
+$1113  TST  $ffe5
+$1116  BMI  $1120        ; leave when $ffe5 goes negative
+$1118  TST  $28e9
+$111b  BEQ  $1113        ; else keep spinning
+```
+
+Ys is waiting on two flags that never change, and `$ffe5` is in the `$ffe0-$ffef`
+RAM window (see P3-5). Meanwhile the sub sits in `$c03e  LDB -1,U / BEQ $c03e`,
+the byte-wait loop. So the shape is now "main is driving the sub hard and waiting
+for a completion flag that never arrives" rather than the old "two healthy idle
+loops". Start from who is supposed to write `$ffe5` and `$28e9`.
+
+Everything below predates the BUSY fix and was measured against the broken
+completion handshake, so re-check it before building on it.
+
+### P4-8-orig [superseded] Ys runs its own code for thousands of frames and draws nothing
 
 Re-run long now that P4-5 makes frames past ~2666 trustworthy. At frame 4500,
 with the keypress fed:
@@ -967,7 +1235,24 @@ decide before committing it:
   bus mux be stable for the whole cycle, the way MAME and CSP model it. That
   removes a whole class of latent races rather than this one instance.
 
-### P0-2 [verified] `ROMS.v` boot-ROM select needs a reset *edge*, not a level
+### P0-2 [FIXED] `ROMS.v` boot-ROM select needed a reset *edge*, not a level
+
+**Fixed** — the flip-flop is now an ordinary synchronous reset-and-load on
+`CLKSYS`, with the `$fd0f` read and write strobes edge-detected in the same
+block (read still wins over write, as before). That removes the dependency on a
+Quartus power-up state entirely.
+
+**This one cannot be proved by simulation, and that is the point of it.** `vsim`
+manufactures the very edge the old code needed — `sim_main.cpp:986` holds reset
+LOW for 64 cycles and only then asserts it — so the machine boots either way in
+the simulator. What the regression can show is the absence of a *regression*,
+which it does: all 8 rows unchanged. The actual failure mode only exists on
+hardware, where `FM-7_MiSTer.sv` takes `reset = RESET | status[0] | buttons[1]`
+and `sys/` asserts `RESET` from the first clock.
+
+Original description below.
+
+### P0-2-orig [verified] `ROMS.v` boot-ROM select needs a reset *edge*, not a level
 
 `ROMS.v:51` latches the boot-ROM select with a flip-flop **clocked by reset
 being asserted**:
@@ -1105,7 +1390,7 @@ The register itself is only actually writable as of P1-4.
 
 ## P2 — keyboard
 
-### P2-1 [PARTLY FIXED] Shift works; Ctrl / Graph / Kana still produce nothing
+### P2-1 [FIXED] Shift, Ctrl, Graph and Kana all work
 
 **Shift is done.** Three separate faults had to be cleared:
 
@@ -1127,12 +1412,59 @@ Verified: `print 12+34` gives ` 46`, `print "HI!"` gives `HI!`.
 Also fixed in passing: the main `/` key produced `"` (`9'h04a` → `$22`). On a
 JIS layout that key is `/`, and `"` is shift-2, which the new table provides.
 
-**Still TODO: CTRL, GRAPH and KANA.** Those branches remain empty, so no control
-codes, no graphics characters and no kana. `refs/common-src-project/src/vm/fm7/
-keyboard_tables.h` has complete `ctrl_key`, `ctrl_shift_key`, `graph_key`,
-`graph_shift_key`, `kana_key` and `kana_shift_key` tables — use those. MAME's
-`fm7_key_list` is *not* a usable reference here; its own comment says the shift,
-ctrl, graph and kana columns are unfilled.
+**CTRL, GRAPH and KANA are now in too**, transcribed from
+`refs/common-src-project/src/vm/fm7/keyboard_tables.h` (`ctrl_key`,
+`ctrl_shift_key`, `graph_key`, `graph_shift_key`, `kana_key`,
+`kana_shift_key`). MAME's `fm7_key_list` is *not* a usable reference here; its
+own comment says the shift, ctrl, graph and kana columns are unfilled.
+
+Three things about that transcription are worth knowing:
+
+- **The CSP tables are keyed on the FM-7's own physical key number**, an index
+  into `vk_matrix_106`, not on PS/2. Each entry has to be translated through the
+  same PS/2 → physical-key correspondence the unshifted table already
+  establishes. Keys the FM-7 has and a PS/2 keyboard does not — KANJI, the JIS
+  `\_` key beside right shift, CONVERT/NONCONVERT and the numeric keypad — have
+  no entry, which is why some physical numbers are missing.
+- **Precedence is CTRL > GRAPH > KANA > plain**, with SHIFT selecting the
+  `_shift` variant within each. That is CSP's order in `scan2fmkeycode`
+  (`keyboard.cpp:157-183`) and it matters: with both CTRL and GRAPH down, a real
+  machine sends the control code.
+- **KANA is a LOCKING key, not a held modifier.** CSP toggles it on press and
+  drives a keyboard LED from it, alongside CAPS (`keyboard.cpp:117-125`).
+  Software expects kana mode to persist across keystrokes. GRAPH and CTRL are
+  momentary.
+
+`graph_shift_key` is byte-identical to `graph_key` except for the four cursor
+keys and the function keys, so those differences are folded in inline rather
+than duplicating a 50-entry table.
+
+**Verified by reading the codes the sub CPU actually latches.** Note that
+F-BASIC routes the keyboard to the *sub* at `$d401`, not to `$fd01` — so a
+`--trace-mem fd01-fd01` here shows nothing at all and reads exactly like a dead
+table:
+
+```sh
+cd vsim && ./obj_dir/Vemu --headless --bootrom 0 --key-hold 4 \
+    --key '400:@CTRL+ac' --stop-at-frame 560 \
+    --trace-mem-sub d401-d401 --trace-from 395
+#   401 smem R $d401 -> $01   pc=$fdae      ctrl-a
+#   409 smem R $d401 -> $03   pc=$fdae      ctrl-c
+```
+
+| | delivers |
+|---|---|
+| `@CTRL+ac` | `$01`, `$03` |
+| `@GRAPH+ac` | `$95`, `$82` |
+| `@KANA` then `ac` | `$c1`, `$bf`; pressing KANA again returns `$61`/`$63` |
+
+and typing `aiueokakikukeko` in kana mode renders half-width katakana on screen.
+
+**`vsim` gained modifier chords for this**: `--key '400:@CTRL+ac'` holds the
+modifier down for the whole string. Without it the tables are untestable, since
+CTRL and GRAPH are momentary and `--key 400:@CTRL --key 410:a` releases CTRL
+long before the `a` arrives and simply types a lower-case `a`. `@KANA+abc` works
+too, but leaves kana mode on afterwards — which is what a real machine does.
 
 ### P2-1b [decision needed] Keyboard layout is JIS-positional, not US
 
@@ -1170,11 +1502,32 @@ clears its `m132` latch on `~(RESETBn & RFD01n & KACKNGn)`, which covers both �
 good — but there is no keyboard IRQ *flag* visible in the `$fd03` cause
 register (see P3-1).
 
-### P2-3 [read] Break key
+### P2-3 [FIXED] Break key
 
-`KEYBOARD.v:23` hardcodes `assign BREAKn = 1;` and the `9'h114` (right ctrl →
-break) case is commented out at `:169`. MAME exposes break at `$fd04` bit 1
-(`fd04_r`). Wire the key through, and expose the flag.
+`KEYBOARD.v` hardcoded `assign BREAKn = 1;` with the `9'h114` (right ctrl →
+break) case commented out. The key now drives `BREAKn`; `TIMER.v` already ANDs
+it into `FIRQn` and reports it on `$fd04` bit 1, so wiring the key was the whole
+fix. MAME asserts `M6809_FIRQ_LINE` and sets its break flag together
+(`fm7.cpp:1183-1189`), which is what this does.
+
+Break is in `is_modifier`, so it delivers no scancode — correct, a real MB88401
+sends nothing for it.
+
+```sh
+cd vsim && ./obj_dir/Vemu --headless --bootrom 0 --key-hold 8 \
+    --key '450:@BREAK' --stop-at-frame 560 --trace-mem fd04-fd04 --trace-from 440
+# $fd04 -> $fd   (bit 1 low) while held
+```
+
+Note the *volume* of those reads — ~16000 over the 8 held frames, against 1 read
+in the whole run before the key. That is the level-sensitive FIRQ firing
+repeatedly while break is down and the handler reading the cause register each
+time, which is correct behaviour and not a spin.
+
+77AVEMU makes a point that is not yet modelled here: reading `$fd04` clears the
+*attention* FIRQ but deliberately **not** the break FIRQ ("Probably break-key
+FIRQ not", `fm77avio.cpp:668`). Ours matches, since break comes straight from
+the key state rather than from a latch.
 
 ---
 
@@ -1254,16 +1607,56 @@ the main CPU (`KEYINn`) or the sub CPU (`KSTROBEn`), `m77[1]` is `LPMASKn`,
 probably right, but it means MAME cannot be used as a bit-level reference here.
 Check `refs/common-src-project/src/vm/fm7/fm7_mainio.cpp` instead.
 
-### P3-2 [read] `$fd04` attention-IRQ flag always reads "no interrupt"
+### P3-2 [FIXED] `$fd04`'s attention latch was held cleared except during its own read
 
-MAME `fd04_r`: bit 0 = attention IRQ from the sub CPU (`$d404`), bit 1 = break,
-both active low, and bit 0 self-clears on read.
+An earlier version of this entry said the latch "exists and correctly drives
+`FIRQn`, and its async clear does fire on the read, but its state is never
+presented on the data bus". The second half was right; the first half was
+**wrong, and backwards**. The asynchronous preset was
 
-`TIMER.v:102` returns `{5'b11111, BUSY, BREAKn, m47_q11}` where
-`m47_q11 = RESETBn & ~RFD04n` — during the read itself that is always `1`, so
-bit 0 always says "no attention IRQ". The attention latch `m45_q8n` exists and
-correctly drives `FIRQn`, and its async clear does fire on the read, but its
-state is never presented on the data bus. Put `m45_q8n` in bit 0.
+```verilog
+wire m47_q11 = RESETBn & ~RFD04n;
+wire s2 = ~m47_q11;
+always @(posedge m76_q6, posedge s2) ...
+```
+
+`s2` is HIGH whenever `$fd04` is *not* being read, so the flag sat held cleared
+at all times **except** inside the read window. An attention could only ever be
+captured if the sub happened to read `$d404` during exactly the cycles the main
+was reading `$fd04`, so in practice the main CPU never received an attention
+FIRQ at all. Bit 0 then reported `m47_q11`, which is 1 throughout any read of
+`$fd04` — a constant "no interrupt pending".
+
+All three references agree on the intended behaviour, including the polarity:
+
+| | |
+|---|---|
+| **MAME** | `attn_irq_r` sets `attn_irq` and asserts `M6809_FIRQ_LINE` (`fm7_v.cpp:77`); `fd04_r` returns `$ff` with bit 0 cleared, then zeroes the flag |
+| **CSP** | `get_fd04`: `if(!firq_sub_attention) val |= 0x01;`, then `set_sub_attention(false)` (`fm7_mainio.cpp:661`) |
+| **77AVEMU** | `MAIN_FIRQ_SOURCE_ATTENTION=0x01`, `byteData = ~firqSource`, and reading `$fd04` clears ATTENTION but not the break key |
+
+Now set on the sub's read of `$d404` and cleared on the **trailing** edge of the
+main's `$fd04` read, so the value is stable for the whole bus cycle — an
+asynchronous clear asserted across the read is the P0-1 race in a different
+costume. Set wins over clear, as with `KEYBOARD.v`'s `m132`.
+
+**No title measured moves.** Thexder, Hydlide II, The Castle and OS-9 all make
+**zero** `$d404` accesses over 700-900 frames, so nothing currently asks for an
+attention interrupt. This is a correctness fix, not a fix for a visible symptom.
+
+*(Measurement trap hit while establishing that: `grep -c d404` over a
+`--trace-mem-sub` log returns a healthy-looking count of matches that are
+**cycle counters** containing `d404` as a hex substring — `cycles 86d4041
+reading D0`. Anchor on the trace format, `grep -cE 'smem .* \$d404'`, or the
+answer is confidently wrong.)*
+
+**Bit 2 is left alone, and no reference agrees with it.** `TIMER.v` returns
+`{5'b11111, BUSY, BREAKn, m45_q8n}`, i.e. BUSY at bit 2. MAME's `fd04_r` leaves
+that bit set; CSP ORs in `0x7c` for a plain FM-7 and puts sub-busy at **bit 7**;
+77AVEMU returns `~firqSource`, so bits 2-7 all read 1. Two of three also
+disagree with CSP about bit 7. This core is schematic-derived rather than
+modelled on any of them, and nothing measured reads the bit, so it is recorded
+here rather than churned on a disagreement between references.
 
 ### P3-3 [read] Kanji ROM (`$fd20-$fd23`) missing entirely
 
@@ -2017,7 +2410,12 @@ Still true, and unchanged: playback only, no save, no `.wav`. And
 `25'd16` (past the 16-byte "XM7 TAPE IMAGE 0" header, which these dumps do
 carry) — the `$62` looks like a leftover.
 
-### P4-5 [read] Printer port
+### P4-5b [read] Printer port
+
+*(Numbered P4-5b because there are two P4-5 sections: this one and the fixed
+`(int)main_time` overflow far above. Renumbering either would break the commit
+messages and cross-references that already cite them, so they are left as they
+are and disambiguated here.)*
 
 `PERIPHERAL.v` has `LPBUSY`/`LPINTn`/`LPMASKn` plumbing and the `CN2` connector
 bits, but nothing is connected to a printer. MAME has the same stubs. Low
@@ -2037,17 +2435,24 @@ None of it matters until the FM-7 boots to a usable prompt.
 
 ## Suggested order
 
-1. **P0-4** — the shared-RAM aperture / sub-halt handshake. This is the live
-   blocker: fix it and typed characters should echo, which makes the machine
-   actually drivable.
-2. **P2-1** — keyboard tables from CSP, so more than the unshifted set works.
-   (`print 1+1` needs shift for `+`; today only unshifted keys exist.)
+Everything in the original list here is now done — P0-4, P2-1, P0-2's sibling
+P3-6b, P1-3, P3-2 and P4-1 all closed — so this is the current one.
+
+1. **P4-10** — OS-9's console. The kernel runs and a cursor now appears; input
+   never lands. Start from "which keyboard route does its driver expect", since
+   OS-9 never writes `$fd02` to choose one.
+2. **P4-8 / P4-7** — Ys and CHAN.POP. Both are "the program is loaded correctly
+   and control never reaches it", which is the same shape and may share a cause.
+   Re-check both against the BUSY fix (P4-13) before digging: they were both
+   diagnosed while the completion handshake was broken.
 3. **P0-2** — decide the reset story so the FPGA build does not depend on a
-   power-up flip-flop state.
-4. **P1-2 / P1-3** — the video mode register and `$fd37` bit layout, now that
-   `$fd37` actually receives real data.
-5. **P3-2** — the `$fd04` attention flag.
-6. **P4-1** — the FDC, which is what the three `boot-dos*` rows need.
+   power-up flip-flop state. Still open, still cheap, and it is the one item
+   here that only bites on real hardware.
+4. **P3-3** — the kanji ROM. Nothing decodes `$fd20-$fd23` and there is no ROM
+   image in `rtl/roms/`; needed for any real Japanese text.
+5. **P4-1's remaining media work** — second drive, 2DD, multi-disk `.d88`.
+6. **P1-2** — resolved as not applicable for the FM-7, but revisit if the core
+   ever grows FM-77 support.
 7. Everything else, driven by what specific software needs.
 
 ## How to check your work
