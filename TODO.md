@@ -274,9 +274,35 @@ deterministic.
 Worth noting what it is *not*: The Castle & Castle Excellent draws a page of
 console text on the same core with only one dropped character, so this is not a
 blanket text failure. Hydlide II draws its text as graphics inside a framed
-panel, so the loss is in that path -- either draw commands lost across the
-main/sub window, or VRAM writes lost under it. Comparing the two titles' paths
-is the obvious way in.
+panel, so the loss is in that path.
+
+**Measured so far.** Hydlide II does not use Thexder's byte-at-a-time pump; it
+writes structured command blocks to `$fc80`-`$fc8c`. Over 700 frames the main
+writes **6891** payload bytes to `$fc83`-`$fc8f` and the sub reads **5833** back
+-- a 15% shortfall. (Not conclusive on its own: commands vary in length, so the
+sub need not read every byte of every block.)
+
+**The sub-CPU VRAM wait state is NOT the cause -- ruled out by experiment.** The
+theory was that `sub_vram_wait` throttles drawing badly enough to starve the
+transfer, since `SCASSEL` is high only during blanking and the sub is stalled on
+every VRAM access outside it. Setting `sub_vram_wait = 1'b0` and measuring:
+
+| | with wait | without |
+|---|---|---|
+| Hydlide II sub | 7871/frame | 8293/frame (+5%) |
+| Thexder sub | 6873/frame | 7342/frame (+7%) |
+| Hydlide II screen | 26335 bytes | **3870, broken** |
+
+So the wait costs only about **6%** of sub throughput -- far short of a 15%
+shortfall -- and removing it corrupts rendering exactly as the comment in
+`core.v` predicts, because `SVRADRS` follows the raster during display and the
+access lands at the wrong address. Reverted. Neither CSP nor 77AVEMU models a
+sub VRAM wait at all, so ours is stricter than both, but that strictness is not
+what is losing the characters.
+
+Look instead at the command-block protocol itself: whether the sub is being told
+to draw every glyph and dropping some, or the main is skipping them. Compare
+against The Castle's console path, which works.
 
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
