@@ -60,6 +60,19 @@ else
 CXX_DEFINE += -DVM_TRACE_VCD=0
 endif
 
+# IMPORTANT, applies to every flag below as well as TRACE above: these become
+# `+define+` arguments to Verilator, and Verilator only re-reads them when it
+# re-runs. `make DEBUG_FDC=1` straight after a plain `make` will happily relink
+# the old model with the old defines and your instrumentation will silently not
+# be there -- you get a clean build, a clean run, and no output. Touch a file in
+# the flag's target module (or `make clean`) when turning one on:
+#
+#   touch ../rtl/SRAM.v && make DEBUG_SRAM=1
+#
+# Check it took before trusting a null result:
+#
+#   grep -l SRAMSUM obj_dir/*.cpp
+#
 # rtl/MB60H010.v has a per-pixel-clock $display left over from bring-up. It is
 # behind `ifdef DEBUG_MB60H010`; `make DEBUG_VIDEO=1` turns it back on. Do not
 # do that for a full run -- it is 16 million lines per simulated second.

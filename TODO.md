@@ -300,9 +300,27 @@ access lands at the wrong address. Reverted. Neither CSP nor 77AVEMU models a
 sub VRAM wait at all, so ours is stricter than both, but that strictness is not
 what is losing the characters.
 
-Look instead at the command-block protocol itself: whether the sub is being told
-to draw every glyph and dropping some, or the main is skipping them. Compare
-against The Castle's console path, which works.
+**The shared-RAM aperture is not dropping the writes either -- also ruled out.**
+Main-side writes are gated on `SHALTACn` (P4-1h), so a title that writes command
+blocks *without* halting the sub first would have them silently discarded. That
+would fit the symptom exactly. It is not happening: `DEBUG_SRAM` reports
+
+| title | accepted | misdirected |
+|---|---|---|
+| Hydlide II | 33074 | **0** |
+| The Castle | 37724 | **0** |
+| Thexder | 156699 | **0** |
+
+So two mechanisms are now eliminated -- the VRAM wait state and the aperture
+gating -- and the main's writes demonstrably land. Look instead at the
+command-block protocol itself: whether the sub is being told to draw every glyph
+and dropping some, or the main never sends them. The Castle's console path is
+the working control to compare against.
+
+*(Method note: the first run of this measurement produced no output at all and
+looked like a clean null result. The `DEBUG_SRAM` define had not actually been
+compiled in -- see the warning now at the top of the flag section in
+`vsim/Makefile`. Check `grep -l SRAMSUM obj_dir/*.cpp` before believing silence.)*
 
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
