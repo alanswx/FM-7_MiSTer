@@ -88,14 +88,48 @@ end
 
 assign DMAn = 1'b1; // dummy output
 
-reg m45_q8n;
-wire m47_q11 = RESETBn & ~RFD04n;
-wire m76_q6 = ~ATTENTn;
+// $fd04 bit 0 -- the sub CPU's "attention" FIRQ.
+//
+// The sub raises it by READING $d404 (SDECODE's m98 is the sub-side READ
+// decoder, so ATTENTn is a read strobe), and the main clears it by reading
+// $fd04. All three references agree, including that it is active low:
+//
+//   MAME     attn_irq_r sets attn_irq and asserts M6809_FIRQ_LINE
+//            (fm7_v.cpp:77); fd04_r returns $ff with bit 0 cleared, then
+//            zeroes the flag.
+//   CSP      get_fd04: `if(!firq_sub_attention) val |= 0x01;`, then
+//            set_sub_attention(false) (fm7_mainio.cpp:661).
+//   77AVEMU  MAIN_FIRQ_SOURCE_ATTENTION=0x01 with `byteData = ~firqSource`,
+//            and reading $fd04 clears ATTENTION but deliberately NOT the
+//            break key ("Probably break-key FIRQ not", fm77avio.cpp:668).
+//
+// The previous version could never fire. Its asynchronous preset was
+//
+//     s2 = ~m47_q11 = ~(RESETBn & ~RFD04n)
+//
+// which is HIGH whenever $fd04 is *not* being read -- so the flag sat held
+// cleared at all times except inside the read window, and an attention could
+// only ever be captured if the sub happened to read $d404 during exactly the
+// cycles the main was reading $fd04. In practice the main CPU never received
+// an attention FIRQ at all. Bit 0 then reported m47_q11, which is 1 throughout
+// any read of $fd04 -- a constant "no interrupt pending".
+//
+// Clearing on the trailing edge of the read strobe rather than during it keeps
+// the value stable for the whole bus cycle; an asynchronous clear asserted
+// across the read is the P0-1 race wearing a different hat. Set wins over
+// clear, so an attention landing on the acknowledge cycle is not swallowed --
+// the same argument as KEYBOARD.v's m132.
+reg attn_pend;              // 1 = an attention is waiting
+reg attn_d, rfd04_d;
+always @(posedge CLKSYS) begin
+  attn_d  <= ATTENTn;
+  rfd04_d <= RFD04n;
+  if (~RESETBn)               attn_pend <= 1'b0;
+  else if (attn_d & ~ATTENTn) attn_pend <= 1'b1;   // sub read $d404
+  else if (~rfd04_d & RFD04n) attn_pend <= 1'b0;   // main finished reading $fd04
+end
 
-wire s2 = ~m47_q11;
-always @(posedge m76_q6, posedge s2)
-  if (s2) m45_q8n <= 1'b1;
-  else m45_q8n <= 1'b0;
+wire m45_q8n = ~attn_pend;  // active low, as the bus and FIRQn see it
 
 // $fd05 bit 7 is "the sub system is not available", which is true both while it
 // is BUSY working on a command and while it is HALTED for the main CPU to touch
@@ -115,9 +149,16 @@ always @(posedge m76_q6, posedge s2)
 wire SUBUNAVAIL = BUSY | ~SHALTACn;
 
 // m72
+//
+// Bit 2 carries BUSY here, which no reference does: MAME's fd04_r leaves it
+// set, CSP ORs in 0x7c for a plain FM-7 and puts sub-busy at bit 7 instead,
+// and 77AVEMU returns ~firqSource so bits 2-7 all read 1. This core is derived
+// from the schematic rather than from any of them, and no title measured so far
+// reads $fd04 for anything but the attention flag, so it is left alone rather
+// than churned on a disagreement between references. Recorded in TODO.md.
 always @*
   if (~RFD04n)
-    MDATABUS_out = { 5'b11111, BUSY, BREAKn, m47_q11 };
+    MDATABUS_out = { 5'b11111, BUSY, BREAKn, m45_q8n };
   else if (~RFD05n)
     MDATABUS_out = { SUBUNAVAIL, 6'b111111, EXTDETn };
   else
