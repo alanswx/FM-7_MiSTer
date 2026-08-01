@@ -604,9 +604,39 @@ Ys, Archon, Mugen no Shinzou II, The Knight of Wonderland and Dezeni Land all
 show real, legible artwork.
 
 **The largest single failure mode is "healthy rate, drawing nothing"** — 108 of
-221. Those titles are executing at 4400-5800 instructions/frame and choosing not
-to draw, which is the P4-8 shape (loads fine, never transfers control) rather
-than a crash. That is where the next per-title work is.
+221. But that raw number is wrong to quote, because a large slice of it is
+disks that *should not* boot:
+
+| | |
+|---|---|
+| 108 | FM-7 images at a healthy rate with a blank screen |
+| −12 | boot sector is a deliberate **halt stub** — not bootable by design |
+| −8 | user/save/`{run NAME}` disks by name, not caught by the stub test |
+| **88** | genuine "should boot and does not" |
+| (17) | of those 88 are marked `[b]`, a known-bad dump |
+| **~71** | good dumps of bootable disks that come up blank |
+
+**The halt-stub finding is the useful part**, and `vsim/sweep/bootsector.py`
+tests for it directly from the image. 28 disks in the collection have a track 0
+/ side 0 / sector 1 that reads
+
+```
+$0100  1a 50        ORCC #$50     ; mask IRQ and FIRQ
+$0102  86 41        LDA  #$41
+$0104  b7 fd 03     STA  $fd03
+$0107  20 fe        BRA  $0107    ; spin forever
+```
+
+That is a program/data disk telling the machine to stop — they are meant to be
+loaded from Disk BASIC on another disk, and several say so in their own names
+(`{run NUGI}`, `{run AKUNIN-1}`, `(User disk)`). The core boots them into that
+loop and shows a blank screen, which is **exactly right**. Their signature is
+main 6399 / sub 8721 / 3519 I/O cycles, identical across every one of them, and
+a `--pc-profile` puts 3841350 of the main CPU's instructions on `$0107` alone.
+
+So the honest remaining target is ~71 titles, not 108. That is still the biggest
+bucket and still the P4-8 shape — loads fine, never transfers control — but do
+not chase a disk whose boot sector asked to halt.
 
 **The sweep reproduces the earlier numbers exactly**, which is the check that
 the harness is honest: Arion 1087, Solitaire Royale 1049, Miner 2049er 1965,
