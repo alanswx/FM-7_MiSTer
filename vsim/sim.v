@@ -14,9 +14,12 @@
 //    - rtl/sdram.sv (the real controller, with SDRAM_* pins) is replaced by the
 //      behavioural model in vsim/rtl/sdram.sv. Same client interface and the
 //      same edge-detected requests and read latency.
-//    - The tape download writes BYTES (wtbt=00, 8-bit ioctl_dout). The FPGA
-//      build uses hps_io #(.WIDE(1)) and 16-bit writes. The bytes land at the
-//      same addresses either way; SimBus only speaks 8-bit.
+//    - The tape download writes BYTES (wtbt=00, 8-bit ioctl_dout). This is no
+//      longer a difference: FM-7_MiSTer.sv used to instantiate hps_io with
+//      WIDE(1) and write 16-bit words, but WIDE also widens the FLOPPY sector
+//      buffer, which the top wires as [7:0] -- so every sector read was
+//      silently half-truncated and no disk could boot on hardware. The FPGA
+//      build is WIDE(0) now and matches this wrapper byte for byte.
 //    - VGA_R/G/B replicate the core's single colour bit across all 8 bits.
 //      FM-7_MiSTer.sv assigns only VGA_x[7] and leaves [6:0] undriven (0 after
 //      synthesis), which would make every screenshot half-brightness.
@@ -304,7 +307,7 @@ always @(posedge clk_sys)
 wire rewind = (old_ioctl_download & ~tape_download) | tape_rewind;
 
 // Size of the mounted tape, so t77_decode can stop at the end. SimBus writes
-// bytes, so this steps by 1 where FM-7_MiSTer.sv (hps_io WIDE(1)) steps by 2.
+// bytes and so does the FPGA build now (hps_io WIDE(0)), so both step by 1.
 reg [24:0] tape_size = 25'd0;
 always @(posedge clk_sys)
   if (tape_download && ioctl_wr) tape_size <= ioctl_addr + 25'd1;

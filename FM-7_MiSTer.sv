@@ -207,7 +207,7 @@ localparam CONF_STR = {
   "FM-7;;",
   "-;",
   "F1,t77,Load Tape;",
-  "S0,d77,Load Disk;",
+  "S0,d77d88,Mount Disk;",
   "O[8],Tape Rewind;",
   "O[9],Tape Audio,Off,On;",
   "O[11:10],BootROM,Basic,1,2,3;",
@@ -216,12 +216,10 @@ localparam CONF_STR = {
   "jn,A,B;",
   "-;",
   "O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
-  "O[2],TV Mode,NTSC,PAL;",
-  "O[4:3],Noise,White,Red,Green,Blue;",
   "-;",
   "T[0],Reset;",
   "R[0],Reset and close OSD;",
-  "v,0;",
+  "v,3;",
   "V,v",`BUILD_DATE
 };
 
@@ -235,7 +233,7 @@ wire        ioctl_download;
 wire  [7:0] ioctl_index;
 wire        ioctl_wr;
 wire [24:0] ioctl_addr;
-wire [15:0] ioctl_dout;
+wire  [7:0] ioctl_dout;
 
 wire [31:0] joy1, joy2;
 
@@ -250,7 +248,17 @@ wire  [8:0] sd_buff_addr;
 wire  [7:0] sd_buff_dout, sd_buff_din;
 wire        sd_buff_wr;
 
-hps_io #(.CONF_STR(CONF_STR),.WIDE(1),.VDNUM(1)) hps_io
+// WIDE must stay 0. hps_io sizes BOTH the ioctl download path and the floppy
+// sector buffer from it -- `DW = WIDE ? 15 : 7`, `AW = WIDE ? 12 : 13`. With
+// WIDE(1) the sector buffer becomes 16 bits wide and steps one address per
+// WORD, but sd_buff_dout/din here are [7:0] and sd_buff_addr is [8:0], so the
+// connection silently truncated: the wd1793 received bytes 0,2,4,...,510 of
+// each 512-byte sector, landed at addresses 0..255, with 256..511 never
+// written. Every sector read returned garbage, so no disk could ever boot --
+// the boot ROM cleared the screen and hung. vsim never caught it because
+// vsim/sim.v has no hps_io at all and SimBlockDevice speaks 8-bit natively.
+// The tape path is byte-wide to match (see wtbt and tape_size below).
+hps_io #(.CONF_STR(CONF_STR),.WIDE(0),.VDNUM(1)) hps_io
 (
   .clk_sys(clk_sys),
   .HPS_BUS(HPS_BUS),
@@ -301,7 +309,20 @@ pll pll
   .locked(locked)
 );
 
-wire reset = RESET | status[0] | buttons[1];
+// Capture even a short HPS/OSD reset request and hold reset long enough for
+// every divided/generated clock domain in the original FM-7 logic to see it.
+// Also keep the core reset while the system PLL is acquiring lock.
+wire reset_req = RESET | status[0] | buttons[1];
+reg [19:0] reset_count = {20{1'b1}};
+
+always @(posedge clk_sys) begin
+  if(reset_req | ~locked)
+    reset_count <= {20{1'b1}};
+  else if(|reset_count)
+    reset_count <= reset_count - 1'd1;
+end
+
+wire reset = |reset_count;
 
 reg old_ioctl_download;
 always @(posedge clk_sys)
@@ -309,9 +330,9 @@ always @(posedge clk_sys)
 
 wire [2:0] grb;
 
-assign VGA_R[7] = grb[1];
-assign VGA_G[7] = grb[2];
-assign VGA_B[7] = grb[0];
+assign VGA_R = {8{grb[1]}};
+assign VGA_G = {8{grb[2]}};
+assign VGA_B = {8{grb[0]}};
 
 wire HBlank;
 wire HSync;
@@ -332,11 +353,11 @@ wire rewind = (old_ioctl_download & ~ioctl_download) | status[8];
 
 // Size of the mounted tape, latched from the ioctl download, so t77_decode
 // can stop at the end instead of running on into whatever else is in SDRAM.
-// hps_io is WIDE(1) here, so ioctl_addr steps by 2.
+// hps_io is WIDE(0), so ioctl_addr steps by 1 and ioctl_dout is a byte.
 reg [24:0] tape_size = 25'd0;
 always @(posedge clk_sys) begin
   if (ioctl_download && ioctl_index == 8'd1) begin
-    if (ioctl_wr) tape_size <= ioctl_addr + 25'd2;
+    if (ioctl_wr) tape_size <= ioctl_addr + 25'd1;
   end
 end
 wire SVIDEOCLK;
@@ -404,7 +425,7 @@ sdram u_sdram(
   .*,
   .init  ( ~locked                                  ),
   .clk   ( CLKSYS                                   ),
-  .wtbt  ( 2'b11                                    ),
+  .wtbt  ( 2'b00                                    ),
   .addr  ( ioctl_download ? ioctl_addr : sdram_addr ),
   .dout  ( sdram_data                               ),
   .din   ( ioctl_dout                               ),
