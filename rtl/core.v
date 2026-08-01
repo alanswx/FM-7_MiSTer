@@ -456,6 +456,7 @@ SCPU u_SCPU(
 );
 
 FLAGS u_FLAGS(
+  .CLKSYS      ( CLKSYS      ),
   .SRWB        ( SRWB        ),
   .SCRTSWn     ( SCRTSWn     ),
   .SRESETn     ( 1'b0        ),

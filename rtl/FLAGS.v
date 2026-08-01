@@ -2,6 +2,12 @@
 // Page 12 on schematics.
 
 module FLAGS(
+  // The BUSY flag below is a real state machine with three inputs (the main's
+  // halt request and the sub's read and write of $d40a), so it is clocked
+  // rather than built from a stack of asynchronous edges. Everything else in
+  // this module is still edge-triggered off its own strobe, as on the
+  // schematic.
+  input CLKSYS,
   input SRWB,
   input SCRTSWn,
   input SRESETn,
@@ -95,21 +101,68 @@ assign SHALTACn = SUBHALTREQn | SHALTSTn;
 
 // The sub-system BUSY flag, reported on $fd05 bit 7 (see TIMER.v).
 //
-// This is correct as written, and the polarity is easy to misread, so: SBUSYSETn
-// is Y2 of SDECODE's m87, which decodes $d408-$d40f enabled by SQANDEn = ~(Q&E)
-// -- NOT qualified by direction, so both reads and writes of $d40a land here.
-// And `SRWBn` is `~RnW` (SCPU.v:29), i.e. HIGH on a write. So
+// The $d40a half of this is correct as written, and the polarity is easy to
+// misread, so: SBUSYSETn is Y2 of SDECODE's m87, which decodes $d408-$d40f
+// enabled by SQANDEn = ~(Q&E) -- NOT qualified by direction, so both reads and
+// writes of $d40a land here. And `SRWBn` is `~RnW` (SCPU.v:29), i.e. HIGH on a
+// write. So
 //
-//   sub CPU reads  $d40a -> SRWBn=0 -> BUSY cleared
-//   sub CPU writes $d40a -> SRWBn=1 -> BUSY set
+//   sub CPU reads  $d40a -> SRWBn=0 -> BUSY cleared  ("I am back in the idle loop")
+//   sub CPU writes $d40a -> SRWBn=1 -> BUSY set      ("I have started a command")
 //
-// which is exactly MAME (fm7_v.cpp): `sub_busyflag_r()` clears, `sub_busyflag_w()`
-// sets. Do not "fix" this by inverting to ~SRWBn -- that was tried and boots
-// neither F-BASIC nor a game.
-wire s3 = RESETBn & SHALTACn;
-always @(negedge SBUSYSETn or negedge s3)
-  if (~s3) m44_8 <= 1'b0;
-  else m44_8 <= SRWBn;
+// which is exactly MAME (fm7_v.cpp): `sub_busyflag_r()` clears,
+// `sub_busyflag_w()` sets. Do not "fix" this by inverting to ~SRWBn -- that was
+// tried and boots neither F-BASIC nor a game.
+//
+// WHAT WAS WRONG: the main CPU's halt request must SET this flag, and here it
+// asynchronously CLEARED it. The old async clear was
+//
+//     wire s3 = RESETBn & SHALTACn;   // held m44_8 at 0 for the whole halt
+//
+// Both references set busy on the halt request instead, and neither clears it
+// on release:
+//
+//   MAME  subintf_w: `m_video.sub_halt = data & 0x80;
+//                     if(data & 0x80) m_video.sub_busy = data & 0x80;`
+//         and sub_busyflag_r only clears `if(m_video.sub_halt == 0)`.
+//   CSP   display.cpp:1879 `case SIG_FM7_SUB_HALT: if(flag) { sub_busy = true; }`
+//         with reset_subbusy()/set_subbusy() on the $d40a read/write.
+//
+// That difference is the whole completion handshake. The intended sequence is
+//
+//   main: poll $fd05 bit 7 until CLEAR      -- sub is idle
+//   main: $fd05 <- $80                      -- halt requested, AND BUSY SET
+//   main: write the command block to $fc80+
+//   main: $fd05 <- $00                      -- halt released; BUSY STAYS SET
+//   sub:  wakes, consumes the command, draws
+//   sub:  returns to its ROM idle loop and reads $d40a -> BUSY clears
+//   main: sees bit 7 clear and may send the next command
+//
+// With BUSY force-cleared during the halt, the moment the main released the
+// halt bit 7 read 0 -- "sub idle" -- even though the sub had not yet run a
+// single instruction of the command. A main CPU that loops "wait for idle,
+// halt, write, release" therefore overwrote command blocks the sub had not
+// consumed yet. It is a race, so it costs SOME commands and not others, which
+// is exactly Hydlide II dropping whole glyphs out of its story text (P4-13)
+// while The Castle, which draws text a different way, loses almost none.
+//
+// TIMER.v's `BUSY | ~SHALTACn` for bit 7 stays: it is redundant now that the
+// request sets BUSY, but MAME ORs sub_halt in the same way (`if(sub_busy != 0
+// || sub_halt != 0)`), so it is correct and costs nothing.
+reg sbusyset_d, subhaltreq_d;
+always @(posedge CLKSYS) begin
+  sbusyset_d   <= SBUSYSETn;
+  subhaltreq_d <= SUBHALTREQn;
+  if (~RESETBn)                              m44_8 <= 1'b0;
+  // The main CPU asking for a halt marks the sub busy. THIS is the fix.
+  else if (subhaltreq_d & ~SUBHALTREQn)      m44_8 <= 1'b1;
+  else if (sbusyset_d & ~SBUSYSETn) begin
+    if (SRWBn)                               m44_8 <= 1'b1;  // sub wrote $d40a
+    else if (SUBHALTREQn)                    m44_8 <= 1'b0;  // sub read $d40a,
+                                                             // and only while not
+                                                             // halted, per MAME
+  end
+end
 
 // $fd37, the multi-page register: bits 0-2 mask CPU access to the three VRAM
 // planes, bits 4-6 mask their display. Both MAME (`data & 0x77`) and CSP
