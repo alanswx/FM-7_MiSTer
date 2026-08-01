@@ -26,10 +26,15 @@ routings, shift/ctrl/graph/kana/break) and the boot-ROM bank select are all
 verified working against the reference emulators. What remains is mostly
 per-title software archaeology plus a handful of scoped RTL items.
 
-The single biggest remaining bucket is **108 FM-7 images that run at a healthy
-4400-5800 instructions/frame and draw nothing** — the P4-8 shape, "loads
-correctly, never transfers control", not a crash. That is one shared cause away
-from being a large win, or a hundred separate ones.
+The single biggest remaining bucket is **46 FM-7 images that run at a healthy
+rate and draw nothing** (P4-14). That number was 108 before the disks were
+looked at rather than the screenshots: 13 have a boot sector that deliberately
+halts, and 35 are secondary disks of multi-disk sets whose boot sector is not
+code at all. **It is not one shared cause** — 62 of the measured blanks never
+touch the sub handshake at all, so the failure is upstream of the display
+entirely, and a large sub-group is a main-CPU runaway executing zeroed memory.
+Read P4-14 before starting on any of them; it will save you from chasing the
+video path for titles that never asked to draw.
 
 **Build and run.**
 
@@ -59,12 +64,15 @@ rather than trying to glob the brackets — that is what the sweep script does.
 
 | | where | why |
 |---|---|---|
-| **P4-10** | OS-9 stops after its kernel banner | Kernel runs, a cursor now appears on disk 1, input never lands. Not a hang. |
-| **P4-8** | Ys never enters its loaded program | Loads 24 KB to `$8000-$dfff` correctly, then never jumps there. |
-| **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. |
+| **P4-15** | The page-zero runaway group | The best lead in the collection: 5+ titles (Xevious, Tritorn, Hokuto no Ken, Wing Man 2) all crash into cleared RAM with the *same* signature — main ~3700, sub exactly 8721, 2-4M I/O cycles, `NEG <$00` in the tail. Same class as P4-7 and P4-11, but with several instances to compare instead of one. |
+| **P4-8** | Ys never enters its loaded program | Now draws its HUD, so it is further than it was. Waiting on two flags at `$1113` (`TST $ffe5` / `TST $28e9`) that nothing ever writes. |
+| **P4-10** | OS-9 stops after its kernel banner | Kernel runs, a cursor now appears on disk 1, input never lands. Not a hang. OS-9 never writes `$fd02`, so it never picks a keyboard route. |
+| **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. Fold into P4-15 — it is probably the same bug. |
+| **P4-14** | The rest of the 46 blanks | 62 of 87 never touch the sub handshake at all. Upstream of the display; do not chase the video path. |
 | **P4-3** | PSG `sel_n_i` pitch | Needs a human ear, cannot be settled in sim. |
-| **P3-3** | Kanji ROM `$fd20-$fd23` | Not decoded at all, and `rtl/roms/` has no kanji ROM. Needed for any real Japanese text. |
-| | second drive, 2DD, multi-disk `.d88` | Unstarted. |
+| **P3-3** | Kanji ROM `$fd20-$fd23` | Not decoded at all, and `rtl/roms/` has no kanji ROM. **Blocked**: needs a ROM image the repo does not have. |
+| | second drive, 2DD, multi-disk `.d88` | Unstarted. Scoped in P4-1. |
+| | `$fd04` bit 2 | Carries BUSY here; no reference puts it there. Recorded in P3-2, not acted on. |
 
 ### Measurement traps — every one of these cost real time
 
