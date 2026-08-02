@@ -940,19 +940,44 @@ attention IRQ. A full 350-image sweep against it, diffed against
 The bucket totals are byte-identical to P4-16 (62/53/77/4/8/17) because those
 two swapped places between BLANK and PARTIAL.
 
-**Be honest about what this is: a latent correctness fix, not an unlock.** One
-title in 221, against P4-15's 44. A permanently-dead interrupt path is wrong and
-worth repairing on its own terms — anything that uses `$fd05` bit 6 later now
-works — but it did not move the collection.
+**Be honest about what this is: a small fix, not an unlock.** One title in 221,
+against P4-15's 44. But it is a *correct* one with a fully traced mechanism, and
+a permanently-dead interrupt path is wrong on its own terms — any title using
+`$fd05` bit 6 works now where it could not before.
 
-**1942 moving is the interesting part, and it contradicts my own reasoning.**
-The `f9548d8` commit message states plainly that this fix could not explain
-1942, because 1942 never writes `$fd05` at all over 700 frames and so never
-requests attention. That measurement was correct and 1942 moved anyway. So the
-mechanism is *not* `SUBIRQn`; it must be one of the other two flip-flops the
-tie-off was holding down — `m56_5` (`SVDOFFn`) or `m44_5`. **Unverified — do not
-repeat the claim that this fix works through the attention IRQ until someone
-checks which flop actually did it.**
+**1942 moves through `SUBIRQn`, exactly as `f9548d8` first reasoned — and the
+"correction" that previously stood here was itself wrong.** The story is worth
+keeping in full, because it is the same measurement error twice in one day.
+
+I claimed 1942 never writes `$fd05` and therefore could not be explained by the
+attention IRQ. **That measurement was a false negative.** 1942 writes `$fd05`
+**70629 times** over 700 frames, including `$40` — the CANCEL bit — at frame
+265 from `pc=$1953`:
+
+```
+  265 mem  W $fd05 <- $40   pc=$1953     <- attention requested
+  265 mem  W $fd05 <- $00   pc=$1956
+  265 mem  W $fd05 <- $80   pc=$4b05     <- halt requested
+  265 mem  R $fd05 -> $fe   pc=$4b08
+```
+
+So the mechanism is exactly the one originally described: `$fd05` bit 6 drives
+`CANCELn`, whose release clocks `m45`, which asserts `SUBIRQn`; the sub's `$e06e`
+handler then writes `$d000 = $ff` and the `$fd76` wait exits. With `SRESETn`
+tied low, `m45` was pinned at 0 and none of that could happen.
+
+**What went wrong in the measurement, twice.** The original batch ran three
+titles through
+`grep -oE 'W +\$fd05 <- \$[0-9a-f]{2}'` and printed three headers with nothing
+under them, which read as "none of these touch `$fd05`". Re-running the same
+title with `grep '\$fd05'` and looking at raw lines shows 70629 hits. The
+lesson is the one already at trap 9 and 11 in this document and it did not
+take: **a grep returning nothing is a claim about your pattern, not about the
+machine. Print raw lines first, then narrow.**
+
+**Penguin-kun Wars really does not request attention** — re-measured properly,
+172 writes of `$00` and `$80` only, no `$40`. So it is genuinely unexplained,
+and that half of the earlier note survives.
 
 **And it costs one title.** `Templo del Sol - Asteka II (Disk B)` drops from
 4464 to blank, reproducibly; Disk A is untouched at 35230. Disk B is a secondary
