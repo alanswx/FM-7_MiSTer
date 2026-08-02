@@ -230,13 +230,18 @@ localparam CONF_STR = {
   "O[9],Tape Audio,Off,On;",
   "O[11:10],Boot ROM,0 disk,1 alt,2 dos-a,3 empty;",
   "-;",
-  "J1,Button A,Button B;",
-  "jn,A,B;",
-  "-;",
   "O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
   "-;",
   "T[0],Reset;",
   "R[0],Reset and close OSD;",
+  // J1/jn MUST stay last, after the reset entries. MiSTer reserves a menu slot
+  // where J1 appears in the string but DRAWS the joystick item ("Fire mode.")
+  // at the bottom of the OSD, so every entry after J1 has its action shifted
+  // one item earlier than its label. With J1 in the middle, selecting "Reset"
+  // ran "Aspect ratio". Every working core puts these last -- RX78.sv and
+  // Arcade-Asteroids.sv both go R0,Reset / J1 / jn / V,v.
+  "J1,Button A,Button B;",
+  "jn,A,B;",
   "v,4;",
   "V,v",`BUILD_DATE
 };
