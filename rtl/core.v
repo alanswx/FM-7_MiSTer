@@ -237,7 +237,28 @@ assign MDATABUS_in =
 
   ~(SUBSELn | RDQEn) ? SRDATA_out :
   ~(BTROMn | BTRDYn) | ~RAM1HB2n ? ROMDATA :
-  ~(RAM1HB1n & RAM1HB2n) || MADDRBUS <= 16'h8000 ? MRAM_dout :
+  // `(MADDRBUS[15] & FCXXn)` is $8000-$fbff with the $fd0f window switched to
+  // RAM, and without it that whole 31 KB READ AS ZERO.
+  //
+  // RAM1HB2n is really "F-BASIC ROM selected": ROMS.v has
+  // `m107_q = ~(MADDRBUS[15] & FCXXn & ff_q)`, so it is asserted only in ROM
+  // mode. In RAM mode it goes high, the ROMDATA arm above stops matching, and
+  // the old MRAM condition could not match either -- `~(RAM1HB1n & RAM1HB2n)`
+  // is `~(1 & 1)` = 0 there because RAM1HB1n is forced high for anything
+  // outside $fc00-$ffff, and `MADDRBUS <= 16'h8000` is false above $8000. So
+  // the mux fell through to its `8'h0` default.
+  //
+  // WRITES were always fine -- MRAM.v is a full 64 K with ce_n tied low -- so
+  // this presented as "the data I stored comes back as zeros", not as a dead
+  // memory. Xevious pushed a return address to its stack at $bee3, the RTS read
+  // $0000 back, and the CPU ran away into page zero executing cleared RAM
+  // ($00 $00 = NEG direct-page). That is the P4-15 signature, and it is also
+  // why Ys loads a clean 24 KB to $8000-$dfff and then never runs it (P4-8).
+  //
+  // Reaching this arm with A15 set and FCXXn high necessarily means the RAM
+  // window is open, because the ROMDATA arm above has already taken ROM mode.
+  ~(RAM1HB1n & RAM1HB2n) || MADDRBUS <= 16'h8000
+                         || (MADDRBUS[15] & FCXXn) ? MRAM_dout :
   8'h0;
 
 assign SDATABUS_in =
