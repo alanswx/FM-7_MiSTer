@@ -506,7 +506,27 @@ FLAGS u_FLAGS(
   .CLKSYS      ( CLKSYS      ),
   .SRWB        ( SRWB        ),
   .SCRTSWn     ( SCRTSWn     ),
-  .SRESETn     ( 1'b0        ),
+  // Was tied to 1'b0, which holds THREE of FLAGS' flip-flops permanently in
+  // reset, because every one of them derives its async clear from this pin:
+  //
+  //   s0 = ~SRESETn                 -> m56_5 (SVDOFFn) stuck at 1
+  //   s1 = ~(SRESETn & SIRQCLRn)    -> m45 stuck at 0, so SUBIRQn = ~m45 is
+  //                                    stuck DEASSERTED and the sub CPU can
+  //                                    never receive the main's attention IRQ
+  //   s2 = ~SRESETn                 -> m44_5 stuck at 1
+  //
+  // The sub's IRQ vector is $e06e, and its handler is three instructions:
+  //   $e06e  BITA $d402   (cancel-ack)
+  //   $e071  LDA  #$ff
+  //   $e073  STA  <$00    DP=$d0, so $d000 = $ff
+  //   $e075  RTI
+  // -- which is the ONLY writer of $d000, the flag the sub monitor ROM's input
+  // wait at $fd76 spins on. With SUBIRQn dead that wait can never end.
+  //
+  // `wire SRESETn = RESETBn;` is declared at the top of this file and wired
+  // correctly into SCPU at the other instantiation, so this looks like a
+  // debugging leftover rather than a deliberate tie-off.
+  .SRESETn     ( SRESETn     ),
   .SLEDn       ( SLEDn       ),
   .CANCELn     ( CANCELn     ),
   .SIRQCLRn    ( SIRQCLRn    ),
