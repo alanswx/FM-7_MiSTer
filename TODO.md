@@ -318,7 +318,7 @@ the same WD1793 instantiation remains usable in simulation.
 
 Verified both tops connect every one of `core`'s 28 ports, with none left over.
 
-### P4-10 [FIXED] OS-9 reaches a working shell — `$fd02` reset to the wrong keyboard route
+### P4-10 [FIXED] OS-9 reaches a working shell — it was P4-15, not the keyboard
 
 **OS-9 Level 1 now boots to an interactive shell and takes commands:**
 
@@ -348,18 +348,49 @@ cd vsim && ./obj_dir/Vemu --headless --bootrom 2 \
     --stop-at-frame 1500 --screenshot 1480
 ```
 
-**The cause: `KEYBOARD.v` reset `m77` to `3'b111`, routing the keyboard to the
-MAIN CPU. Both references reset it to the SUB.**
+**The cause was P4-15**, the `$8000-$fbff` read hole. OS-9's console came up as
+soon as reads from the RAM window returned real data; input was never the
+problem.
+
+> **I got this wrong first and the mistake is instructive.** I found OS-9's
+> console working right after changing the `$fd02` keyboard-route reset value
+> and attributed the fix to it. The "before" I compared against was a *different
+> command* — no keypresses, screenshot at frame 1380 — against an "after" with
+> keys at 1000-1250 and a screenshot at 1480. Two variables moved at once.
+> Rebuilding with the old reset value and running the **identical** command gives
+> **the identical result**:
+>
+> | | png |
+> |---|---|
+> | pre-P4-15, no keys, frame 1380 | 4380 (kernel banner only) |
+> | post-P4-15, no keys, frame 1480 | **5829** (the shell comes up) |
+> | post-P4-15, with keys, frame 1480 | **7662** (shell + `dir` output) |
+> | either keyboard reset value | **no difference at all** |
+>
+> OS-9 writes `$fd02 <- $00` then `$fd02 <- $01` itself, so it selects the main
+> route and the reset value never applied to it — which also contradicts the
+> earlier note in this entry that "OS-9 never writes `$fd02`". That measurement
+> came from a run I killed part-way and had flagged as needing re-checking. It
+> did.
+>
+> **A/B one variable, against the same command.**
+
+**A separate, real defect found while chasing this**, kept because both
+references agree even though it fixes nothing measurable: `KEYBOARD.v` reset
+`m77` to `3'b111`, routing the keyboard to the MAIN CPU, and both references
+reset it to the SUB.
 
 | | |
 |---|---|
 | **MAME** | `m_irq_mask = 0x00` at reset (`fm7.cpp:1792`), and delivery is `if(m_irq_mask & IRQ_FLAG_KEY) main_irq_set_flag(...); else m_sub->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);` (`:1120-1126`). Mask 0 takes the **else** branch. |
 | **CSP** | `reset()` sets `irqmask_keyboard = true` (`fm7_mainio.cpp:268`), cleared only when `$fd02` bit 0 is written **set** (`:500-503`). The same flag drives the sub as `SIG_FM7_SUB_KEY_MASK` with `firq_mask = !flag`, so the reset state leaves the sub's FIRQ **enabled**. |
 
-It only bites a title that **never writes `$fd02`**, because anything that does
-immediately overrides the reset value. OS-9 is exactly that case — measured
-earlier in this entry and filed as "worth confirming" without being followed up,
-which cost a day. The sub monitor ROM's input wait at `$fd76` is
+It can only bite a title that **never writes `$fd02`**, because anything that
+does overrides the reset value immediately. **No such title has been found.**
+All 18 of P4-16's remaining blanks were re-run against the change and not one
+moved, and OS-9 turned out to write `$fd02` after all. So this is a
+correctness-only fix, in the same category as P3-2. The sub monitor ROM's input
+wait at `$fd76` is
 
 ```
 $fd76  ORCC  #$40        mask FIRQ
@@ -382,15 +413,15 @@ load-bearing.
 `run_tests.sh` all 8 rows byte-identical, including the three keyboard tests —
 F-BASIC writes `$fd02` itself, so it is unaffected either way.
 
-> **The `keyboard: n strobes` line in the run stats now under-reports.** It
-> appears to count the main route only, so a run where the sub is receiving keys
-> perfectly well reports `0 strobes`. The OS-9 run above shows `0 strobes` while
-> visibly executing a typed `dir`. Do not use that counter to conclude the
-> keyboard is dead.
+> **`keyboard: n strobes` counts the SUB route only** (`stat_kstrobes` edges on
+> `dbg_kstroben`, i.e. `KSTROBEn`). That is not a bug, but it is easy to
+> misread: the OS-9 run reports `0 strobes` while visibly executing a typed
+> `dir`, because OS-9 routes the keyboard to the *main* CPU. A zero there means
+> "nothing arrived on the sub route", not "the keyboard is dead".
 
-**It did NOT fix the other titles that never write `$fd02`.** Penguin-kun Wars,
-Fairie's Residence and Yellow Lemon still sit blank at 3790 despite sharing the
-`$fd76` loop, so they stall for a different reason. See P4-16.
+**The route change fixed no title.** Penguin-kun Wars, Fairie's Residence and
+Yellow Lemon still sit blank at 3790 despite sharing the `$fd76` loop, and all
+18 of P4-16's blanks are unmoved. They stall for a different reason.
 
 ### P4-10-orig [superseded] OS-9 boots its kernel, then makes no visible progress
 
