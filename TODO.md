@@ -26,15 +26,19 @@ routings, shift/ctrl/graph/kana/break) and the boot-ROM bank select are all
 verified working against the reference emulators. What remains is mostly
 per-title software archaeology plus a handful of scoped RTL items.
 
-The single biggest remaining bucket is **46 FM-7 images that run at a healthy
-rate and draw nothing** (P4-14). That number was 108 before the disks were
-looked at rather than the screenshots: 13 have a boot sector that deliberately
-halts, and 35 are secondary disks of multi-disk sets whose boot sector is not
-code at all. **It is not one shared cause** — 62 of the measured blanks never
-touch the sub handshake at all, so the failure is upstream of the display
-entirely, and a large sub-group is a main-CPU runaway executing zeroed memory.
-Read P4-14 before starting on any of them; it will save you from chasing the
-video path for titles that never asked to draw.
+**The failure counts are currently unknown**, and that is deliberate rather than
+sloppy. P4-14 swept all 350 images and found 46 FM-7 titles that ran at a
+healthy rate and drew nothing — but that was measured *before* P4-15, which
+fixed `$8000-$fbff` returning zero on every read whenever the `$fd0f` RAM window
+was open. That window is what games load into, so the whole picture has to be
+re-derived. Three of P4-14's fifteen crashes render properly now.
+
+Two things from P4-14 that do survive, because they are about the disks rather
+than the core: 13 of those images have a boot sector that **deliberately halts**
+(`ORCC #$50 / STA $fd03 / BRA *`) and 35 are **secondary disks of multi-disk
+sets** whose boot sector is not code at all. Those are not failures and never
+were — `vsim/sweep/bootsector.py` identifies them from the image. Subtract them
+before counting anything.
 
 **Build and run.**
 
@@ -64,13 +68,12 @@ rather than trying to glob the brackets — that is what the sweep script does.
 
 | | where | why |
 |---|---|---|
-| **P4-15** | The page-zero runaway group | The best lead in the collection: 5+ titles (Xevious, Tritorn, Hokuto no Ken, Wing Man 2) all crash into cleared RAM with the *same* signature — main ~3700, sub exactly 8721, 2-4M I/O cycles, `NEG <$00` in the tail. Same class as P4-7 and P4-11, but with several instances to compare instead of one. |
-| **P4-8** | Ys never enters its loaded program | Now draws its HUD, so it is further than it was. Waiting on two flags at `$1113` (`TST $ffe5` / `TST $28e9`) that nothing ever writes. |
-| **P4-10** | OS-9 stops after its kernel banner | Kernel runs, a cursor now appears on disk 1, input never lands. Not a hang. OS-9 never writes `$fd02`, so it never picks a keyboard route. |
-| **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. Fold into P4-15 — it is probably the same bug. |
-| **P4-14** | The rest of the 46 blanks | 62 of 87 never touch the sub handshake at all. Upstream of the display; do not chase the video path. |
+| **P4-14 re-sweep** | **Re-derive everything** | P4-15 fixed a 31 KB read hole in the very window games load into, and P3-3 added kanji hardware software probes for. Every blank/crash conclusion in P4-14 predates both. Do this first — it tells you what is actually left. |
+| **P4-8** | Ys never enters its loaded program | P4-15 advanced it: the HUD now populates with real values (`H.P 020/020`). Play area still black. The `$1113` (`TST $ffe5` / `TST $28e9`) lead was traced on the broken core and may evaporate — re-check before chasing it. |
+| **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. Re-check against P4-15 first: it is the same *class* as the runaways that fix cured. |
+| **P4-10** | OS-9 stops after its kernel banner | Kernel runs, a cursor now appears on disk 1, input never lands. Not a hang. OS-9 never writes `$fd02`, so it never picks a keyboard route. Untouched by P4-15. |
 | **P4-3** | PSG `sel_n_i` pitch | Needs a human ear, cannot be settled in sim. |
-| **P4-14 re-sweep** | Confirm the kanji ROM changed nothing | P3-3 added optional hardware that software *probes for*. The 8-row regression is unchanged, but the 350-image sweep has not been re-run against it. |
+| | FM-77AV | `FM77AV_PLAN.md` — 12 phases, not ROM-blocked, binding constraint is block RAM at ~76%. |
 | | second drive, 2DD, multi-disk `.d88` | Unstarted. Scoped in P4-1. |
 | | `$fd04` bit 2 | Carries BUSY here; no reference puts it there. Recorded in P3-2, not acted on. |
 
@@ -124,7 +127,22 @@ these produced a confident wrong answer at least once:
    harness, and is far more dangerous than a crash. Any script driving the
    simulator must `cd` to `vsim/` and check its log for `readmem file not
    found`.
-10. **`grep` a trace for a hex address and you will match cycle counters.**
+10. **A verified WRITE path says nothing about the READ path.** P4-15 sat
+    undiscovered through several investigations because `$8000-$fbff` accepted
+    every write perfectly and returned zeros on read. P4-1j recorded Ys doing
+    "a clean contiguous 24 KB program load, no gaps, no double-writes ... this
+    whole path is working" — which was true, and useless. A memory that stores
+    and returns zeros does not look like broken memory; it looks like a software
+    bug in whatever ran next. **Read back what you wrote.**
+11. **`--trace-mem` only logs `$fdxx`, whatever its help text says.** It claims
+    "every main-CPU bus cycle in that hex address range", but
+    `--trace-mem 0100-0110` across the boot-sector load returns *zero lines*.
+    That reads as "this region is never touched", which is a very convincing
+    lie. For RAM use `--dump-shadow`, which records both directions
+    (`shadow_m.mem[addr] = rw ? din : dout`) — so a value in it is whichever
+    access happened last, and comparing a written value against a later read is
+    exactly how P4-15 was pinned down.
+12. **`grep` a trace for a hex address and you will match cycle counters.**
    `grep -c d404` over a `--trace-mem-sub` log reports a healthy count of lines
    like `cycles 86d4041 reading D0` — the address appears as a substring of a
    cycle number. It reads exactly like "the port is being used". Anchor on the
@@ -266,7 +284,8 @@ P4-14 for the full table. The ones worth calling out:
 | `6aad4a8` | CTRL / GRAPH / KANA keyboard tables from CSP, and the break key wired through (P2-1, P2-3). `vsim` gained `--key '400:@CTRL+ac'` modifier chords, without which the tables cannot be tested at all. |
 | `5ac7684` | `ROMS.v`'s boot-ROM/RAM switch was a flip-flop **clocked by reset being asserted**, so it depended on a power-up edge the FPGA build never guaranteed (P0-2). Now a plain synchronous reset-and-load. Cannot be proved in sim — `vsim` manufactures that exact edge — so the evidence is "no regression" plus the argument. |
 | `47abd60` | The keypad `/` is a different FM-7 key from the main `/` and takes a different GRAPH code. Found by `vsim/sweep/check_kbd.py` diffing the tables against CSP; all 202 entries now match exactly (P2-1). |
-| *(pending)* | **Kanji ROM at `$fd20-$fd23` (P3-3).** Never actually blocked — `refs/fm7.zip` had `kanji.rom` (crc32 `62402ac9`, matching MAME and *not* a `BAD_DUMP`) all along, just never extracted. New `rtl/KANJI.v` plus the decode in `MDECODE.v`. Verified from BASIC at two addresses. |
+| `684c2cf` | **Kanji ROM at `$fd20-$fd23` (P3-3).** Never actually blocked — `refs/fm7.zip` had `kanji.rom` (crc32 `62402ac9`, matching MAME and *not* a `BAD_DUMP`) all along, just never extracted. New `rtl/KANJI.v` plus the decode in `MDECODE.v`. Verified from BASIC at two addresses. |
+| `ada5c37` | **`$8000-$fbff` read as ZERO whenever the `$fd0f` RAM window was open (P4-15).** The biggest bug found so far. `core.v`'s read mux had no arm for the RAM case, so 31 KB — the window games load into — returned `$00` on every read. **Writes always worked**, which is why every prior investigation that checked the write path pronounced it healthy. Xevious, Tritorn and Hokuto no Ken go from dead runaways to rendering. |
 | `ab290b7` | FDC dropped one of two back-to-back register writes. The core edge-detects `wr` *as it samples it*, so a strobe that goes low and high between two `ce` ticks is never an edge. Ys sets track+sector with one 16-bit store and lost every sector write. |
 | `9026de8` | `files.qip` was missing `rtl/wd1793.sv` — **the Quartus build could not have compiled the FDC**. |
 | `a5a9b27` | `(int)main_time` overflowed INT_MAX at frame ~2666, so `BeforeEval`'s `cycles < 2000` guard went permanently true and the block device silently stopped serving. Invalidated every long run. |
@@ -600,6 +619,14 @@ Every `[FD]` archive in `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip`,
 unpacked to **350 disk images**, each booted at `--bootrom 0` for 700 frames
 with a screenshot at 680. Run against commit `6aad4a8`.
 
+> **⚠ EVERY NUMBER BELOW IS STALE.** This sweep predates P4-15, which fixed
+> `$8000-$fbff` reading as zero whenever the `$fd0f` RAM window was open — the
+> window games load into. Three of the fifteen crashes here (Xevious, Tritorn,
+> Hokuto no Ken) render properly now. The blank and crash buckets should shrink
+> substantially and the render count should rise well past 33. The bucket
+> *method* below is still the right method; the counts are not. A re-sweep
+> against `ada5c37` is in progress.
+
 **Split FM-7 from FM77AV before reading any of it.** 129 of the 350 images are
 FM77AV software — a different machine (MMR paging, the MB61VH010 drawing ALU,
 analog palette, 4096-colour mode, YM2203), none of which this core implements
@@ -783,6 +810,91 @@ this sweep produced 350 rows of uniform garbage because it did not.**
 reason: it diffs `KEYBOARD.v`'s CTRL/GRAPH/KANA tables against CSP's header
 through the PS/2 ↔ physical-key mapping, and it caught a real transcription
 error (P2-1).
+
+### P4-15 [FIXED] `$8000-$fbff` read as ZERO whenever the `$fd0f` RAM window was open
+
+**This is the largest single bug found so far, and the reason it hid for so long
+is worth more than the fix.**
+
+`core.v`'s `MDATABUS_in` mux had no arm for the RAM window. `RAM1HB2n` is really
+"F-BASIC ROM selected" despite its name — `ROMS.v` has
+`m107_q = ~(MADDRBUS[15] & FCXXn & ff_q)` — so:
+
+| `$fd0f` mode | `RAM1HB2n` | what the mux did |
+|---|---|---|
+| ROM (`ff_q=1`) | 0 | `~RAM1HB2n` arm matches → `ROMDATA`. Fine. |
+| **RAM** (`ff_q=0`) | **1** | ROM arm stops matching. The MRAM arm cannot match either: `~(RAM1HB1n & RAM1HB2n)` is `~(1 & 1)` = 0, because `ROMS.v` forces `RAM1HB1n` high for anything outside `$fc00-$ffff`, and `MADDRBUS <= 16'h8000` is false above `$8000`. **Falls through to `8'h0`.** |
+
+So every read of that 31 KB window returned zero while the RAM map was open —
+and the RAM map is exactly what games open to load into.
+
+**WRITES WERE ALWAYS FINE.** `MRAM.v` is a full 64 K with `ce_n` tied low, so
+stores landed perfectly. That is the whole reason this survived: it presented as
+*"the data I stored comes back as zeros"*, not as dead memory, so every
+investigation that verified the **write** path concluded the path was healthy.
+P4-1j says so in as many words — Ys performing "a clean contiguous 24 KB program
+load, no gaps, no double-writes ... this whole path is working". The writes
+*were* working. Nobody checked the reads.
+
+**Generalise it: verifying a write path proves nothing about the read path, and
+a memory that accepts writes and returns zeros looks like a software bug in
+whatever ran next.**
+
+#### How it was found
+
+Traced Xevious to the exact instruction where control was lost. The boot ROM's
+delay routine at `$feba`-`$fec0` ends in an `RTS`, and that `RTS` jumped to
+`$0000`:
+
+```
+$fed8  8d e0     BSR   $feba        s=bee7
+$feba  17 00 00  LBSR  $febd        s=bee5
+$febd  17 00 00  LBSR  $fec0        s=bee3
+$fec0  39        RTS                s=bee5
+$0000  00 00     NEG   <$00         <- should have returned to $fec0
+```
+
+`--dump-shadow` then settled it. The stack held the correct pushed values at
+`$bee7` (`fe da`) and `$bee5` (`fe bd`), but `$bee3` read back `00 00` where
+`$fec0` had been pushed — and `$bee3` sits inside the `$fd0f` window. Opcode
+`$00 $00` is `NEG` direct-page, so the CPU walked page zero doing
+read-modify-writes on `$fd00` (`DP=$fd`), which is exactly the signature the
+P4-14 sweep had already isolated: main rate *below* the healthy band, sub pinned
+at **exactly 8721** in its ROM idle loop, and millions of I/O cycles.
+
+*(`--dump-shadow` records both directions — `shadow_m.mem[addr] = rw ? din :
+dout` — so a value in it is the last access either way. `$bee5` showing the
+pushed value proves the write landed; `$bee3` showing `00 00` is the read
+result.)*
+
+#### Effect
+
+| | before | after |
+|---|---|---|
+| **Xevious** | 3902/8721, blank | 5137/6493, **title screen** |
+| **Tritorn** | 3723/8721, blank | 5209/7033, **full title artwork** |
+| **Hokuto no Ken** | 3690/8721, blank | 4797/6682, content |
+| **Ys** | HUD with empty fields | HUD showing `H.P 020/020`, `EXP 00000/00200`, `GOLD 01000` — P4-8 advanced, **not** solved; the play area is still black |
+
+All 8 rows of `run_tests.sh` byte-identical. F-BASIC itself lives in this window
+in ROM mode, so the existing rows exercise the ROM arm heavily — it is the RAM
+arm that had no coverage at all.
+
+#### Three wrong hypotheses on the way, recorded so they are not re-tried
+
+1. **The F-BASIC ROM is mapped over the stack.** No — `fbasic300.rom` holds
+   `d7 ba` at `$bee3`, not `00 00`.
+2. **`$ffe0-$ffef` is mis-mapped** (P3-5 flags it, and both Xevious and Ys touch
+   `$ffe5`). No — it is working RAM: `poke 65509,123 : print peek(65509)`
+   returns 123.
+3. **`--trace-mem` can watch RAM.** It cannot. Despite the help text promising
+   "every main-CPU bus cycle in that hex address range", it only logs `$fdxx`
+   here — `--trace-mem 0100-0110` over the boot-sector load returns zero lines.
+   That reads as "the region is never touched", which is a very convincing lie.
+   Use `--dump-shadow` for RAM instead.
+
+**Everything P4-14 concluded about blank screens was measured on this broken
+core** and must be re-derived — see the re-sweep note there.
 
 ### P4-9 [verified] Breadth sweep: 12 titles from the Neo Kobe collection
 
