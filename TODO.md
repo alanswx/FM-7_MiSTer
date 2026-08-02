@@ -19,26 +19,24 @@ Reference shorthand:
 ## Handoff — read this first
 
 **State.** The core boots F-BASIC (cassette and disk), runs games from `.d77`,
-and boots OS-9's kernel. **33 of the 221 FM-7 disk images in the Neo Kobe
-collection render a real screen** (P4-14). The FDC, the main/sub handshake and
+and boots OS-9's kernel. **62 of the 221 FM-7 disk images in the Neo Kobe
+collection render a real screen** (P4-16), up from 33 before P4-15. The FDC, the main/sub handshake and
 its BUSY completion flag, the shared-RAM aperture, the full keyboard (both
 routings, shift/ctrl/graph/kana/break) and the boot-ROM bank select are all
 verified working against the reference emulators. What remains is mostly
 per-title software archaeology plus a handful of scoped RTL items.
 
-**The failure counts are currently unknown**, and that is deliberate rather than
-sloppy. P4-14 swept all 350 images and found 46 FM-7 titles that ran at a
-healthy rate and drew nothing — but that was measured *before* P4-15, which
-fixed `$8000-$fbff` returning zero on every read whenever the `$fd0f` RAM window
-was open. That window is what games load into, so the whole picture has to be
-re-derived. Three of P4-14's fifteen crashes render properly now.
+The single biggest remaining bucket is **21 FM-7 images that are primary, good
+dumps, run at a healthy rate and still draw nothing** (P4-16). That was 46
+before P4-15 fixed `$8000-$fbff` returning zero on every read whenever the
+`$fd0f` RAM window was open — the window games load into.
 
-Two things from P4-14 that do survive, because they are about the disks rather
-than the core: 13 of those images have a boot sector that **deliberately halts**
-(`ORCC #$50 / STA $fd03 / BRA *`) and 35 are **secondary disks of multi-disk
-sets** whose boot sector is not code at all. Those are not failures and never
-were — `vsim/sweep/bootsector.py` identifies them from the image. Subtract them
-before counting anything.
+**Subtract the disks that should not boot before counting anything.** Of the 77
+blank-at-a-healthy-rate images, 13 have a boot sector that **deliberately halts**
+(`ORCC #$50 / STA $fd03 / BRA *`), 31 are **secondary disks of multi-disk sets**
+whose boot sector is not code at all, and 12 more are marked `[b]`, a known-bad
+dump. `vsim/sweep/bootsector.py` identifies the first group straight from the
+image. Quoting 77, or the older 108, badly overstates the failure rate.
 
 **Build and run.**
 
@@ -68,9 +66,10 @@ rather than trying to glob the brackets — that is what the sweep script does.
 
 | | where | why |
 |---|---|---|
-| **P4-14 re-sweep** | **Re-derive everything** | P4-15 fixed a 31 KB read hole in the very window games load into, and P3-3 added kanji hardware software probes for. Every blank/crash conclusion in P4-14 predates both. Do this first — it tells you what is actually left. |
-| **P4-8** | Ys never enters its loaded program | P4-15 advanced it: the HUD now populates with real values (`H.P 020/020`). Play area still black. The `$1113` (`TST $ffe5` / `TST $28e9`) lead was traced on the broken core and may evaporate — re-check before chasing it. |
-| **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. Re-check against P4-15 first: it is the same *class* as the runaways that fix cured. |
+| **P4-16** | The 21 remaining blanks | Primary, good-dump disks that run healthily and draw nothing. The honest target, already stripped of halt-stubs, secondary disks and bad dumps. |
+| **P4-8** | Ys never enters its loaded program | P4-15 moved it a long way — 26146 → 35880 bytes on screen and the HUD now populates. Still not playable. The `$1113` (`TST $ffe5` / `TST $28e9`) lead was traced on the broken core, so **re-derive it before chasing it.** |
+| **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. Re-check against P4-15 first: it is the same *class* as the runaways that fix cured, and it may simply be gone. |
+| **P4-16** | The 8 remaining crashes | A different set from P4-14's fifteen. Seven still show `sub` = exactly 8721; three are `(Disk 1)` of multi-disk sets. |
 | **P4-10** | OS-9 stops after its kernel banner | Kernel runs, a cursor now appears on disk 1, input never lands. Not a hang. OS-9 never writes `$fd02`, so it never picks a keyboard route. Untouched by P4-15. |
 | **P4-3** | PSG `sel_n_i` pitch | Needs a human ear, cannot be settled in sim. |
 | | FM-77AV | `FM77AV_PLAN.md` — 12 phases, not ROM-blocked, binding constraint is block RAM at ~76%. |
@@ -619,13 +618,13 @@ Every `[FD]` archive in `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip`,
 unpacked to **350 disk images**, each booted at `--bootrom 0` for 700 frames
 with a screenshot at 680. Run against commit `6aad4a8`.
 
-> **⚠ EVERY NUMBER BELOW IS STALE.** This sweep predates P4-15, which fixed
+> **⚠ SUPERSEDED BY P4-16.** This sweep predates P4-15, which fixed
 > `$8000-$fbff` reading as zero whenever the `$fd0f` RAM window was open — the
-> window games load into. Three of the fifteen crashes here (Xevious, Tritorn,
-> Hokuto no Ken) render properly now. The blank and crash buckets should shrink
-> substantially and the render count should rise well past 33. The bucket
-> *method* below is still the right method; the counts are not. A re-sweep
-> against `ada5c37` is in progress.
+> window games load into. The re-run against `ada5c37` moved **44 titles better,
+> 0 worse**: renders 33 → 62, blanks 108 → 77, crashes 15 → 8. The bucket
+> *method* below is still the right method and the halt-stub / secondary-disk
+> analysis still holds, since those are properties of the disks rather than of
+> the core. **The counts are not.** Use P4-16.
 
 **Split FM-7 from FM77AV before reading any of it.** 129 of the 350 images are
 FM77AV software — a different machine (MMR paging, the MB61VH010 drawing ALU,
@@ -810,6 +809,82 @@ this sweep produced 350 rows of uniform garbage because it did not.**
 reason: it diffs `KEYBOARD.v`'s CTRL/GRAPH/KANA tables against CSP's header
 through the PS/2 ↔ physical-key mapping, and it caught a real transcription
 error (P2-1).
+
+### P4-16 [verified] Fourth breadth sweep: the whole collection, after P4-15
+
+Same 350 images, same method as P4-14, run against `ada5c37` (the P4-15 read-mux
+fix plus the P3-3 kanji ROM). The binary's md5 was recorded before the run and
+checked after, because an earlier attempt was invalidated by rebuilding
+underneath it.
+
+**44 FM-7 titles better, 0 worse.** For a change to the main CPU's read path,
+the zero is the number that matters.
+
+| FM-7 (221 images) | P4-14 | **P4-16** | |
+|---|---|---|---|
+| renders a rich screen | 33 | **62** | +29 |
+| healthy rate, some content | 48 | 53 | +5 |
+| healthy rate, drawing nothing | 108 | **77** | −31 |
+| low rate with content (idling) | 1 | 4 | |
+| low rate, blank (crash) | 15 | **8** | −7 |
+| did not boot, fell to F-BASIC | 16 | 17 | |
+
+Rescoping the blank bucket the same way P4-14 did — subtracting disks that
+should not boot — gives the honest target:
+
+| | P4-14 | **P4-16** |
+|---|---|---|
+| blank at a healthy rate | 108 | 77 |
+| − halt-stub boot sector | 13 | 13 |
+| − secondary disk of a multi-disk set | 35 | 31 |
+| genuine | 60 | **33** |
+| (of those, marked `[b]` bad dump) | (14) | (12) |
+| **primary, good-dump, should boot** | **46** | **21** |
+
+**The FM77AV column barely moves** (1 render before, 1 after), which is the
+control: P4-15 is an FM-7 memory-map fix and FM77AV software fails for reasons
+this core does not implement at all.
+
+**Biggest movers**, all previously blank or near-blank:
+
+| title | P4-14 | P4-16 |
+|---|---|---|
+| **Ys (FM7)** | 26146 (HUD, empty fields) | **35880** |
+| **Templo del Sol - Asteka II** | 6407 | **35230** |
+| **Lefty Mouse** | 3790 (blank) | **31824** |
+| **Tritorn** | 3790 (blank) | **30657** |
+| **Take Out Vol. 1/2/3/4/7** | 3790 (blank) | 12655-21001 |
+| **Champion ProWres Special** | 3790 (blank) | 18986 |
+| **Thunder Force** | 3790 (blank) | 14398 |
+| **Mahoutsukai no Deshi I / II** | ~3810 (blank) | 13445 / 14442 |
+| **Wibarm** | 3790 (blank) | 11531 |
+| **Helicoid**, **Topple Zip** | 3790 (blank) | 10629 / 10611 |
+| Thexder | 57826 | **65102** |
+
+Two things worth noting from the movers. The whole **Take Out** series moved
+together — same publisher, same loader, same dependency on reading back what it
+loaded. And **Thunder Force** is here, which P4-15 had explicitly set aside as
+"actually a decrypt loop at `$010a`, so check each rather than assuming" — that
+caution was right in method and wrong in conclusion; it was the same bug.
+
+**The 8 crashes that remain** are a different set from P4-14's fifteen — Arion,
+Solitaire Royale and Miner 2049er are gone from it:
+
+```
+1913  8718  Daisenryaku FM
+1245  8727  [Compilation] Ura DOS 01 [b]
+2172  8721  Wizard and the Princess (Disk 1)
+1410  8721  Girls Paradise (Disk C) [b]
+1195  8721  Thexder [Alt 1] [b]   [RUNAWAY-INTO-IO]
+ 951  8721  Transylvania (Disk 1)
+ 943  8721  The Quest (Disk 1-A)
+ 920  8721  The Dark Crystal (Disk 1-B)
+```
+
+Seven of the eight still show `sub = 8721` exactly, so the "sub idling in its ROM
+loop, never given work" signature is still the thing to grep for. Three of them
+are `(Disk 1)`/`(Disk 1-A)`/`(Disk 1-B)` of multi-disk sets, which the secondary
+-disk filter does not catch because they *are* the first disk.
 
 ### P4-15 [FIXED] `$8000-$fbff` read as ZERO whenever the `$fd0f` RAM window was open
 
