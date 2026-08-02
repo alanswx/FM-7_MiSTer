@@ -33,13 +33,29 @@ def boot_sector(path):
 
 
 def is_halt_stub(data):
-    """True if the sector runs a few instructions and branches to itself.
+    """Classify a boot sector as something that was never meant to boot.
 
-    The 6809 encoding for `BRA *` is 20 FE -- a relative branch of -2. Looking
-    for it in the first 32 bytes catches the stub without matching a real
-    loader, which reaches its own code long before then. Also accept the
-    machine simply being told to stop: SYNC (13) or CWAI (3C) with everything
-    masked, which some disks use instead.
+    Three distinct kinds, all of which the core handles correctly and none of
+    which is an emulation failure:
+
+    "BRA-self"  -- a real stub: a few instructions then a branch to itself. The
+                   6809 encoding for `BRA *` is 20 FE, a relative branch of -2.
+                   Looking in the first 32 bytes catches it without matching a
+                   real loader, which reaches its own code long before then.
+    "uniform"   -- every byte identical. $e5 is the standard formatted-but-
+                   never-written fill on FM/MFM media (a blank disk), $00 and
+                   $ff turn up too. A sector with one repeated byte cannot be a
+                   loader under any reading.
+
+    DO NOT extend this to "mostly zeros". That was tried and it is wrong: a
+    short loader padded out to the 256-byte sector is the NORMAL shape, and a
+    zero-fraction test throws away real games. 1942's boot sector is 92% zeros
+    and opens `86 fd 1f 8b 97 0f ...`, which is 6809 code; Tritorn's is 87%
+    zeros, opens `1a 50 86 fd 1f ...`, and Tritorn renders correctly. An 85%
+    threshold silently excluded both.
+
+    Anything not recognised here stays in the failure count. Over-counting
+    failures is the safe direction; quietly filtering one away is not.
     """
     if not data or len(data) < 4:
         return None
@@ -48,6 +64,8 @@ def is_halt_stub(data):
         return "BRA-self"
     if b"\x13" in head[:12] and b"\x1a\x50" in head[:4]:
         return "SYNC-masked"
+    if len(set(data)) == 1:
+        return "uniform-$%02x" % data[0]
     return None
 
 

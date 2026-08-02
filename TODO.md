@@ -26,17 +26,20 @@ routings, shift/ctrl/graph/kana/break) and the boot-ROM bank select are all
 verified working against the reference emulators. What remains is mostly
 per-title software archaeology plus a handful of scoped RTL items.
 
-The single biggest remaining bucket is **21 FM-7 images that are primary, good
+The single biggest remaining bucket is **18 FM-7 images that are primary, good
 dumps, run at a healthy rate and still draw nothing** (P4-16). That was 46
 before P4-15 fixed `$8000-$fbff` returning zero on every read whenever the
 `$fd0f` RAM window was open — the window games load into.
 
 **Subtract the disks that should not boot before counting anything.** Of the 77
-blank-at-a-healthy-rate images, 13 have a boot sector that **deliberately halts**
-(`ORCC #$50 / STA $fd03 / BRA *`), 31 are **secondary disks of multi-disk sets**
-whose boot sector is not code at all, and 12 more are marked `[b]`, a known-bad
-dump. `vsim/sweep/bootsector.py` identifies the first group straight from the
-image. Quoting 77, or the older 108, badly overstates the failure rate.
+blank-at-a-healthy-rate images, 22 have a boot sector that cannot boot (13
+**deliberately halt** with `ORCC #$50 / STA $fd03 / BRA *`, 9 are a single
+repeated byte — $e5 blank-format fill, $00 or $ff), 27 are **secondary disks of
+multi-disk sets**, and 10 more are marked `[b]`, a known-bad dump.
+`vsim/sweep/bootsector.py` identifies the boot-sector cases straight from the
+image. Quoting 77, or the older 108, badly overstates the failure rate — and see
+the warning in P4-16 about the one filter that overstates it in the other
+direction.
 
 **Build and run.**
 
@@ -835,11 +838,27 @@ should not boot — gives the honest target:
 | | P4-14 | **P4-16** |
 |---|---|---|
 | blank at a healthy rate | 108 | 77 |
-| − halt-stub boot sector | 13 | 13 |
-| − secondary disk of a multi-disk set | 35 | 31 |
-| genuine | 60 | **33** |
-| (of those, marked `[b]` bad dump) | (14) | (12) |
-| **primary, good-dump, should boot** | **46** | **21** |
+| − boot sector is not bootable | 13 | 22 |
+| − secondary disk of a multi-disk set | 35 | 27 |
+| genuine | 60 | **28** |
+| (of those, marked `[b]` bad dump) | (14) | (10) |
+| **primary, good-dump, should boot** | **46** | **18** |
+
+`bootsector.py` gained two classes on the way: `uniform-$xx`, a sector where
+every byte is identical ($e5 is the standard formatted-but-never-written fill on
+FM/MFM media, and $00 and $ff both turn up), and the `(Disk 1-B)` naming that
+the secondary-disk pattern previously missed. Counts are now 13 `BRA-self`,
+4 `uniform-$e5`, 3 `uniform-$00`, 2 `uniform-$ff`.
+
+> **A filter that was tried and is WRONG, recorded so it is not re-tried:
+> "the boot sector is mostly zeros, so it is not code".** A short loader padded
+> out to the 256-byte sector is the *normal* shape. **1942's boot sector is 92%
+> zeros** and opens `86 fd 1f 8b 97 0f ...`, which is 6809 code; **Tritorn's is
+> 87% zeros**, opens `1a 50 86 fd 1f ...`, and Tritorn renders correctly. An
+> 85%-zeros threshold silently removed both from the failure count — it made the
+> numbers look better by discarding a real failure and a real success. Only
+> "every byte identical" is safe. **Over-counting failures is the safe
+> direction.**
 
 **The FM77AV column barely moves** (1 render before, 1 after), which is the
 control: P4-15 is an FM-7 memory-map fix and FM77AV software fails for reasons
