@@ -917,6 +917,51 @@ reason: it diffs `KEYBOARD.v`'s CTRL/GRAPH/KANA tables against CSP's header
 through the PS/2 ↔ physical-key mapping, and it caught a real transcription
 error (P2-1).
 
+### P4-17 [verified] `SRESETn` sweep: a correctness fix, not an unlock
+
+`f9548d8` untied `SRESETn` from `1'b0` in the `FLAGS` instantiation, which had
+been holding three flip-flops permanently in reset — including `m45`, so
+`SUBIRQn` could never assert and the sub CPU could never take the main's
+attention IRQ. A full 350-image sweep against it, diffed against
+`vsim/sweep/results-P4-16.tsv`:
+
+| | |
+|---|---|
+| FM-7 comparable | 221 |
+| better | **1** |
+| worse | **1** |
+| FM77AV (129) | 0 better, 0 worse |
+
+| | before | after |
+|---|---|---|
+| **1942** | 3790 (blank) | **5880** |
+| Templo del Sol - Asteka II (Disk B) `[b]` | 4464 | **3790** (blank) |
+
+The bucket totals are byte-identical to P4-16 (62/53/77/4/8/17) because those
+two swapped places between BLANK and PARTIAL.
+
+**Be honest about what this is: a latent correctness fix, not an unlock.** One
+title in 221, against P4-15's 44. A permanently-dead interrupt path is wrong and
+worth repairing on its own terms — anything that uses `$fd05` bit 6 later now
+works — but it did not move the collection.
+
+**1942 moving is the interesting part, and it contradicts my own reasoning.**
+The `f9548d8` commit message states plainly that this fix could not explain
+1942, because 1942 never writes `$fd05` at all over 700 frames and so never
+requests attention. That measurement was correct and 1942 moved anyway. So the
+mechanism is *not* `SUBIRQn`; it must be one of the other two flip-flops the
+tie-off was holding down — `m56_5` (`SVDOFFn`) or `m44_5`. **Unverified — do not
+repeat the claim that this fix works through the attention IRQ until someone
+checks which flop actually did it.**
+
+**And it costs one title.** `Templo del Sol - Asteka II (Disk B)` drops from
+4464 to blank, reproducibly; Disk A is untouched at 35230. Disk B is a secondary
+disk of a multi-disk set *and* marked `[b]`, a known-bad dump, so both of
+P4-16's exclusion filters would drop it from any failure count — but a
+regression is a regression and it is recorded rather than filtered away. The fix
+is kept because tying a reset pin to 0 is indefensible regardless of the
+scoreboard.
+
 ### P4-16 [verified] Fourth breadth sweep: the whole collection, after P4-15
 
 Same 350 images, same method as P4-14, run against `ada5c37` (the P4-15 read-mux
