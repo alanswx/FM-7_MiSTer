@@ -421,7 +421,9 @@ F-BASIC writes `$fd02` itself, so it is unaffected either way.
 
 **The route change fixed no title.** Penguin-kun Wars, Fairie's Residence and
 Yellow Lemon still sit blank at 3790 despite sharing the `$fd76` loop, and all
-18 of P4-16's blanks are unmoved. They stall for a different reason.
+18 of P4-16's blanks are unmoved. They stall for a different reason — see the
+investigation under P4-16, which did not reach a cause but did eliminate
+several.
 
 ### P4-10-orig [superseded] OS-9 boots its kernel, then makes no visible progress
 
@@ -1096,6 +1098,33 @@ FIRQ is the keyboard (`KSTROBEn`), which suggests "waiting for a keypress" —
 400/600/800 leaves both at 3790. Either they take the main-side keyboard route
 (`$fd02` bit 0) and the sub's FIRQ is correctly masked, or they are waiting on
 something else entirely. Start by checking which route each one selects.
+
+#### What the three `$fd76` titles are actually doing [no cause found]
+
+Penguin-kun Wars, Fairie's Residence and Yellow Lemon were chased hard and the
+cause was **not** found. Recorded because the eliminations are reusable:
+
+- **They halt the sub but never request attention.** Re-measured properly:
+  Penguin-kun Wars 172 `$fd05` writes, Fairie's Residence 61, Yellow Lemon 248 —
+  every one of them `$80` or `$00`, **never `$40`**. So unlike 1942 they never
+  use the CANCEL/attention path, and P4-17's `SRESETn` fix cannot help them.
+- **Keyboard input does not move them**, tested on the fully-fixed build (P4-15
+  + `$fd02` route + `SRESETn`) with SPACE/RETURN at four frames out to 1400.
+  All three stay at 3790.
+- **The `$fd76` framing was over-read.** That came from a `--trace-tail`
+  snapshot, i.e. the last few instructions before the run ended. A proper trace
+  shows the sub also executing `$ff4e LDA $d381` exactly once per frame
+  throughout, which is a healthy periodic task, not a spin. The sub is not
+  simply wedged.
+- **Penguin-kun Wars is running F-BASIC, not a self-loading game.** Its command
+  block into `$fc80` comes from `pc=$f61a` — inside the F-BASIC ROM — and the
+  payload spells `AUTO ` in ASCII (`41 55 54 4f 20`). So the disk boots BASIC
+  and autoloads, which makes a blank screen a plausible *software* state rather
+  than an emulation failure. That has not been confirmed.
+
+Next thing to try: find which command byte the main is dispatching and follow
+the sub's `$e14a` dispatch for it, rather than reasoning from where the CPU
+happens to be at frame 700.
 
 **The 8 crashes that remain** are a different set from P4-14's fifteen — Arion,
 Solitaire Royale and Miner 2049er are gone from it:
