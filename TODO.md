@@ -73,7 +73,6 @@ rather than trying to glob the brackets — that is what the sweep script does.
 | **P4-8** | Ys never enters its loaded program | P4-15 moved it a long way — 26146 → 35880 bytes on screen and the HUD now populates. Still not playable. The `$1113` (`TST $ffe5` / `TST $28e9`) lead was traced on the broken core, so **re-derive it before chasing it.** |
 | **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. Re-check against P4-15 first: it is the same *class* as the runaways that fix cured, and it may simply be gone. |
 | **P4-16** | The 8 remaining crashes | A different set from P4-14's fifteen. Seven still show `sub` = exactly 8721; three are `(Disk 1)` of multi-disk sets. |
-| **P4-10** | OS-9 stops after its kernel banner | Kernel runs, a cursor now appears on disk 1, input never lands. Not a hang. OS-9 never writes `$fd02`, so it never picks a keyboard route. Untouched by P4-15. |
 | **P4-3** | PSG `sel_n_i` pitch | Needs a human ear, cannot be settled in sim. |
 | | FM-77AV | `FM77AV_PLAN.md` — 12 phases, not ROM-blocked, binding constraint is block RAM at ~76%. |
 | | second drive, 2DD, multi-disk `.d88` | Unstarted. Scoped in P4-1. |
@@ -274,7 +273,7 @@ P4-14 for the full table. The ones worth calling out:
 | **`[Utility]` File Master FM** | seven dated revisions, all render |
 | **`[OS]` F-BASIC v3.0 L10** (Fujitsu) | official first-party disk, boots Disk BASIC |
 | `[Compilation]` Game 013 | Disk BASIC to `Ready`; `FILES` lists the directory |
-| **`[OS]` OS-9 Level 1** | `* OS-9 Kernel Started !` with `--bootrom 2`, plus a cursor. Stops there -- P4-10 |
+| **`[OS]` OS-9 Level 1** | **boots to an interactive shell** with `--bootrom 2`; `dir` lists the directory (P4-10) |
 | Voodoo Castle, The Palms, Mission Impossible, Strange Odyssey, The Count, DNA, Genmu no Shiro, Pop Lemon, Lovely Gal, Cream Lemon, Templo del Sol, Team AB music disks | title or menu screens |
 
 ### Fixes this session
@@ -319,7 +318,81 @@ the same WD1793 instantiation remains usable in simulation.
 
 Verified both tops connect every one of `core`'s 28 ports, with none left over.
 
-### P4-10 [NEXT] OS-9 boots its kernel, then makes no visible progress
+### P4-10 [FIXED] OS-9 reaches a working shell — `$fd02` reset to the wrong keyboard route
+
+**OS-9 Level 1 now boots to an interactive shell and takes commands:**
+
+```
+* OS-9 Kernel Started !
+* System Module Loading Completed !
+
+      ****  Welcome to OS-9 Level 1 System ****
+        [  OS-9 レベル 1  Version 1.0   ]
+
+  yy/mm/dd hh:mm:ss
+Time ?
+Shell
+OS9:dir
+   directory of .  00:00:00
+OS9Boot    SYS        DEFS       NEAF
+asm3-u     cmds       startup    Bassou
+CMDS3u     chgboot    BASIC_WORK SFORM
+
+OS9:
+```
+
+```sh
+cd vsim && ./obj_dir/Vemu --headless --bootrom 2 \
+    --disk "[OS] OS-9 Level 1 (Disk 1) {boot DOS mode}.d77" \
+    --key '1000:@RETURN' --key '1100:dir' --key '1250:@RETURN' \
+    --stop-at-frame 1500 --screenshot 1480
+```
+
+**The cause: `KEYBOARD.v` reset `m77` to `3'b111`, routing the keyboard to the
+MAIN CPU. Both references reset it to the SUB.**
+
+| | |
+|---|---|
+| **MAME** | `m_irq_mask = 0x00` at reset (`fm7.cpp:1792`), and delivery is `if(m_irq_mask & IRQ_FLAG_KEY) main_irq_set_flag(...); else m_sub->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);` (`:1120-1126`). Mask 0 takes the **else** branch. |
+| **CSP** | `reset()` sets `irqmask_keyboard = true` (`fm7_mainio.cpp:268`), cleared only when `$fd02` bit 0 is written **set** (`:500-503`). The same flag drives the sub as `SIG_FM7_SUB_KEY_MASK` with `firq_mask = !flag`, so the reset state leaves the sub's FIRQ **enabled**. |
+
+It only bites a title that **never writes `$fd02`**, because anything that does
+immediately overrides the reset value. OS-9 is exactly that case — measured
+earlier in this entry and filed as "worth confirming" without being followed up,
+which cost a day. The sub monitor ROM's input wait at `$fd76` is
+
+```
+$fd76  ORCC  #$40        mask FIRQ
+$fd78  LDB   <$04        $d004
+$fd7a  BNE   $fd86
+$fd7c  BCC   $fd92
+$fd7e  LDB   <$00        $d000
+$fd80  BNE   $fd92
+$fd82  ANDCC #$bf        unmask FIRQ
+$fd84  BRA   $fd76
+```
+
+— it spins until its FIRQ handler puts a byte in `$d000`/`$d004`. Route the
+keyboard to the main CPU and that byte never arrives.
+
+Only bit 0 was changed. `LPMASKn` (`m77[1]`) and `TMMASK` (`m77[2]`) keep their
+old reset value, because nothing has been measured about those and the timer is
+load-bearing.
+
+`run_tests.sh` all 8 rows byte-identical, including the three keyboard tests —
+F-BASIC writes `$fd02` itself, so it is unaffected either way.
+
+> **The `keyboard: n strobes` line in the run stats now under-reports.** It
+> appears to count the main route only, so a run where the sub is receiving keys
+> perfectly well reports `0 strobes`. The OS-9 run above shows `0 strobes` while
+> visibly executing a typed `dir`. Do not use that counter to conclude the
+> keyboard is dead.
+
+**It did NOT fix the other titles that never write `$fd02`.** Penguin-kun Wars,
+Fairie's Residence and Yellow Lemon still sit blank at 3790 despite sharing the
+`$fd76` loop, so they stall for a different reason. See P4-16.
+
+### P4-10-orig [superseded] OS-9 boots its kernel, then makes no visible progress
 
 With P3-6b fixed, `--bootrom 2` boots OS-9 as far as
 

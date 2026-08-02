@@ -507,9 +507,41 @@ always @(posedge CLKSYS) begin
 	end
 end
 
+// $fd02 resets with the keyboard routed to the SUB CPU, not the main one.
+//
+// m77[0] picks the route: set = main (KEYINn), clear = sub (KSTROBEn). This
+// reset value was 3'b111, i.e. keyboard-to-main, and both references say the
+// opposite:
+//
+//   MAME  m_irq_mask = 0x00 at reset (fm7.cpp:1792), and the delivery path is
+//         `if(m_irq_mask & IRQ_FLAG_KEY) main_irq_set_flag(...); else
+//          m_sub->set_input_line(M6809_FIRQ_LINE, ASSERT_LINE);` (:1120-1126).
+//         Mask 0 therefore takes the else branch -> the SUB.
+//   CSP   reset() sets `irqmask_keyboard = true` (fm7_mainio.cpp:268), and
+//         set_fd02 clears it only when bit 0 is set (:500-503). The same flag
+//         drives the sub as SIG_FM7_SUB_KEY_MASK with `firq_mask = !flag`, so
+//         the reset state leaves the sub's FIRQ ENABLED.
+//
+// It matters because a title that never writes $fd02 inherits this, and several
+// do exactly that. The sub monitor ROM's input wait at $fd76 is
+//
+//     $fd76  ORCC  #$40        mask FIRQ
+//     $fd78  LDB   <$04        $d004
+//     $fd7a  BNE   $fd86
+//     $fd7c  BCC   $fd92
+//     $fd7e  LDB   <$00        $d000
+//     $fd80  BNE   $fd92
+//     $fd82  ANDCC #$bf        unmask FIRQ
+//     $fd84  BRA   $fd76
+//
+// which spins until its FIRQ handler puts a byte in $d000/$d004. Route the
+// keyboard to the main CPU instead and that byte never arrives, so the sub
+// waits forever and the main waits on it -- the BUSY=1/SHALTACn=1 stall in
+// P4-16. Only bit 0 is changed here; LPMASKn and TMMASK keep their old reset
+// value, since nothing has been measured about those.
 wire s0 = ~RESETBn;
 always @(posedge WFD02n, posedge s0) begin
-  if (s0) m77 <= 3'b111;
+  if (s0) m77 <= 3'b110;
   else begin
 		$display("FD02 Write: %02X", MDATA_in);
 		m77 <= MDATA_in[2:0];
