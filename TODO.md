@@ -886,6 +886,43 @@ loaded. And **Thunder Force** is here, which P4-15 had explicitly set aside as
 "actually a decrypt loop at `$010a`, so check each rather than assuming" — that
 caution was right in method and wrong in conclusion; it was the same bug.
 
+#### Triaging the 18 by sub-system handshake state
+
+Running `vsim/sweep/handshake_one.sh` over them splits the 18 three ways:
+
+| | | |
+|---|---|---|
+| **5** | `BUSY=1`, `SHALTACn=1` | 1942, Fairie's Residence, Lupin Sansei, Penguin-kun Wars, Yellow Lemon |
+| 2 | `BUSY=1`, `SHALTACn=0` (still halted) | `[Compilation]` Game 4, Bishoujo Shashinkan |
+| 11 | `BUSY=0`, sub idle | the rest |
+
+The **5** are the hazard P4-13 predicted: the main halted the sub, the sub never
+returned to its ROM idle loop to read `$d40a`, so `$fd05` bit 7 stays set and a
+main CPU polling `LDA $fd05 / BMI` waits forever.
+
+**This is NOT a regression from the BUSY fix**, which was the obvious suspicion
+and had to be checked. Four of the five appear in the pre-`9fc762b` A/B sample
+and were blank there too — 3790 before, 3790 after. (Yellow Lemon was not in
+that sample, so for it this is unverified.)
+
+**Two of them sit in the same sub-ROM loop as Ys**, which is the actually useful
+finding. Penguin-kun Wars and Fairie's Residence both end at
+
+```
+$fd7e  d6 00     LDB   <$00      ; DP page $d0
+$fd80  26 10     BNE   $fd92
+$fd82  1c bf     ANDCC #$bf      ; unmask FIRQ
+$fd84  20 f0     BRA   $fd76
+```
+
+which is the `$fd76` wait loop P4-8 records Ys sitting in. So at least three
+titles share one sub-side stall. `ANDCC #$bf` clears the F flag, and the sub's
+FIRQ is the keyboard (`KSTROBEn`), which suggests "waiting for a keypress" —
+**but that was tested and is wrong**: feeding SPACE/RETURN/SPACE at frames
+400/600/800 leaves both at 3790. Either they take the main-side keyboard route
+(`$fd02` bit 0) and the sub's FIRQ is correctly masked, or they are waiting on
+something else entirely. Start by checking which route each one selects.
+
 **The 8 crashes that remain** are a different set from P4-14's fifteen — Arion,
 Solitaire Royale and Miner 2049er are gone from it:
 
