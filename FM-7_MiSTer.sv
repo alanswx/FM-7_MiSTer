@@ -251,7 +251,7 @@ wire [127:0] status;
 wire  [10:0] ps2_key;
 
 wire        ioctl_download;
-wire  [7:0] ioctl_index;
+wire [15:0] ioctl_index;
 wire        ioctl_wr;
 wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
@@ -291,6 +291,11 @@ hps_io #(.CONF_STR(CONF_STR),.WIDE(0),.VDNUM(1)) hps_io
   .ioctl_addr(ioctl_addr),
   .ioctl_dout(ioctl_dout),
   .ioctl_index(ioctl_index),
+  // Back-pressure for the tape download. This was left unconnected -- an
+  // INPUT to hps_io with no driver, so the HPS was told "never wait" and
+  // streamed bytes at whatever rate it liked while the SDRAM controller
+  // dropped the ones it could not take. vsim/sim.v has always driven it.
+  .ioctl_wait(ioctl_wait),
 
   .joystick_0(joy1),
   .joystick_1(joy2),
@@ -356,9 +361,15 @@ end
 
 wire reset = |reset_count;
 
+// index 1 == "F1,t77,Load Tape" in CONF_STR. Everything below keys off THIS,
+// not off raw ioctl_download: the SDRAM write port and the rewind pulse both
+// belong to the tape, and any other ioctl transfer would otherwise scribble
+// over the tape image and rewind the deck. vsim/sim.v has always gated on it.
+wire tape_download = ioctl_download && (ioctl_index[7:0] == 8'd1);
+
 reg old_ioctl_download;
 always @(posedge clk_sys)
-  old_ioctl_download <= ioctl_download;
+  old_ioctl_download <= tape_download;
 
 wire [2:0] grb;
 
@@ -381,14 +392,18 @@ wire [15:0] sdram_data;
 wire [24:0] sdram_addr;
 wire need_more_byte;
 wire sdram_ready;
-wire rewind = (old_ioctl_download & ~ioctl_download) | status[8];
+
+// Hold the HPS off while the SDRAM controller is busy, so every byte of the
+// t77 actually lands. Same expression vsim/sim.v uses.
+wire ioctl_wait = tape_download & ~sdram_ready;
+wire rewind = (old_ioctl_download & ~tape_download) | status[8];
 
 // Size of the mounted tape, latched from the ioctl download, so t77_decode
 // can stop at the end instead of running on into whatever else is in SDRAM.
 // hps_io is WIDE(0), so ioctl_addr steps by 1 and ioctl_dout is a byte.
 reg [24:0] tape_size = 25'd0;
 always @(posedge clk_sys) begin
-  if (ioctl_download && ioctl_index == 8'd1) begin
+  if (tape_download) begin
     if (ioctl_wr) tape_size <= ioctl_addr + 25'd1;
   end
 end
@@ -458,10 +473,10 @@ sdram u_sdram(
   .init  ( ~locked                                  ),
   .clk   ( CLKSYS                                   ),
   .wtbt  ( 2'b00                                    ),
-  .addr  ( ioctl_download ? ioctl_addr : sdram_addr ),
+  .addr  ( tape_download ? ioctl_addr : sdram_addr   ),
   .dout  ( sdram_data                               ),
   .din   ( ioctl_dout                               ),
-  .we    ( ioctl_wr                                 ),
+  .we    ( ioctl_wr & tape_download                 ),
   .rd    ( need_more_byte                           ),
   .ready ( sdram_ready                              )
 );

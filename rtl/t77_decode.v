@@ -26,6 +26,13 @@ reg [15:0] init;
 
 assign sout = s;
 
+`ifdef DEBUG_TAPE
+reg [24:0] dbg_entries   = 0;   // entries latched
+reg [31:0] dbg_ticks     = 0;   // sum of the `len` values we loaded
+reg [31:0] dbg_tick_count = 0;  // clk_9us periods actually elapsed
+always @(posedge clk_9us) dbg_tick_count <= dbg_tick_count + 32'd1;
+`endif
+
 // Without this the address counter ran forever: a 238 KB image played out
 // and then kept reading whatever else happened to be in SDRAM. image_size
 // is latched from the ioctl download by the top level.
@@ -68,6 +75,19 @@ always @(posedge clk_9us, posedge rewind) begin
         sdram_rd <= 1'b0;
         s <= data[7];
         len <= { data[6:0], data[15:8] };
+`ifdef DEBUG_TAPE
+        // Every entry as it is actually latched, against what the file holds.
+        // `len` is in 9.125 us ticks; a 1200 baud half-bit is ~47 and a 2400
+        // baud half-bit is ~25, so anything near 0 means the word is wrong.
+        dbg_entries <= dbg_entries + 25'd1;
+        dbg_ticks   <= dbg_ticks + { 10'd0, data[6:0], data[15:8] };
+        if (dbg_entries < 25'd24)
+          $display("T77 entry %0d addr=$%06x data=$%04x -> level=%0d len=%0d",
+                   dbg_entries, sdram_addr, data, data[7], {data[6:0], data[15:8]});
+        if (eot)
+          $display("T77SUM entries=%0d summed_len=%0d ticks_elapsed=%0d",
+                   dbg_entries, dbg_ticks, dbg_tick_count);
+`endif
       end
     end
     else if (sending && ~eot) begin

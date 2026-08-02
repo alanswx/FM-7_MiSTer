@@ -29,11 +29,18 @@ V_INC = +incdir+$(RTL)
 #   --no-timing           : mc6809i.v and the 74xx models carry cosmetic `#`
 #                           delays. They are ignored by synthesis, so ignoring
 #                           them here matches the FPGA build. Verilator 5
-#                           refuses to guess and demands the flag.
+#                           refuses to guess and demands the flag -- but 4.x
+#                           ignores those delays by default and ERRORS OUT on
+#                           the flag ("Invalid option: --no-timing"), which
+#                           made the whole sim unbuildable on a v4 box. Pass it
+#                           only to the versions that want it.
+VERILATOR_MAJOR := $(shell verilator --version 2>/dev/null | sed -n 's/^Verilator \([0-9][0-9]*\).*/\1/p')
+NO_TIMING       := $(if $(filter 4,$(VERILATOR_MAJOR)),,--no-timing)
+
 V_DEFINE = +define+SIMULATION=1 \
 	-CFLAGS "-I../sim/imgui -I../sim/vinc -I../sim/ -g" \
 	--timescale-override 1ps/1ps -Wno-TIMESCALEMOD -Wno-fatal \
-	--no-timing --converge-limit 6000 \
+	$(NO_TIMING) --converge-limit 6000 \
 	-I$(RTL)
 
 # VCD tracing: `make clean && make TRACE=1`, then run with --vcd <file>.
@@ -118,6 +125,20 @@ endif
 #         the sub is halted (MAME `main_shared_w`, CSP `mainmem_writeseq.cpp:32`).
 ifeq ($(DEBUG_SRAM),1)
 V_DEFINE += +define+DEBUG_SRAM
+endif
+
+# `make DEBUG_TAPE=1` prints, from rtl/t77_decode.v, the first 24 T77 entries as
+# they are actually latched out of SDRAM, then a summary:
+#
+#   T77 entry <n> addr=$<a> data=$<w> -> level=<0|1> len=<ticks>
+#   T77SUM entries=<n> summed_len=<ticks> ticks_elapsed=<clk_9us periods>
+#
+# `len` is in 9.125 us ticks: a 1200 baud half-bit is ~47, a 2400 baud one ~25.
+# summed_len should match the sum of the durations in the .t77, and
+# ticks_elapsed should be close to it -- if it is far smaller, the tape is
+# playing faster than the image says it should.
+ifeq ($(DEBUG_TAPE),1)
+V_DEFINE += +define+DEBUG_TAPE
 endif
 
 UNAME_S := $(shell uname -s)

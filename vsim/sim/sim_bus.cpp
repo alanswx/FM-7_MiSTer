@@ -81,6 +81,19 @@ void SimBus::BeforeEval()
 			// (e.g. the SDRAM_SIM ch2 upload channel's req/ack toggle).
 			*ioctl_wr = 0;
 		}
+		else if (*ioctl_wr) {
+			// One-shot, and this is the half that was missing. ioctl_wait
+			// alone is not enough: whenever `ready` stays high for two cycles
+			// the old code left wr high and advanced to the next byte anyway,
+			// so the SDRAM controller -- which EDGE-detects `we` -- never saw
+			// a new request and that byte vanished. It dropped every second
+			// byte of the tape, which is why a .t77 loaded with all its levels
+			// correct but nearly all its durations reading back as zero, and
+			// why F-BASIC sat on "Searching" forever (TODO.md P4-4). Insert a
+			// gap so the next assertion is always a fresh edge. hps_io does
+			// exactly this on hardware: `ioctl_wr <= wr; wr <= 0;`.
+			*ioctl_wr = 0;
+		}
 		else {
 			*ioctl_download = 1;
 			*ioctl_wr = 1;

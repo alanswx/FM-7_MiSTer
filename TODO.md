@@ -2890,7 +2890,7 @@ per frame, and boot / `print 12+34` / `print "HI!"` all still pass.
 Note this retimes everything, so `vsim/shots-ref/` needs re-baselining and the
 key frame numbers in `run_tests.sh` may want retuning.
 
-### P4-4 [PARTLY FIXED] Tape transport is correct; F-BASIC still never syncs
+### P4-4 [FIXED] The tape download dropped every second byte
 
 **Fixed:** `$fd02` now matches MAME (bits 6-4 forced high, printer lines tied
 high instead of read from the undriven `CN2`, and bit 7 reads high when the
@@ -2898,9 +2898,53 @@ motor is off). End-of-tape works — a run now stops at `$03a3b4 of $03a3b6`,
 exactly the 238518-byte image size, where it used to run on to `$081392`.
 `addr` powers up at `$16` instead of `$62`.
 
-**Still broken:** F-BASIC sits on `Searching` forever. Three candidate causes
-have now been eliminated by test -- the `$fd02` bits, the end-of-tape overrun,
-and the CPU clock rate (P0-5) -- and none of them was it.
+**Fixed, and it was none of the three remaining suspects.** Not sample
+polarity, not the motor-on lead-in, not `LOAD""` vs `LOAD"`. **Every second
+byte of the .t77 never reached SDRAM**, so each entry's level was right but its
+duration read back as the high byte of the next entry's -- almost always 0.
+The whole 238 KB image played out in about 3 seconds instead of 41.7, and
+F-BASIC never saw a sync tone it could lock to.
+
+The measurement this section asked for is the one that found it. `$fd02` was
+being read hard (a tight loop at `pc=$f381`) and bit 7 *did* toggle, which by
+the rule below puts it in the "pulse widths do not match" branch. `make
+DEBUG_TAPE=1` (new, `rtl/t77_decode.v`) then printed the entries as they were
+actually latched:
+
+```
+T77 entry 1 addr=$0000012 data=$0001 -> level=0 len=0      <- file has 01 1c
+T77 entry 2 addr=$0000014 data=$00a0 -> level=1 len=8192   <- file has a0 8e
+T77 entry 3 addr=$0000016 data=$0000 -> level=0 len=0      <- file has 00 19
+```
+
+Even bytes correct, odd bytes zero. `T77SUM` gave `summed_len=47360` against the
+image's 4571863 ticks.
+
+**Two separate causes, one per top level.**
+
+*vsim:* `SimBus::BeforeEval` held `ioctl_wr` high for as long as `ioctl_wait`
+was low, advancing to the next byte each cycle. Both SDRAM models EDGE-detect
+`we`, so whenever `ready` stayed high for two cycles there was no new request
+and that byte vanished. `ioctl_wr` is a one-shot now, with a forced gap between
+bytes -- which is what `sys/hps_io.sv` already does on hardware
+(`ioctl_wr <= wr; wr <= 0;`).
+
+*FPGA:* `ioctl_wait` was **not connected at all** -- an input to `hps_io` with
+no driver, so the HPS was told "never wait" while the SDRAM controller dropped
+what it could not take. It is driven from `sdram_ready` now, the same
+expression vsim uses. The tape path is also gated on `ioctl_index == 1` now
+(`tape_download`) rather than raw `ioctl_download`, so the SDRAM write port and
+the rewind pulse belong to the tape alone, as vsim has always had it.
+
+**Verified on hardware** with `Space Warp.t77` mounted over MGL index 1:
+`load"` at the F-BASIC prompt gives `Searching` -> `Found: STR` -> `Ready`, and
+`LIST` shows the loaded program (lines 430-530, `PRINT`/`LINE`/`PSET`,
+`INT(RND(1)*4+1)`). Note the FM-7 is a JIS layout: `"` is **Shift+2**, not
+Shift+apostrophe, which types `*` and earns a `Syntax Error`.
+
+Historical detail, kept because the reasoning below is still sound: the three
+causes eliminated before this were the `$fd02` bits, the end-of-tape overrun,
+and the CPU clock rate (P0-5), and none of them was it.
 
 #### Resume here
 
