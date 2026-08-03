@@ -50,20 +50,28 @@ assign motor = m10[1];
 // which is separately the P1-4 hazard: by then the CPU may already have
 // released the bus. Sampling on CLKSYS while the strobe is low takes the data
 // where it is unambiguously valid, so that risk goes away as well.
-reg wfd00_d, wfd01_d, wfd05_d;
+// The strobes are FILTERED through a 3-bit shift register rather than merely
+// compared against the previous cycle. A decode glitch is one or two CLKSYS
+// cycles wide, so a one-cycle detector still reports it as an edge -- the very
+// thing being fixed. Taking the edge from the filtered copy makes a transient
+// have to persist to be believed. The sample lands two CLKSYS cycles into the
+// strobe rather than on its edge, and E-high is about 19 CLKSYS cycles, so it
+// stays comfortably inside the access. Shape from DERIVED_CLOCKS.md.
+reg [2:0] wfd00_sr, wfd01_sr, wfd05_sr;
 always @(posedge CLKSYS) begin
-  wfd00_d <= WFD00n;
-  wfd01_d <= WFD01n;
-  wfd05_d <= WFD05n;
+  wfd00_sr <= { wfd00_sr[1:0], WFD00n };
+  wfd01_sr <= { wfd01_sr[1:0], WFD01n };
+  wfd05_sr <= { wfd05_sr[1:0], WFD05n };
   if (~RESETBn) begin
     m10 <= 8'd0;
     m2  <= 8'd0;
     m9  <= 3'd0;
   end
   else begin
-    if (wfd00_d & ~WFD00n) m10 <= MDATABUS_in;                        // $fd00
-    if (wfd01_d & ~WFD01n) m2  <= MDATABUS_in;                        // $fd01
-    if (wfd05_d & ~WFD05n) m9  <= { MDATABUS_in[7:6], MDATABUS_in[0] }; // $fd05
+    // filtered LEADING edge (these strobes are active low)
+    if (wfd00_sr[2] & ~wfd00_sr[1]) m10 <= MDATABUS_in;                        // $fd00
+    if (wfd01_sr[2] & ~wfd01_sr[1]) m2  <= MDATABUS_in;                        // $fd01
+    if (wfd05_sr[2] & ~wfd05_sr[1]) m9  <= { MDATABUS_in[7:6], MDATABUS_in[0] }; // $fd05
   end
 end
 

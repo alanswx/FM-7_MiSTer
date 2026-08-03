@@ -76,18 +76,32 @@ assign INS = m56_9;
 // this file is built the same way. The strobes are tens of CLKSYS cycles wide
 // (E is 1.2288 MHz against 48 MHz), so an edge cannot be missed, and SRWB is
 // stable across the whole bus cycle so sampling it a cycle later is safe.
-reg scrtsw_d, sled_d, cancel_d;
+// The strobes are FILTERED through a 3-bit shift register, not merely
+// edge-detected against the previous cycle. A decode glitch is one or two
+// CLKSYS cycles wide, so a one-cycle detector still reports it as an edge --
+// which is the very thing being fixed. Taking the edge from the filtered copy
+// means a transient has to persist to be believed. The sample then lands two
+// CLKSYS cycles into the strobe instead of exactly on its edge; E-high is about
+// 19 CLKSYS cycles, so that is comfortably inside the access.
+//
+// This shape came back from the hardware side (see DERIVED_CLOCKS.md). The
+// first version of this conversion used a plain one-cycle detector and was
+// confirmed working on hardware, but that is luck rather than design: it only
+// held because the glitch on these particular decodes happened to be shorter
+// than a CLKSYS period.
+reg [2:0] scrtsw_sr, sled_sr, cancel_sr;
 
 always @(posedge CLKSYS) begin
-  scrtsw_d <= SCRTSWn;
-  sled_d   <= SLEDn;
+  scrtsw_sr <= { scrtsw_sr[1:0], SCRTSWn };
+  sled_sr   <= { sled_sr[1:0],   SLEDn   };
   if (~SRESETn) begin
     m56_5 <= 1'b1;
     m56_9 <= 1'b1;
   end
   else begin
-    if (~scrtsw_d & SCRTSWn) m56_5 <= SRWB;   // sub touched $d408: read = CRT on
-    if (~sled_d   & SLEDn)   m56_9 <= SRWB;
+    // filtered rising edge, matching the original `posedge SCRTSWn`/`SLEDn`
+    if (~scrtsw_sr[2] & scrtsw_sr[1]) m56_5 <= SRWB;  // $d408: read = CRT on
+    if (~sled_sr[2]   & sled_sr[1])   m56_9 <= SRWB;
   end
 end
 
@@ -95,9 +109,9 @@ end
 // (reset OR the sub's $d402 cancel-acknowledge) and dominates, and CANCELn's
 // rising edge sets. Only the clocking changes.
 always @(posedge CLKSYS) begin
-  cancel_d <= CANCELn;
-  if (~(SRESETn & SIRQCLRn))     m45 <= 1'b0;
-  else if (~cancel_d & CANCELn)  m45 <= 1'b1;
+  cancel_sr <= { cancel_sr[1:0], CANCELn };
+  if (~(SRESETn & SIRQCLRn))              m45 <= 1'b0;
+  else if (~cancel_sr[2] & cancel_sr[1])  m45 <= 1'b1;
 end
 
 // "The sub CPU wants VRAM", which gates the display-period halt below.
@@ -128,11 +142,11 @@ end
 // with a real per-access wait state. It is kept (rather than deleted) because
 // the comment above is the record of why the polarity is what it is, and it is
 // moved onto CLKSYS with the rest so no derived clock survives in this module.
-reg svracs_d;
+reg [2:0] svracs_sr;
 always @(posedge CLKSYS) begin
-  svracs_d <= SVRACSn;
-  if (~SRESETn)                m44_5 <= 1'b1;
-  else if (~svracs_d & SVRACSn) m44_5 <= SRWBn;
+  svracs_sr <= { svracs_sr[1:0], SVRACSn };
+  if (~SRESETn)                          m44_5 <= 1'b1;
+  else if (~svracs_sr[2] & svracs_sr[1]) m44_5 <= SRWBn;
 end
 
 // SVDHALT/m44_5 no longer gate this. That pair was a BLANKET halt: it stopped
