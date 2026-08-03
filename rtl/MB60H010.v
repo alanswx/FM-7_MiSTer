@@ -49,11 +49,22 @@ wire [13:0] VOFFSET = { SRH, SRL[7:5], 5'd0 };
 
 assign SFTCLK = _16128KHz;
 
-always @(negedge SREGLn)
-  SRL <= SDATA;
-
-always @(negedge SREGHn)
-  SRH <= SDATA;
+// SREGLn/SREGHn are decode strobes, not clocks -- see DERIVED_CLOCKS.md. These
+// two registers form VOFFSET, the display scroll offset, so a glitch-induced
+// write jumps the whole screen to a wrong address.
+//
+// On CLKSYS with each strobe filtered through a 3-stage shift register, so a
+// one or two cycle decode glitch cannot be mistaken for a write. The capture
+// lands two CLKSYS cycles into the strobe rather than exactly on its falling
+// edge; the sub's E is far slower than the 48 MHz CLKSYS, so this is still well
+// inside the access while no longer sampling at the instant the decode settles.
+reg [2:0] sregl_sr, sregh_sr;
+always @(posedge CLKSYS) begin
+  sregl_sr <= { sregl_sr[1:0], SREGLn };
+  sregh_sr <= { sregh_sr[1:0], SREGHn };
+  if (sregl_sr[2] & ~sregl_sr[1]) SRL <= SDATA;
+  if (sregh_sr[2] & ~sregh_sr[1]) SRH <= SDATA;
+end
 
 
 reg [9:0] xx;
