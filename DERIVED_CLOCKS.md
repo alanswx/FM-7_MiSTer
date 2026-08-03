@@ -85,6 +85,27 @@ always @(posedge CLKSYS) begin
 end
 ```
 
+**Edge-detecting the raw strobe is not enough.** The snippet above is the
+minimum shape, not the recommended one. A decode glitch is one or two `CLKSYS`
+cycles wide, and a one-cycle edge detector sees a glitch as an edge — which is
+the very thing being fixed. Filter the strobe through a short shift register
+and take the edge from the *filtered* copy, so a transient has to persist to be
+believed:
+
+```verilog
+reg [2:0] strobe_sr;
+always @(posedge CLKSYS) begin
+  strobe_sr <= { strobe_sr[1:0], WFD05n };
+  if (~RESETBn)                            m9 <= 3'd0;
+  else if (strobe_sr[2] & ~strobe_sr[1])   m9 <= { ... };   // filtered leading edge
+end
+```
+
+All four conversions landed so far (`b34171e`, `649d054`, `5cae28c`, `b632ea1`)
+use this shape. The sample then lands two `CLKSYS` cycles into the strobe rather
+than exactly on its edge; `E`-high is about 19 `CLKSYS` cycles, so that is still
+comfortably inside the access and no longer at the instant the decode settles.
+
 Four things to get right:
 
 1. **Sample on the LEADING edge of the strobe**, i.e. the falling edge of an
@@ -93,6 +114,10 @@ Four things to get right:
    already have released the bus. `$fd37` read back `$00` forever for exactly
    that reason (TODO.md P1-4). Converting to `CLKSYS` fixes both problems at
    once, so do not preserve a trailing-edge sample "for fidelity".
+
+   **Known exception: `KEYBOARD.v`'s `m77`.** Both edges were tried on hardware
+   and both regressed OS-9 — see the open item below. Do not assume this rule
+   holds for a register whose data comes off a wide combinational mux.
 2. **An edge cannot be missed.** `E` is 1.2288 MHz against a 48 MHz `CLKSYS`, so
    every strobe is tens of clocks wide.
 3. **Preserve clear/set dominance.** If the original had a level-sensitive async
@@ -102,23 +127,58 @@ Four things to get right:
 
 ## Remaining instances, highest risk first
 
-`rtl/FLAGS.v` is **done and confirmed on hardware** (`3f85852`).
+**Done and confirmed on hardware:**
 
-`rtl/PERIPHERAL.v` (`m10`/`m2`/`m9`) is **converted and committed but NOT yet
-tested on hardware** — see the commit for the reasoning. `m9` was the most
-exposed register left in the core: it holds `SUBHALTREQn` and `CANCELn`, so a
-spurious edge either halts the sub CPU or fires an attention interrupt at it,
-and `FLAGS`' `m45` now edge-detects `CANCELn`. **Flash and smoke-test this one
-before converting anything else.**
+| file | register | commit |
+|---|---|---|
+| `FLAGS.v` | `m56_5`, `m56_9`, `m45`, `m44_5` | `3f85852` |
+| `PERIPHERAL.v` | `m10`, `m2`, `m9` | `b34171e` |
+| `MFD.v` | `m6_q` (FDC IRQ mask) | `649d054` |
+| `PAL.v` | palette read-back | `5cae28c` |
+| `MB60H010.v` | `SRL`/`SRH` (display offset) | `b632ea1` |
 
-| file | register | clocked by | drives | trailing edge? |
+**Still open:**
+
+| file | register | clocked by | drives | status |
 |---|---|---|---|---|
-| `KEYBOARD.v:543` | `m77` | `posedge WFD02n` | keyboard routing (`KEYINn`/`KSTROBEn`), `LPMASKn`, `TMMASK` | **yes** |
-| `SOUND.v:28` | `bdir`/`bc1` | `posedge WFD0Dn` | PSG bus protocol → all sound and both joysticks | **yes** |
-| `MB60H010.v:52,55` | sub display regs | `negedge SREGLn` / `SREGHn` | display offset | no |
-| `FLAGS.v:228` | `m46` (`$fd37`) | `negedge WFD37n` | VRAM plane access + display masks | no (P1-4 already moved it) |
-| `PAL.v:44` | palette | `negedge RDQEn` | palette register file | no |
-| `MFD.v:65` | FDC latch | `posedge m13_6` | floppy register access | — |
+| `KEYBOARD.v:543` | `m77` | `posedge WFD02n` | keyboard routing (`KEYINn`/`KSTROBEn`), `LPMASKn`, `TMMASK` | **two hardware attempts, both regressed OS-9 — see below** |
+| `SOUND.v:28` | `bdir`/`bc1` | `posedge WFD0Dn` | PSG bus protocol → all sound and both joysticks | not attempted; **not verifiable from the hardware side** (see below) |
+| `FLAGS.v:228` | `m46` (`$fd37`) | `negedge WFD37n` | VRAM plane access + display masks | P1-4 already moved it; needs a check, not a conversion |
+
+### `KEYBOARD.v` `m77` — open, and it breaks rule 1
+
+Two conversions were built, flashed and tested. Both regressed OS-9, **0 boots
+in 8 tries each**, against a baseline on the immediately preceding commit that
+booted on try 3:
+
+- the recipe verbatim (leading edge, `wfd02_d & ~WFD02n`);
+- the trailing edge, with the strobe filtered and `MDATA_in` tracked on every
+  cycle the strobe was low, committing the last value seen while the bus was
+  still driven.
+
+So **the sample point is not the cause** — both ends of the strobe fail. Both
+failures showed the partial-boot signature (`* System Module Loading Completed !`
+and no further), which only appears once bank 2 has been selected and OS-9 has
+actually started, so this is a real behavioural change and not a mis-set boot
+ROM. Neither attempt was committed; `rtl/KEYBOARD.v` is unmodified.
+
+Untested lead for the simulation side: `m77`'s `MDATA_in` is wired to
+`MDATABUS_out`, a wide combinational mux over the whole main bus rather than a
+plain write-data bus. Every other converted register takes its data from a
+narrower source. If the mux only presents the CPU's write data during a specific
+part of the cycle, then *no* fixed `CLKSYS` sampling point reproduces what the
+original edge captured, and the fix has to come from the data side rather than
+the clock side. That question is behavioural, so it is reproducible in `vsim`
+even though the glitch itself is not.
+
+### `SOUND.v` — cannot be validated from the hardware side
+
+`bdir`/`bc1` drive the PSG bus protocol, so they carry **all sound and both
+joysticks**. The hardware loop in use is screenshot-based: it can confirm a
+build boots, but it cannot observe audio or joystick input at all. A green boot
+on a `SOUND.v` change would therefore prove nothing about the thing changed.
+Whoever converts this needs a listening test or a joystick test, not a
+screenshot.
 
 **These are not six bugs.** Every one has been live since the beginning and the
 machine works on hardware today, so the routing evidently tolerates them as
@@ -147,13 +207,56 @@ register:
 - **OS-9 Level 1** at `--bootrom 2` → should reach the `OS9:` shell and run
   `dir`. This is the case that caught the `FLAGS` bug.
 - **F-BASIC** boot, then type — exercises `KEYBOARD.v`'s `m77`.
-- **Any title with sound**, and a joystick — exercises `SOUND.v`.
+- **A `.t77` mounted at ioctl index 1**, then `LOAD"` at the F-BASIC prompt →
+  `Searching` → `Found: <name>`. This is the test for `PERIPHERAL.v`: `m10` *is*
+  the tape motor register and `$fd02` bit 7 is the cassette input, so a
+  conversion there is exercised end to end by nothing else on this list. Note
+  the FM-7 is a **JIS layout** — `"` is Shift+2, not Shift+apostrophe, which
+  types `*` and earns a `Syntax Error`.
+- **Any title with sound**, and a joystick — exercises `SOUND.v`. A
+  screenshot-based loop cannot do this; see the `SOUND.v` note above.
 - **Thexder / Hydlide II / Xevious / Tritorn** — exercise the display path and
-  the shared window.
+  the shared window. For display-adjacent changes (`PAL.v`, `MB60H010.v`) these
+  are strongest as an exact comparison: Archon and Hydlide II came back
+  **byte-identical** across those two conversions, which rules out a shifted
+  offset or a wrong palette entry pixel for pixel.
 
 If a conversion breaks something on hardware, **revert that one commit** and say
 so; do not try to fix it blind. The sim side can then reproduce the *behavioural*
 half and re-derive.
+
+### Two traps in the hardware loop itself
+
+Both of these produced a confidently wrong result before being caught. Anyone
+reading a hardware verdict on this bug class needs to know they exist.
+
+**Screenshot byte size is not a pass/fail signal.** The OS-9 banner is about
+5.3 KB, so "bigger than 5 KB" looks like a reasonable test for it. A *garbage*
+screen measured **7444 bytes** and was reported as a successful boot. Compare
+against a known-good reference image instead, and score the lit pixels
+separately from the whole frame — most of the screen is black, so a garbage
+frame still matches ~95% overall while matching 0% of the banner text. The three
+states then separate cleanly:
+
+| state | overall | text pixels |
+|---|---|---|
+| banner (booted) | 100% | 100% |
+| `System Module Loading Completed` and stalled | ~99% | ~39% |
+| garbage / wrong boot ROM | 95–98% | 0% |
+
+**Selecting boot ROM 2 from the OSD succeeds about one try in three.** The
+`confirm` presses that cycle the option get dropped, so a single failed OS-9 run
+carries no information whatever. Any verdict needs a retry loop that keeps
+relaunching until the banner is actually matched, and a "did not boot" claim
+needs enough tries to be meaningful — 8 failed tries against a baseline that
+booted within 3 is about the minimum worth reporting.
+
+Driving the OSD with raw Linux keycodes (`kbdRawDown:108` etc.) does **not**
+work: those go to the emulated FM-7's keyboard, not to the MiSTer menu. Only the
+named actions (`kbd:down`, `kbd:confirm`) drive the OSD. This matters because
+the raw-keycode attempt still produced plausible-looking results — a title going
+blank, which read as "the boot ROM changed" — while never having navigated the
+menu at all.
 
 ## House rules that apply to any change here
 
