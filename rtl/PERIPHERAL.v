@@ -1,5 +1,9 @@
 
 module PERIPHERAL(
+    // The three write registers below were clocked by their own decode strobes.
+    // See the comment on m10/m2/m9 -- that pattern cost a hardware-only OS-9
+    // regression in FLAGS.v, so it is retired here too.
+    input CLKSYS,
     input [7:0] MDATABUS_in,
     output [7:0] MDATABUS_out,
     input WFD00n,
@@ -27,18 +31,41 @@ wire reset = ~RESETBn;
 
 assign motor = m10[1];
 
-// m10: TAPE
-always @(negedge WFD00n or negedge RESETBn)
-  if (~RESETBn) m10 <= 8'd0;
-  else m10 <= MDATABUS_in;
-
-always @(posedge WFD01n or posedge reset)
-  if (reset) m2 <= 8'd0;
-  else m2 <= MDATABUS_in;
-
-always @(posedge WFD05n or posedge reset)
-  if (reset) m9 <= 3'd0;
-  else m9 <= { MDATABUS_in[7:6], MDATABUS_in[0] };
+// m10 (tape), m2, and m9 ($fd05: sub halt / cancel / Z80) used to be clocked by
+// their own write strobes -- `negedge WFD00n`, `posedge WFD01n`, `posedge
+// WFD05n`. Those strobes are 74138 chip-select outputs, i.e. combinational
+// logic over the address bus, and a LUT-built decode GLITCHES as address bits
+// arrive skewed. Verilator gives one clean edge per access; Quartus gives a
+// ripple clock on general routing where every glitch is a spurious edge.
+//
+// This is not theoretical. The identical pattern in FLAGS.v produced an OS-9
+// regression that appeared ONLY on real hardware and was invisible in
+// simulation, and moving those four flip-flops onto CLKSYS fixed it. m9 is the
+// most exposed register in the core after those: it holds SUBHALTREQn and
+// CANCELn, so a spurious edge either halts the sub CPU or fires an attention
+// interrupt at it -- and FLAGS' m45 now edge-detects CANCELn, so a glitch here
+// feeds straight into the flip-flop that regression was about.
+//
+// Note m9 and m2 also latched on the TRAILING edge of an active-low strobe,
+// which is separately the P1-4 hazard: by then the CPU may already have
+// released the bus. Sampling on CLKSYS while the strobe is low takes the data
+// where it is unambiguously valid, so that risk goes away as well.
+reg wfd00_d, wfd01_d, wfd05_d;
+always @(posedge CLKSYS) begin
+  wfd00_d <= WFD00n;
+  wfd01_d <= WFD01n;
+  wfd05_d <= WFD05n;
+  if (~RESETBn) begin
+    m10 <= 8'd0;
+    m2  <= 8'd0;
+    m9  <= 3'd0;
+  end
+  else begin
+    if (wfd00_d & ~WFD00n) m10 <= MDATABUS_in;                        // $fd00
+    if (wfd01_d & ~WFD01n) m2  <= MDATABUS_in;                        // $fd01
+    if (wfd05_d & ~WFD05n) m9  <= { MDATABUS_in[7:6], MDATABUS_in[0] }; // $fd05
+  end
+end
 
 wire [8:1] CN3;
 

@@ -442,6 +442,7 @@ TIMER u_TIMER(
 );
 
 PERIPHERAL u_PERIPHERAL(
+  .CLKSYS       ( CLKSYS       ),
   .MDATABUS_in  ( MDATABUS_out ),
   .MDATABUS_out ( PERIPH_out   ),
   .WFD00n       ( WFD00n       ),
