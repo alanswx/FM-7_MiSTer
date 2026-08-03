@@ -41,8 +41,23 @@ always @(posedge CLKSYS) begin
   end
 end
 
-always @(negedge RDQEn) begin
-  if (~PLTREGn) PALDATA <= pal[MADDRBUS[2:0]];
+// RDQEn is a decode strobe, not a clock -- see DERIVED_CLOCKS.md. A LUT-built
+// decode glitches as its inputs arrive skewed, so this read-back register could
+// latch the palette entry at an address that was never on the bus.
+//
+// On CLKSYS with the strobe filtered through a shift register, so a one or two
+// cycle glitch cannot be mistaken for a read. The capture lands two CLKSYS
+// cycles into the strobe instead of exactly on its falling edge, which is still
+// early in the access -- E is 1.2288 MHz against 48 MHz -- so PALDATA is ready
+// long before the CPU latches the bus.
+//
+// The `posedge SFTCLK` block below is left alone deliberately: SFTCLK is the
+// video shift clock, a real clock, not an address decode.
+reg [2:0] rdqe_sr;
+always @(posedge CLKSYS) begin
+  rdqe_sr <= { rdqe_sr[1:0], RDQEn };
+  if (rdqe_sr[2] & ~rdqe_sr[1] & ~PLTREGn)   // filtered leading edge of the read
+    PALDATA <= pal[MADDRBUS[2:0]];
 end
 
 wire clr1 = DPAGE1|m25_3;
