@@ -48,19 +48,57 @@ reg [7:0] m46;
 assign SVDOFFn = m56_5;
 assign INS = m56_9;
 
-wire s0 = ~SRESETn;
-always @(posedge SCRTSWn, posedge s0)
-  if (s0) m56_5 <= 1'b1;
-  else m56_5 <= SRWB;
+// THESE FOUR FLIP-FLOPS WERE CLOCKED BY DECODE STROBES, NOT BY A CLOCK.
+//
+// m56_5 on `posedge SCRTSWn`, m56_9 on `posedge SLEDn`, m45 on `posedge
+// CANCELn`, m44_5 on `posedge SVRACSn` (below). Every one of those is a 74138
+// chip-select output, i.e. combinational logic over the address bus. Verilator
+// gives them one clean edge per access; Quartus gives ripple clocks on general
+// routing, and a LUT-built decode GLITCHES as address bits arrive skewed. Every
+// glitch is a spurious clock edge.
+//
+// It never mattered before because core.v tied SRESETn to 1'b0, which holds all
+// four permanently in reset -- the glitchy clocks had nothing to clock. Undoing
+// that tie-off (f9548d8) released them, and OS-9 promptly regressed ON REAL
+// HARDWARE while remaining perfect in simulation. That asymmetry is the tell:
+// sim cannot see a glitch that only exists in routed logic.
+//
+// Two of the four are live and both are load-bearing:
+//   m56_5 -> SVDOFFn -> PAL.v's `m25_3 = ~(SVDOFFn & SBLANKn)`, so a spurious
+//            edge here BLANKS OR CORRUPTS THE DISPLAY.
+//   m45   -> SUBIRQn, so a spurious edge fires an interrupt at the sub CPU.
+// (m56_9/INS is connected in core.v but consumed by nothing, and m44_5 is
+// written and never read -- see the note below.)
+//
+// Now clocked on CLKSYS with the strobes edge-detected, which is what this
+// project already does everywhere else it hit this: P3-1 moved the timer IRQ
+// flip-flop onto CLKSYS for the same reason, and the BUSY flag further down
+// this file is built the same way. The strobes are tens of CLKSYS cycles wide
+// (E is 1.2288 MHz against 48 MHz), so an edge cannot be missed, and SRWB is
+// stable across the whole bus cycle so sampling it a cycle later is safe.
+reg scrtsw_d, sled_d, cancel_d;
 
-always @(posedge SLEDn, posedge s0)
-  if (s0) m56_9 <= 1'b1;
-  else m56_9 <= SRWB;
+always @(posedge CLKSYS) begin
+  scrtsw_d <= SCRTSWn;
+  sled_d   <= SLEDn;
+  if (~SRESETn) begin
+    m56_5 <= 1'b1;
+    m56_9 <= 1'b1;
+  end
+  else begin
+    if (~scrtsw_d & SCRTSWn) m56_5 <= SRWB;   // sub touched $d408: read = CRT on
+    if (~sled_d   & SLEDn)   m56_9 <= SRWB;
+  end
+end
 
-wire s1 = ~(SRESETn & SIRQCLRn);
-always @(posedge CANCELn, posedge s1)
-  if (s1) m45 <= 1'b0;
-  else m45 <= 1'b1;
+// m45 keeps its original semantics exactly: the clear is level-sensitive on
+// (reset OR the sub's $d402 cancel-acknowledge) and dominates, and CANCELn's
+// rising edge sets. Only the clocking changes.
+always @(posedge CLKSYS) begin
+  cancel_d <= CANCELn;
+  if (~(SRESETn & SIRQCLRn))     m45 <= 1'b0;
+  else if (~cancel_d & CANCELn)  m45 <= 1'b1;
+end
 
 // "The sub CPU wants VRAM", which gates the display-period halt below.
 //
@@ -85,10 +123,17 @@ always @(posedge CANCELn, posedge s1)
 // (TODO.md P4-1). Fixing it properly means qualifying the wait with an actual
 // VRAM access and stretching the sub's clock (MRDY-style) rather than asserting
 // HALT, since HALT only takes effect at instruction boundaries.
-wire s2 = ~SRESETn;
-always @(posedge SVRACSn or posedge s2)
-  if (s2) m44_5 <= 1'b1;
-  else m44_5 <= SRWBn;
+// m44_5 is WRITTEN AND NEVER READ -- nothing in this file or any other consumes
+// it, because SHALTn stopped using it when P0-7 replaced the blanket VRAM halt
+// with a real per-access wait state. It is kept (rather than deleted) because
+// the comment above is the record of why the polarity is what it is, and it is
+// moved onto CLKSYS with the rest so no derived clock survives in this module.
+reg svracs_d;
+always @(posedge CLKSYS) begin
+  svracs_d <= SVRACSn;
+  if (~SRESETn)                m44_5 <= 1'b1;
+  else if (~svracs_d & SVRACSn) m44_5 <= SRWBn;
+end
 
 // SVDHALT/m44_5 no longer gate this. That pair was a BLANKET halt: it stopped
 // the sub for the whole display period whenever the mode flag was set, whether
