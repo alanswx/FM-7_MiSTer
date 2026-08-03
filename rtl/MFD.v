@@ -1,5 +1,6 @@
 
 module MFD(
+  input CLKSYS,
   input [15:0] MADDRBUS,
   input [7:0] MDATABUS_out,
   output [7:0] MFD_out,
@@ -59,12 +60,25 @@ wire m14_8  = ~IOSn & ~m8_8 & ~EAB[0]; // $FD02
 wire m7_8 = m14_8 & ~ERW;
 wire m13_6 = EE & m7_8;
 
-// IRQ mask
+// IRQ mask.
+//
+// m13_6 is `EE & m7_8` -- an address decode ANDed with E -- so it is a gated
+// clock, not a clock. See DERIVED_CLOCKS.md: a LUT-built decode glitches as its
+// inputs arrive skewed and every glitch was a spurious write to this register,
+// which gates the FDC's interrupt to the CPU.
+//
+// On CLKSYS now, with the strobe filtered through a shift register so a one or
+// two cycle glitch cannot be mistaken for an access. The sample lands two
+// CLKSYS cycles after m13_6 rises rather than exactly on the edge: E is
+// 1.2288 MHz against 48 MHz, so E-high is ~19 CLKSYS cycles and this is still
+// comfortably inside it, but no longer at the very instant the decode settles.
 reg m6_q;
-wire s0 = ~ERESETn;
-always @(posedge m13_6 or posedge s0)
-  if (s0) m6_q <= 1'b1;
-  else m6_q <= EDB[4];
+reg [2:0] m13_6_sr;
+always @(posedge CLKSYS) begin
+  m13_6_sr <= { m13_6_sr[1:0], m13_6 };
+  if (~ERESETn)                          m6_q <= 1'b1;
+  else if (~m13_6_sr[2] & m13_6_sr[1])   m6_q <= EDB[4];
+end
 
 wire m7_6 = EQ & ~ERW;
 wire m3_3 = ~(EE & m7_6);

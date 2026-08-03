@@ -623,6 +623,7 @@ SRAM u_SRAM(
 );
 
 MFD u_MFD(
+  .CLKSYS       ( CLKSYS       ),
   .MADDRBUS     ( MADDRBUS     ),
   .MDATABUS_out ( MDATABUS_out ),
   .MFD_out      ( MFD_out      ),
