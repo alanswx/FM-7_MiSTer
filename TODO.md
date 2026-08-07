@@ -1431,6 +1431,24 @@ timer interrupt now being recognised. (A separate attempt to confirm through the
 BASIC clock failed for a silly reason: `print time` is a syntax error, it needs
 `TIME$` and the `$` needs shift.)
 
+### $fd37 multi-page [verified] — the open "needs a check" item checks out
+
+Checked because a wrong display mask produces exactly the Ys symptom below:
+some artwork drawn, the rest black. It is correct end to end.
+
+| stage | code | verdict |
+|---|---|---|
+| decode | `MDECODE.v:100` asserts `WFD37n` for `$fd37` | writable (was not, before the fix recorded there) |
+| capture | `FLAGS.v:242` latches on `negedge WFD37n` — **leading** edge, data valid | right edge |
+| split | `m46[2:0]` CPU-access mask, `m46[6:4]` display mask | matches MAME `data & 0x77` and CSP `accessmask/dispmask` |
+| polarity | `PAL.v:63` `clr1 = DPAGE1 \| m25_3` — set bit **blanks** the plane | mask semantics, correct |
+| reset | `m46 <= 8'h0` | all planes visible and writable, sane |
+
+`m25_3 = ~(SVDOFFn & SBLANKn)` is video-off/blanking, so the term reads "plane
+masked **or** blanked" — correct. No change needed. Note `FLAGS.v:242` is still
+an async decode-strobe latch, so it remains on the derived-clock list for the
+hardware side even though its behaviour is right in sim.
+
 ### P4-8 [NEXT] Ys renders and plays; the play field inside the border is black
 
 > **Heading corrected.** This section was titled "Ys deadlocks: main waits for
