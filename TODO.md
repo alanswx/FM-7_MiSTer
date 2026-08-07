@@ -1429,7 +1429,57 @@ timer interrupt now being recognised. (A separate attempt to confirm through the
 BASIC clock failed for a silly reason: `print time` is a syntax error, it needs
 `TIME$` and the `$` needs shift.)
 
-### P4-8 [NEXT] Ys draws its HUD now, but still never enters its loaded program
+### P4-8 [NEXT] Ys deadlocks: main waits for the sub, sub waits for the main
+
+**The deadlock, measured.** Over 1200 frames Ys's main CPU reads `$fd05`
+**899932 times** and sees bit 7 clear on **36** of them — 99.996% of the run it
+is parked in the F-BASIC ROM's sub-busy wait:
+
+```
+$f899  LDA <$05      ; DP=$fd -> $fd05
+$f89b  BMI $f899     ; reads $fe, bit 7 SET
+```
+
+Sampling the PC at frames 400, 800 and 1200 finds it there every time. Meanwhile
+the sub sits at `$c03e  LDB -1,U / BEQ $c03e` — the byte-wait loop, waiting for
+the main to hand it the next byte. **Main waits for the sub to go not-busy; the
+sub waits for the main to send data.**
+
+**It is NOT the BUSY flag change (`9fc762b`), and that had to be checked because
+the symptom is exactly the hazard that change introduced.** Rebuilding with the
+pre-`9fc762b` semantics — BUSY held cleared while halted, set only by the sub's
+own `$d40a` write — gives an **identical** distribution, 899896 `$fe` against 36
+`$7e`. The flag is not what is holding bit 7. Only 34 halt/release pairs occur
+in that window, so `~SHALTACn` is not it either; BUSY is being set by the sub's
+own `$d40a` writes and simply not cleared for long stretches, under either
+design.
+
+So the sub is *genuinely* busy, and the question is what it is busy doing. It
+writes `$d40a` 1414 times and reads it back 1417 times over 2000 frames, so the
+handshake cycles — but between a write and the matching read it spends a very
+long time in `$c03e`.
+
+**Ys's own ISR runs exactly once in 2000 frames.** `$117d`-`$1194` each show a
+count of 1 in the PC profile, and the timer branch at `$1195` never executes at
+all. That single entry was a keyboard interrupt that took `BMI $1194` and
+returned without storing. So the periodic work Ys expects — including
+`$11e2 STA $ffe5`, the only in-game writer of the flag the `$1113` loop polls —
+never happens.
+
+Note `TMMASK` is *not* the cause: Ys writes `$fd02 <- $40`, so `m77[2:0] = 000`
+and `TMMASK = 0`, which in `CLKCTRL` means `m50_1 <= 0` on every `_2MS` tick,
+i.e. the timer IRQ is **enabled**. The CC trace also shows `I` clear for part of
+the run, so interrupts are not permanently masked either.
+
+Next: find why the sub's `$c03e` loop never receives its byte. That is the
+Thexder byte-pump shape (P4-1), and Thexder's version was cured by sub
+throughput — but Ys's sub is running at a healthy 6542 instructions/frame, so
+this is not the same starvation.
+
+Everything below predates P4-15 and was measured on a core where `$8000-$fbff`
+read as zero. Re-derive before relying on it.
+
+### P4-8-old [superseded] Ys draws its HUD now, but still never enters its loaded program
 
 **[UPDATED after the BUSY fix]** With `9fc762b` (P4-13) Ys stops being a blank
 screen. At frame 1980, with `--key '820:@SPACE'`, it renders **its in-game
