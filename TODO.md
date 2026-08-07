@@ -989,6 +989,52 @@ regression is a regression and it is recorded rather than filtered away. The fix
 is kept because tying a reset pin to 0 is indefensible regardless of the
 scoreboard.
 
+### P4-18 [verified] MAME's own software list is a triage input
+
+MAME ships `refs/mame/hash/fm7_disk.xml`, a software list where an entry can
+carry `supported="no"` — meaning **MAME itself cannot run that title**. 14 of its
+158 disk entries are marked so. Cross-referencing them against the sweep
+separates "our bug" from "this title is problematic for everyone", and it cuts
+both ways.
+
+**Two of the 14 work here and not in MAME:**
+
+| title | MAME | this core |
+|---|---|---|
+| Champion ProWres Special | `supported="no"` | **renders, 18986 bytes** |
+| DNA (Disk A) | `supported="no"` | **renders, 9791 bytes** |
+
+**The rest land in our failure buckets**, which is evidence they are bad dumps or
+need something neither emulator provides: Abyss, Märchen Veil, Transylvania,
+Game 011/012/02G/03G/04G and the four Ura DOS disks.
+
+Folding that in as a fourth exclusion alongside the halt-stub, secondary-disk and
+`[b]` bad-dump tests gives the honest remaining target:
+
+| | blank at healthy rate | crash (low rate, blank) |
+|---|---|---|
+| raw | 77 | 8 |
+| − boot sector not bootable | 23 | 1 |
+| − secondary disk of a set | 27 | 2 |
+| − **MAME cannot run it either** | 5 | 1 |
+| − marked `[b]` bad dump | 5 | 2 |
+| **genuine, good dump, MAME runs it** | **17** | **2** |
+
+So **19 real failures out of 221 FM-7 images**, not the 85 the raw buckets
+suggest.
+
+**Caveat, so this is not used as an excuse.** "MAME cannot run it" is evidence
+about the title, not proof about this core — MAME's FM-7 driver is unreliable
+(that is the project's own standing rule, and P4-17 and the `$fd1d` fix are both
+cases where following MAME was the bug). A title on that list could still be
+failing here for a reason of ours. It shifts priority, it does not close a case.
+
+Also worth knowing from the same file: MAME flags `fm7`, `fm8` and `fmnew7` as
+working with no caveats, `fm77av` as `MACHINE_IMPERFECT_GRAPHICS`, and
+`fm7740sx`, `fm11` and `fm16beta` as `MACHINE_NOT_WORKING` — relevant to
+`FM77AV_PLAN.md`, since it means MAME is not a reliable oracle for AV40SX
+behaviour either.
+
 ### P4-16 [verified] Fourth breadth sweep: the whole collection, after P4-15
 
 Same 350 images, same method as P4-14, run against `ada5c37` (the P4-15 read-mux
