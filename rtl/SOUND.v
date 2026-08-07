@@ -24,10 +24,29 @@ wire reset = ~RESETBn;
 wire EN_CLK_1_2;
 clk_en #(CORE_CLK_1_2) u_ck_en(.ref_clk(CLKSYS), .cen(EN_CLK_1_2));
 
+// $fd0d carries the PSG bus-control pair {bdir, bc1}. This was clocked on
+// `posedge WFD0Dn` -- an address decode output used as a clock, which is clean
+// in Verilator and a glitchy ripple clock in Quartus. Same family as the FLAGS,
+// PERIPHERAL, MFD and PAL conversions; see DERIVED_CLOCKS.md.
+//
+// Converted to the idiom this file already uses for $fd0e a few lines down:
+// register the strobe on CLKSYS and capture on its LEADING edge, where the CPU
+// still has the data on the bus. The trailing edge the original used is where
+// the bus has already decayed in zero-delay RTL -- the same mistake $fd37 made.
+//
+// The one-cycle delay cannot reorder this against the $fd0e write that follows:
+// CLKSYS is 48 MHz against a 1.2288 MHz E, so {bdir,bc1} settles long before the
+// next bus cycle carries the data byte.
 reg bci, bdir;
-always @(posedge WFD0Dn, posedge reset)
+
+reg wfd0d_d;
+always @(posedge CLKSYS) wfd0d_d <= WFD0Dn;
+wire wfd0d_stb = ~WFD0Dn & wfd0d_d;   // falling edge = a write to $fd0d
+
+always @(posedge CLKSYS) begin
   if (reset) { bdir, bci } <= 2'b0;
-  else { bdir, bci } <= MDATABUS_in[1:0];
+  else if (wfd0d_stb) { bdir, bci } <= MDATABUS_in[1:0];
+end
 
 wire data_in_oe = ~(~bci | bdir);
 
