@@ -1471,10 +1471,43 @@ and `TMMASK = 0`, which in `CLKCTRL` means `m50_1 <= 0` on every `_2MS` tick,
 i.e. the timer IRQ is **enabled**. The CC trace also shows `I` clear for part of
 the run, so interrupts are not permanently masked either.
 
-Next: find why the sub's `$c03e` loop never receives its byte. That is the
-Thexder byte-pump shape (P4-1), and Thexder's version was cured by sub
-throughput — but Ys's sub is running at a healthy 6542 instructions/frame, so
-this is not the same starvation.
+**The deadlock is the SAME ONE as the P4-16 `$fd76` cluster, which makes this
+one problem across at least three titles rather than three problems.** Sampling
+Ys's sub PC early in the run:
+
+| frame | main | sub |
+|---|---|---|
+| 150 | `$f899` | `$fd7a` |
+| 200 | `$f899` | `$fd80` |
+| 250 | `$f89b` | `$fd82` |
+| 300-350 | `$f89b` | `$fd7e`/`$fd82` |
+
+`$fd7a`-`$fd82` is the sub monitor ROM's input wait — the `$fd76` loop P4-16
+records for Penguin-kun Wars and Fairie's Residence. So all three sit in exactly
+the same place: **sub in the monitor's input wait, main in the F-BASIC ROM's
+sub-busy wait.** Neither can move.
+
+The `$fd76` loop only exits on `$d000` (written by the sub's IRQ handler at
+`$e06e`, i.e. the main's *attention*) or `$d004` (the keyboard FIRQ handler at
+`$fdac`). Ys never sends attention — it writes only `$80`/`$00` to `$fd05`,
+never `$40` — so the keyboard is the only way out.
+
+**And that is why Ys renders at all.** It writes `$fd02 <- $40`, so `m77[0] = 0`
+and the keyboard is routed to the **sub**, whose FIRQ the `$fd76` loop
+deliberately unmasks with `ANDCC #$bf`. The `--key '820:@SPACE'` in the repro
+line is what breaks the deadlock: the sub takes its FIRQ, leaves `$fd76`,
+consumes Ys's uploaded code, and the HUD appears. Without that keypress Ys is
+blank — which is exactly how it scores in a sweep, since the sweep sends no keys.
+
+So the open question is no longer "why does Ys hang" but **why the sub monitor is
+parked in its input wait while marked BUSY in the first place.** It enters
+`$fd76` without having read `$d40a`, so BUSY stays set from whenever it last
+wrote it, and the main's `$f899` poll can never clear. On real hardware
+something must either keep the monitor out of that loop or clear BUSY on the way
+in.
+
+That reframes the P4-16 cluster too: those titles are not three separate
+per-title stalls, they are three instances of this.
 
 Everything below predates P4-15 and was measured on a core where `$8000-$fbff`
 read as zero. Re-derive before relying on it.
