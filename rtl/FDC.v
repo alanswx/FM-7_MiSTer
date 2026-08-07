@@ -245,24 +245,70 @@ end
 // FM-7 board registers, $fd1c-$fd1f (MAME fm7.cpp fdc_r/fdc_w cases 4-7)
 //
 //   4  side select   write bit 0; reads back as side | $fe
-//   5  drive select  write: bits 1:0 drive, bit 7 motor. MAME rejects a drive
-//                    number above 1 and latches 0 instead. Reads back the latch
+//   5  drive/motor   write: bits 1:0 drive, bit 7 motor. See below -- this one
+//                    follows CSP, NOT MAME.
 //   6  mode          FM-7 always reads $ff; writes only matter on FM77AV+
 //   7  status        bit 7 = DRQ, bit 6 = INTRQ, rest 0
+//
+// $fd1d USED TO FOLLOW MAME AND THAT WAS WRONG. MAME's fdc_w case 5 is
+//
+//     m_fdc_drive = data;
+//     if((data & 0x03) > 0x01) { m_fdc_drive = 0; }
+//
+// i.e. a drive number above 1 zeroes the WHOLE register, motor bit and all, and
+// fdc_r case 5 hands that latch straight back. This core copied that.
+//
+// CSP does something quite different, and CSP is the primary authority for FM-7
+// behaviour (TODO.md, "working practices" -- MAME's FM-7 driver is unreliable).
+// Its write path takes the motor bit BEFORE any drive validation and never
+// zeroes the register (floppy.cpp:221 `set_fdc_fd1d`), and its read path
+// (floppy.cpp:178 `get_fdc_motor`) builds the value rather than echoing it:
+//
+//     uint8_t val = 0x3c;                 // bits 5:2 always set
+//     val |= (fdc_drvsel & 0x03);         // drive number
+//     fdc_motor = (fdc->read_signal(SIG_MB8877_MOTOR) != 0);
+//     fdc_motor &= (fdc->get_drive_type(drv) != DRIVE_TYPE_UNK);
+//     if(fdc_motor) val |= 0x80;          // bit 7 = LIVE motor state
+//
+// So bit 7 reports whether the motor is actually running, gated on a drive
+// being present -- it is not an echo of what was written.
+//
+// This matters for real software. Ys writes $82 and $83 to $fd1d, i.e. drive 2
+// and 3 with the motor bit set. Under the MAME rule the register became $00 and
+// the motor bit vanished. Ys then polls a boot-ROM routine at $fef0 that copies
+// $fd1d into $ffe5 and waits for bit 7:
+//
+//     $fef0  LDB  <$1d      DP=$fd, so $fd1d
+//     $fef2  STB  $ffe5
+//     ...
+//     $1113  TST  $ffe5     Ys's wait loop
+//     $1116  BMI  $1120     leave when the motor is running
+//
+// With bit 7 always zero that loop never exits -- 662045 iterations over 2000
+// frames, and P4-8's "never enters its loaded program".
+//
+// `ready` is the drive-present term: it is the mount-and-scan-complete signal
+// used everywhere else in this file, which is the closest thing here to CSP's
+// `get_drive_type(drv) != DRIVE_TYPE_UNK`.
 //----------------------------------------------------------------------------
 
 reg       fdc_side  = 1'b0;
-reg [7:0] fdc_drive = 8'd0;
+reg       fdc_motor = 1'b0;
+reg [1:0] fdc_drv   = 2'd0;
 
 always @(posedge CLKSYS) begin
   if (reset) begin
     fdc_side  <= 1'b0;
-    fdc_drive <= 8'd0;
+    fdc_motor <= 1'b0;
+    fdc_drv   <= 2'd0;
   end
   else if (aux_sel & wr_stb) begin
     case (FD_RS[1:0])
-      2'd0: fdc_side  <= FD_Din[0];
-      2'd1: fdc_drive <= (FD_Din[1:0] > 2'd1) ? 8'd0 : FD_Din;
+      2'd0: fdc_side <= FD_Din[0];
+      2'd1: begin
+        fdc_motor <= FD_Din[7];    // taken before any drive validation, per CSP
+        fdc_drv   <= FD_Din[1:0];
+      end
       default: ;
     endcase
   end
@@ -270,7 +316,8 @@ end
 
 wire [7:0] aux_dout =
   (FD_RS[1:0] == 2'd0) ? { 7'h7f, fdc_side } :   // side | $fe
-  (FD_RS[1:0] == 2'd1) ? fdc_drive :
+  // { motor&ready, 0, 1111, drive } == CSP's 0x3c | drive | (motor ? 0x80 : 0)
+  (FD_RS[1:0] == 2'd1) ? { fdc_motor & ready, 1'b0, 4'b1111, fdc_drv } :
   (FD_RS[1:0] == 2'd2) ? 8'hff :                 // mode: FM-7 always $ff
                          { drq, intrq, 6'd0 };   // status flags
 
