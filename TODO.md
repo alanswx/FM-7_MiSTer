@@ -70,7 +70,7 @@ rather than trying to glob the brackets — that is what the sweep script does.
 | | where | why |
 |---|---|---|
 | **P4-16** | The 21 remaining blanks | Primary, good-dump disks that run healthily and draw nothing. The honest target, already stripped of halt-stubs, secondary disks and bad dumps. |
-| **P4-8** | Ys never enters its loaded program | P4-15 moved it a long way — 26146 → 35880 bytes on screen and the HUD now populates. Still not playable. The `$1113` (`TST $ffe5` / `TST $28e9`) lead was traced on the broken core, so **re-derive it before chasing it.** |
+| **P4-8** | Ys: the play field is black | **Not a deadlock — that framing was wrong and is corrected in the P4-8 section.** Ys boots unaided, draws its title screen with no key at all, and advances into the game on SPACE: border, `H.P 020/020`, `EXP`, `GOLD` and both gauges all render. Only the play area inside the border is black. The `$1113` (`TST $ffe5` / `TST $28e9`) lead was traced on the broken core, so **re-derive it before chasing it.** |
 | **P4-7** | CHAN.POP wild jump | Last sane PC in `$75xx`. Re-check against P4-15 first: it is the same *class* as the runaways that fix cured, and it may simply be gone. |
 | **P4-16** | The 8 remaining crashes | A different set from P4-14's fifteen. Seven still show `sub` = exactly 8721; three are `(Disk 1)` of multi-disk sets. |
 | **P4-3** | PSG `sel_n_i` pitch | Needs a human ear, cannot be settled in sim. |
@@ -264,7 +264,7 @@ P4-14 for the full table. The ones worth calling out:
 |---|---|
 | **Thexder** (Game Arts) | full title artwork and credit line. Richest screen in the collection |
 | **Hydlide II** (T&E Soft) | logo, ornate border, story panel, LIFE/STR/MAGIC status bar, and **the story text now reads correctly** (was P4-13) |
-| **Ys** (Falcom) | in-game furniture: ornate border, `H.P / EXP / GOLD`, PLAYER and ENEMY gauges. Needs `--key '820:@SPACE'`. Play area still empty -- P4-8 |
+| **Ys** (Falcom) | **title screen with no key at all**; `--key '820:@SPACE'` advances into the game: ornate border, `H.P 020/020`, `EXP 00000/00200`, `GOLD 01000`, PLAYER and ENEMY gauges. Play area still black -- P4-8 |
 | **Archon** (BPS) | full title screen -- logo, artwork, border |
 | **Mugen no Shinzou II** | title artwork with kanji logo |
 | **The Knight of Wonderland** | HummingBird Soft logo and artwork |
@@ -1137,8 +1137,10 @@ $fd82  1c bf     ANDCC #$bf      ; unmask FIRQ
 $fd84  20 f0     BRA   $fd76
 ```
 
-which is the `$fd76` wait loop P4-8 records Ys sitting in. So at least three
-titles share one sub-side stall. `ANDCC #$bf` clears the F flag, and the sub's
+which is the `$fd76` wait loop P4-8 records Ys passing through **during boot**.
+But Ys *leaves* it and goes on to render its title screen; these two never do,
+and six keypresses do not move them. So this is a shared **location**, not a
+shared cause — see the correction at the head of P4-8. `ANDCC #$bf` clears the F flag, and the sub's
 FIRQ is the keyboard (`KSTROBEn`), which suggests "waiting for a keypress" —
 **but that was tested and is wrong**: feeding SPACE/RETURN/SPACE at frames
 400/600/800 leaves both at 3790. Either they take the main-side keyboard route
@@ -1429,7 +1431,11 @@ timer interrupt now being recognised. (A separate attempt to confirm through the
 BASIC clock failed for a silly reason: `print time` is a syntax error, it needs
 `TIME$` and the `$` needs shift.)
 
-### P4-8 [NEXT] Ys deadlocks: main waits for the sub, sub waits for the main
+### P4-8 [NEXT] Ys renders and plays; the play field inside the border is black
+
+> **Heading corrected.** This section was titled "Ys deadlocks: main waits for
+> the sub, sub waits for the main". It does not deadlock. See the correction
+> below the measurements.
 
 **The deadlock, measured.** Over 1200 frames Ys's main CPU reads `$fd05`
 **899932 times** and sees bit 7 clear on **36** of them — 99.996% of the run it
@@ -1492,22 +1498,46 @@ The `$fd76` loop only exits on `$d000` (written by the sub's IRQ handler at
 `$fdac`). Ys never sends attention — it writes only `$80`/`$00` to `$fd05`,
 never `$40` — so the keyboard is the only way out.
 
-**And that is why Ys renders at all.** It writes `$fd02 <- $40`, so `m77[0] = 0`
-and the keyboard is routed to the **sub**, whose FIRQ the `$fd76` loop
-deliberately unmasks with `ANDCC #$bf`. The `--key '820:@SPACE'` in the repro
-line is what breaks the deadlock: the sub takes its FIRQ, leaves `$fd76`,
-consumes Ys's uploaded code, and the HUD appears. Without that keypress Ys is
-blank — which is exactly how it scores in a sweep, since the sweep sends no keys.
+**⚠ THE TWO PARAGRAPHS THAT STOOD HERE WERE WRONG. Ys is not deadlocked, and it
+is not the same problem as the P4-16 blanks.** They claimed the `--key
+'820:@SPACE'` is what breaks a deadlock, and that "without that keypress Ys is
+blank." Both are false — and the refuting evidence was **already in this file**. P4-16's
+sweep sends no keys, and it scored Ys at **35880 bytes** (see the P4-16 table),
+which is the title screen. That number sat a few sections away from the sentence
+"without that keypress Ys is blank" for the entire investigation without the
+contradiction being noticed. The key was inherited from the original repro line
+and never questioned.
 
-So the open question is no longer "why does Ys hang" but **why the sub monitor is
-parked in its input wait while marked BUSY in the first place.** It enters
-`$fd76` without having read `$d40a`, so BUSY stays set from whenever it last
-wrote it, and the main's `$f899` poll can never clear. On real hardware
-something must either keep the monitor out of that loop or clear BUSY on the way
-in.
+**Method note, worth keeping:** a repro line's flags are part of the claim. When
+a title's behaviour is being characterised, run it with the flags *removed* at
+least once — otherwise an inherited flag silently becomes a premise.
 
-That reframes the P4-16 cluster too: those titles are not three separate
-per-title stalls, they are three instances of this.
+Measured directly, at frame 1980, two runs differing only in the key:
+
+| run | png | what is on screen |
+|---|---|---|
+| **no key at all** | 35997 | the **title screen** — "Ancient Ys Vanished Omen", full artwork |
+| `--key '820:@SPACE'` | 18650 | the **in-game screen** — ornate border, `H.P 020/020`, `EXP 00000/00200`, `GOLD 01000`, PLAYER/ENEMY gauges |
+
+So Ys boots on its own, draws its title screen unaided, and the keypress does
+what a keypress at a title screen normally does: **advances past it into the
+game.** It is not escaping a deadlock, and the smaller PNG is the plainer game
+screen, not a worse one.
+
+The early sampling above (`$f899` / `$fd7a`-`$fd82` at frames 150-350) is real,
+but it is a **boot-phase transient**, not a terminal state — Ys leaves it. Read
+as a deadlock only because no one sampled late or ran the no-key case.
+
+**The P4-16 cluster is a separate population, not "three instances of this."**
+All 17 genuine blanks were re-run with a 6-key schedule (`300/500/700/900/1100/1300`,
+SPACE and RETURN): **0 of 17 moved** — every one still 3790-3817 bytes, blank.
+Ys renders without any key; they render with six. Whatever holds them is not
+what Ys was doing.
+
+**Remaining Ys defect: the play field inside the border is black.** The HUD,
+border and gauges all draw correctly, so VRAM writes and the sub's display path
+work. That is a much narrower bug than "deadlock" and is what P4-8 should now
+track.
 
 Everything below predates P4-15 and was measured on a core where `$8000-$fbff`
 read as zero. Re-derive before relying on it.
