@@ -522,8 +522,12 @@ end
 //         drives the sub as SIG_FM7_SUB_KEY_MASK with `firq_mask = !flag`, so
 //         the reset state leaves the sub's FIRQ ENABLED.
 //
-// It matters because a title that never writes $fd02 inherits this, and several
-// do exactly that. The sub monitor ROM's input wait at $fd76 is
+// It would matter for a title that never writes $fd02, since anything that does
+// overrides the reset value immediately -- but NO SUCH TITLE HAS BEEN FOUND.
+// OS-9 was the candidate and it writes $fd02 twice (frames 147 and 332 at
+// bootrom 2, ending $01). So this is a correctness-only fix; see TODO.md.
+//
+// The sub monitor ROM's input wait at $fd76 is
 //
 //     $fd76  ORCC  #$40        mask FIRQ
 //     $fd78  LDB   <$04        $d004

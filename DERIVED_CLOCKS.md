@@ -136,6 +136,7 @@ Four things to get right:
 | `MFD.v` | `m6_q` (FDC IRQ mask) | `649d054` |
 | `PAL.v` | palette read-back | `5cae28c` |
 | `MB60H010.v` | `SRL`/`SRH` (display offset) | `b632ea1` |
+| `FLAGS.v`, `PERIPHERAL.v` | three-cycle filters replacing the one-cycle edge detectors | `18e635c` |
 
 **Still open:**
 
@@ -147,20 +148,57 @@ Four things to get right:
 
 ### `KEYBOARD.v` `m77` — open, and it breaks rule 1
 
-Two conversions were built, flashed and tested. Both regressed OS-9, **0 boots
-in 8 tries each**, against a baseline on the immediately preceding commit that
-booted on try 3:
+**Three** conversions have now been built, flashed and tested. All three
+regressed OS-9, **0 boots in 8 tries each**, against baselines on the
+immediately preceding commit that booted within 5:
 
-- the recipe verbatim (leading edge, `wfd02_d & ~WFD02n`);
-- the trailing edge, with the strobe filtered and `MDATA_in` tracked on every
-  cycle the strobe was low, committing the last value seen while the bus was
-  still driven.
+| attempt | where it sampled | result |
+|---|---|---|
+| recipe verbatim | leading edge, `wfd02_d & ~WFD02n` | 0/8 |
+| trailing edge | strobe filtered, `MDATA_in` tracked while low, committed on release | 0/8 |
+| `0ce7ad3` mid-strobe | stably low for 3 cycles, commit once, re-arm after 3 high | 0/8 |
 
-So **the sample point is not the cause** — both ends of the strobe fail. Both
-failures showed the partial-boot signature (`* System Module Loading Completed !`
-and no further), which only appears once bank 2 has been selected and OS-9 has
-actually started, so this is a real behavioural change and not a mis-set boot
-ROM. Neither attempt was committed; `rtl/KEYBOARD.v` is unmodified.
+So **the sample point is not the variable** — leading, trailing and middle all
+fail. A fourth position is unlikely to be worth a build. All three failures
+showed the partial-boot signature (`* System Module Loading Completed !` and no
+further), which only appears once bank 2 has been selected and OS-9 has actually
+started, so this is a real behavioural change and not a mis-set boot ROM.
+
+None of the three is in the tree. The first two were never committed; `0ce7ad3`
+was reverted by `e443a02` after being isolated from `18e635c`, which arrived in
+the same pull and is good on hardware.
+
+#### The measurement that says where to look instead
+
+`m77` is **not** parked at its reset value during an OS-9 run, so the three
+designs are not behaviourally identical for it and what each one *captures*
+is the live variable. `--trace-mem fd02-fd02` over 900 frames at `--bootrom 2`:
+
+```
+147 mem  R $fd02 -> $fe   pc=$fbc5
+147 mem  W $fd02 <- $00   pc=$fbc5
+332 mem  W $fd02 <- $01   pc=$d261
+```
+
+Two writes in 900 frames — which is why this is easy to grep past; TODO.md
+already records that OS-9 writes `$fd02` after all, and this is the trace behind
+it. The final value is `$01`, bit 0 **set**, routing the keyboard to the main
+CPU.
+
+**The experiment that does not need hardware:** probe `m77` across the write at
+**frame 332, `pc=$d261`** under all four designs — original, leading, trailing,
+mid-strobe — and compare what lands against the `$01` on the bus. If a
+conversion captures anything else there, that is the bug, and it is a
+*data-capture* question rather than a glitch question, so `vsim` can see it.
+The hardware stall is consistent with the keyboard ending up on the wrong CPU.
+Worth checking the `$00` at frame 147 the same way: it is boot-ROM code
+(`pc=$fbc5`), so the `$00`→`$01` ordering may matter too.
+
+The standing lead also remains: `m77` alone takes its data from `MDATABUS_out`,
+a wide combinational mux over the whole main bus, where every other converted
+register reads a narrower source. If that mux only presents write data during
+part of the cycle, no fixed `CLKSYS` sample point reproduces the original edge
+and the fix has to come from the data side.
 
 Untested lead for the simulation side: `m77`'s `MDATA_in` is wired to
 `MDATABUS_out`, a wide combinational mux over the whole main bus rather than a
