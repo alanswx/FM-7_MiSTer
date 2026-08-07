@@ -185,14 +185,39 @@ already records that OS-9 writes `$fd02` after all, and this is the trace behind
 it. The final value is `$01`, bit 0 **set**, routing the keyboard to the main
 CPU.
 
-**The experiment that does not need hardware:** probe `m77` across the write at
-**frame 332, `pc=$d261`** under all four designs — original, leading, trailing,
-mid-strobe — and compare what lands against the `$01` on the bus. If a
-conversion captures anything else there, that is the bug, and it is a
-*data-capture* question rather than a glitch question, so `vsim` can see it.
-The hardware stall is consistent with the keyboard ending up on the wrong CPU.
-Worth checking the `$00` at frame 147 the same way: it is boot-ROM code
-(`pc=$fbc5`), so the `$00`→`$01` ordering may matter too.
+**That experiment has now been run, and it is a definitive negative.** All four
+designs were built and probed at both `$fd02` writes (`vsim/sweep/`… the script
+is `scratchpad/m77_probe.sh` in the sim-side session; the result is what
+matters):
+
+| design | captures (`$time`, value) | hardware |
+|---|---|---|
+| A original | `0:00`  `20815270:00`  `169323750:01` | **works** |
+| B leading | `20815263:00`  `169323743:01` | 0/8 |
+| C trailing | `3:00`  `20815273:00`  `169323753:01` | 0/8 |
+| D mid-strobe | `20815264:00`  `169323744:01` | 0/8 |
+
+Every design captures the same values at the same moments, to within a few
+`$time` units. The only difference is a phantom capture at `t≈0` in A and C —
+the async block firing as `WFD02n` resolves out of X at power-on, which the real
+writes immediately overwrite and which is therefore harmless.
+
+**And it does not correlate with hardware.** A has the phantom capture and works;
+C has it and fails. B and D lack it and fail. So:
+
+- the **sample point** is not the variable (three hardware builds said so);
+- the **captured data** is not the variable either (this experiment);
+- and simulation has now exhausted what it can say about `m77`.
+
+**Recommendation: stop converting `m77` and leave it on its async clock.** It is
+the one register in the core where the decode clock is empirically working,
+three hardware builds have failed against it, and there is no remaining
+sim-visible hypothesis to test. The cost of further builds is not justified by
+hardening a register that is not currently misbehaving. If it ever *does*
+misbehave on hardware, the notes above are the starting point — and the untested
+structural difference remains that `m77` is the only converted register whose
+outputs feed a different clock domain (`TMMASK` into `CLKCTRL`), which is a
+clock-domain-crossing question rather than a capture question.
 
 The standing lead also remains: `m77` alone takes its data from `MDATABUS_out`,
 a wide combinational mux over the whole main bus, where every other converted
