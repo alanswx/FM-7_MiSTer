@@ -150,6 +150,22 @@ these produced a confident wrong answer at least once:
    trace format instead: `grep -cE 'smem .* \$d404'`. Related: the main-CPU
    trace prints `mem` followed by **two** spaces, so `grep ' mem W '` silently
    matches nothing and looks like a clean null result.
+13. **`| tail -N` and `| head -N` will quietly delete the evidence.** Trace lines
+   come out *before* the end-of-run summary, so `--trace-mem ... | tail -40`
+   shows the summary and none of the trace — and it looks exactly like "the
+   access never happened". The mirror image also bit: a port histogram printed
+   with `head -15` hid `$fd02`, whose two writes ranked 16th, and that produced a
+   confident *retraction* of a correct finding. Both directions cost a wrong
+   conclusion in one session. Write traces to a file and query the file.
+14. **An inherited repro flag becomes an unexamined premise.** `--key
+   '820:@SPACE'` rode along in every Ys command for the whole investigation
+   because it was in the original repro line. It was never the thing breaking a
+   deadlock — Ys renders its title screen with no key at all, and the flag simply
+   advances past it. Run the no-flag case once before characterising behaviour.
+15. **A stale reference is worse than no reference.** `shots-ref/` sat three
+   months behind the core while `run_tests.sh` compared nothing against it and
+   still exited 0. "All 8 rows pass" meant only "eight sims produced plausible
+   instruction rates". If a suite cannot fail, it is not evidence.
 
 ### Working practices
 
@@ -168,6 +184,13 @@ these produced a confident wrong answer at least once:
   `--trace-from`/`--trace-until`. Two frames is ~700 MB, so always window it. It
   has settled two questions that several rounds of `$display` could not — reach
   for it after the second failed printf, not the fifth.
+- **`run_tests.sh` now judges itself.** It compares screenshots *and* counters
+  against `shots-ref/` and exits non-zero on a difference. Accept an intentional
+  change with `BLESS=1 ./run_tests.sh`, and say why here in the same commit.
+- **`--trace-from`, `--trace-until` and `--trace-max` do NOT apply to
+  `--trace-io`.** It logs the whole run regardless, so a `--trace-io` log is
+  never evidence about a particular window unless you filter on the frame column
+  yourself (`awk '$1>=1400'`). They *do* work for `--trace-mem`/`--trace-mem-sub`.
 
 ---
 

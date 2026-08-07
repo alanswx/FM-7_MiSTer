@@ -14,25 +14,65 @@
 # screenshot alone cannot tell "F-BASIC prompt, as designed" apart from "CPU
 # wedged with a prompt left in VRAM".
 #
-# Output goes to shots/. Compare against shots-ref/ after making a change:
-#   ./run_tests.sh && cp -r shots shots-ref
+# THIS SCRIPT NOW JUDGES ITSELF. It used to print a table and tell you to run
+# `cp -r shots shots-ref` by hand, and it compared nothing: `fail` was set only
+# by NO-KEYSTROKE and NO-SCREENSHOT, so a change that altered every pixel of
+# every screen still exited 0. Worse, the reference it pointed at went stale --
+# by the time this was noticed shots-ref/ was three months behind the core and
+# read as "8 failures" that were all intentional improvements.
+#
+# Both halves are now compared against $REF (default shots-ref/):
+#
+#   * the SCREENSHOT, byte for byte
+#   * the COUNTERS -- frames, main/frame, sub/frame, I/O cycles -- exactly.
+#     The sim is deterministic, so these do not drift on their own; if one
+#     moves, something in the RTL moved it. The delta is printed so you can see
+#     how far.
+#
+# A test with no reference is reported `new` and does not fail the run, so
+# dropping a new .d77 into ../software does not break the suite.
+#
+# When a change is intentional, bless it:
+#
+#   BLESS=1 ./run_tests.sh          # update screenshots AND counters
+#
+# Blessing is the moment to record WHY in TODO.md -- a blessed reference with
+# no matching note is indistinguishable from an unnoticed regression later.
 #
 # Usage:
 #   ./run_tests.sh                 # every test
 #   ./run_tests.sh basic tape      # only tests matching these substrings
 #   FRAMES=1200 ./run_tests.sh     # run longer
+#   BLESS=1 ./run_tests.sh         # accept current behaviour as the reference
+#   REF=other-ref ./run_tests.sh   # compare against a different reference dir
 #
 set -uo pipefail
 cd "$(dirname "$0")"
 
 EXE=./obj_dir/Vemu
 OUT=shots
+REF=${REF:-shots-ref}
+BLESS=${BLESS:-0}
 TAPEDIR=${TAPEDIR:-../software}
 FRAMES=${FRAMES:-620}
 SHOT_AT=${SHOT_AT:-$((FRAMES - 20))}
 
+# The counter reference lives beside the screenshots so the two cannot drift
+# apart: one `cp -r`, or one BLESS run, moves both together.
+COUNTERS="$REF/counters.tsv"
+
 [ -x "$EXE" ] || { echo "Build first: make"; exit 1; }
 mkdir -p "$OUT"
+[ "$BLESS" = 1 ] && mkdir -p "$REF"
+
+# Counters are only comparable at the frame count they were recorded at, so key
+# the reference on FRAMES. Running FRAMES=1200 against a 620-frame reference
+# compares nothing rather than reporting eight bogus failures.
+ref_lookup() {   # $1 = test name -> "frames mainpf subpf iocyc" or empty
+  [ -f "$COUNTERS" ] || return 0
+  awk -F'\t' -v n="$1" -v f="$FRAMES" \
+    '$1==n && $2==f { print $2, $3, $4, $5; exit }' "$COUNTERS"
+}
 
 # Key frames are derived from FRAMES rather than hardcoded, so a short
 # FRAMES=200 smoke run still exercises the keyboard instead of stopping before
@@ -54,8 +94,10 @@ TESTS=(
   "boot-dos1|--bootrom 1"
   "boot-dos2|--bootrom 2"
   "boot-dos3|--bootrom 3"
-  # '-' is one of the few operators that needs no shift, and KEYBOARD.v has
-  # no shift tables yet (P2-1), so use it: this should print 9.
+  # Deliberately shift-free: '-' needs no modifier, so this row still passes
+  # even if the shift tables regress, which keeps it independent of basic-shift
+  # below. (It was originally written this way because KEYBOARD.v had no shift
+  # tables at all -- P2-1 has since added them.) Should print 9.
   "basic-print|--bootrom 0 --key '$K1:print 12-3' --key '$K3:@RETURN'"
   "basic-keys|--bootrom 0 --key '$K1:@RETURN' --key '$K2:list' --key '$K3:@RETURN'"
   # Exercises the SHIFT table: '+' is shift-';' and '"' is shift-2 on JIS.
@@ -107,10 +149,14 @@ matches() {
   return 1
 }
 
-printf "%-20s %7s %10s %10s %9s  %s\n" TEST FRAMES MAIN/frame SUB/frame IO-CYCLES NOTES
-printf -- "---------------------------------------------------------------------------------\n"
+printf "%-20s %7s %10s %10s %9s  %-9s %s\n" \
+       TEST FRAMES MAIN/frame SUB/frame IO-CYCLES VS-REF NOTES
+printf -- "-------------------------------------------------------------------------------------------\n"
 
 fail=0
+diffs=0
+newly=0
+blessed_rows=()
 for entry in "${TESTS[@]}"; do
   IFS='|' read -r name extra <<< "$entry"
   matches "$name" || continue
@@ -144,11 +190,80 @@ for entry in "${TESTS[@]}"; do
   esac
   [ -f "$OUT/$name.png" ] || { notes="$notes NO-SCREENSHOT"; fail=1; }
 
-  printf "%-20s %7s %10s %10s %9s  %s\n" \
-     "$name" "${frames:-?}" "${mainpf:-?}" "${subpf:-?}" "${iocyc:-?}" "$notes"
+  # ---- compare against the reference -------------------------------------
+  # Two independent checks. A change can move the counters while leaving the
+  # screen identical (an extra interrupt firing) or repaint the screen without
+  # touching the rates, so neither subsumes the other and both are reported.
+  vs="ok"
+  refline=$(ref_lookup "$name")
+
+  if [ -f "$REF/$name.png" ]; then
+    cmp -s "$OUT/$name.png" "$REF/$name.png" || { vs="SCREEN"; diffs=1; }
+  else
+    vs="new"; newly=1
+  fi
+
+  if [ -n "$refline" ]; then
+    read -r r_fr r_main r_sub r_io <<< "$refline"
+    cdelta=""
+    [ "${mainpf:-?}" != "$r_main" ] && cdelta="$cdelta main:$r_main->${mainpf:-?}"
+    [ "${subpf:-?}"  != "$r_sub"  ] && cdelta="$cdelta sub:$r_sub->${subpf:-?}"
+    [ "${iocyc:-?}"  != "$r_io"   ] && cdelta="$cdelta io:$r_io->${iocyc:-?}"
+    if [ -n "$cdelta" ]; then
+      [ "$vs" = "SCREEN" ] && vs="SCREEN+CNT" || vs="COUNTERS"
+      notes="$notes$cdelta"
+      diffs=1
+    fi
+  elif [ "$vs" = "ok" ]; then
+    vs="new"; newly=1     # screenshot matched but no counter reference yet
+  fi
+
+  # Key on the REQUESTED frame count ($FRAMES), not the reported one. The sim
+  # reports 621 for --stop-at-frame 620 (it counts the frame it stops on), and
+  # keying the row on 621 while ref_lookup() searches for 620 made every test
+  # report `new` against a reference that was sitting right there.
+  blessed_rows+=("$(printf '%s\t%s\t%s\t%s\t%s' \
+      "$name" "$FRAMES" "${mainpf:-0}" "${subpf:-0}" "${iocyc:-0}")")
+
+  printf "%-20s %7s %10s %10s %9s  %-9s %s\n" \
+     "$name" "${frames:-?}" "${mainpf:-?}" "${subpf:-?}" "${iocyc:-?}" "$vs" "$notes"
   rm -f "$log"
 done
 
 echo
-echo "Screenshots in $OUT/. To set a reference: cp -r $OUT shots-ref"
+if [ "$BLESS" = 1 ]; then
+  # Only the tests that actually ran are blessed; a filtered run must not
+  # silently drop the reference for everything it skipped.
+  tmp=$(mktemp)
+  [ -f "$COUNTERS" ] && cat "$COUNTERS" > "$tmp"
+  for row in "${blessed_rows[@]}"; do
+    nm=${row%%$'\t'*}
+    fr=$(printf '%s' "$row" | cut -f2)
+    # awk, not `grep -P`: BSD grep on macOS has no -P, and the names contain
+    # regex metacharacters ("Thexder [b]") that a plain grep would misread.
+    awk -F'\t' -v n="$nm" -v f="$fr" '!($1==n && $2==f)' "$tmp" > "$tmp.new"
+    mv "$tmp.new" "$tmp"
+    printf '%s\n' "$row" >> "$tmp"
+  done
+  mkdir -p "$REF"
+  sort -o "$COUNTERS" "$tmp"; rm -f "$tmp"
+  for row in "${blessed_rows[@]}"; do
+    nm=${row%%$'\t'*}
+    [ -f "$OUT/$nm.png" ] && cp "$OUT/$nm.png" "$REF/$nm.png"
+  done
+  echo "BLESSED ${#blessed_rows[@]} test(s) into $REF/ (screenshots + counters.tsv)."
+  echo "Record why in TODO.md -- an unexplained bless reads as a missed regression later."
+  exit 0
+fi
+
+if [ "$diffs" = 1 ]; then
+  echo "REGRESSION: at least one test differs from $REF/."
+  echo "If the change is intentional:  BLESS=1 ./run_tests.sh"
+  fail=1
+elif [ "$newly" = 1 ]; then
+  echo "Some tests have no reference yet (marked 'new'). BLESS=1 ./run_tests.sh to record them."
+  echo "All tests that DO have a reference match it."
+else
+  echo "All tests match $REF/ (screenshots and counters)."
+fi
 exit $fail
