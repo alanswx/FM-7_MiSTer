@@ -539,56 +539,13 @@ end
 // waits forever and the main waits on it -- the BUSY=1/SHALTACn=1 stall in
 // P4-16. Only bit 0 is changed here; LPMASKn and TMMASK keep their old reset
 // value, since nothing has been measured about those.
-// $fd02, converted off its decode strobe -- see DERIVED_CLOCKS.md.
-//
-// THIS ONE DOES NOT USE THE FILTERED-EDGE RECIPE, because both edges were tried
-// on hardware and both regressed OS-9 (0 boots in 8 tries each). Sampling on an
-// edge at all is the thing those two attempts had in common, and each edge has
-// its own hazard:
-//
-//   leading edge  -- the 74138 decode is still settling, which is exactly the
-//                    glitch window, and the 6809 may not yet be driving write
-//                    data. The original latched on the TRAILING edge for that
-//                    second reason: a 74LS374 captures where the data is known
-//                    good.
-//   trailing edge -- a filtered detector only recognises the edge two CLKSYS
-//                    cycles after the strobe has already risen, by which point
-//                    the bus may no longer be driven and any tracked copy is at
-//                    risk of having been re-sampled from a released bus.
-//
-// So latch in the MIDDLE of the access instead of at either end: require the
-// strobe to have been stably low for three CLKSYS cycles, commit exactly once,
-// and re-arm only after it has been stably high for three. That is past the
-// leading-edge glitch window, comfortably before the trailing edge (WFD02n is
-// qualified by WTQEn = Q&E, so it is roughly 19 CLKSYS cycles wide against
-// E = 1.2288 MHz), and it cannot double-write within one access.
-//
-// Sampling only once WTQEn has asserted also means Q and E are both already
-// high, which is the point at which the 6809 has committed its write data --
-// so the data-validity reason the original chose the trailing edge is satisfied
-// without having to sit on that edge.
-//
-// NOT VERIFIABLE FROM SIMULATION. vsim reproduces the recipe-verbatim version
-// byte-for-byte, OS-9 shell included, so sim cannot tell any of these three
-// designs apart. This is reasoning about the hardware failure, not a proven
-// fix, and it needs a .rbf to judge.
 wire s0 = ~RESETBn;
-reg [2:0] wfd02_sr;
-reg       wfd02_armed;
-always @(posedge CLKSYS) begin
-  wfd02_sr <= { wfd02_sr[1:0], WFD02n };
-  if (~RESETBn) begin
-    m77         <= 3'b110;
-    wfd02_armed <= 1'b1;
-  end
-  else if (&wfd02_sr) begin
-    wfd02_armed <= 1'b1;                       // stably high: arm for next access
-  end
-  else if (~|wfd02_sr & wfd02_armed) begin     // stably low, once per access
-    $display("FD02 Write: %02X", MDATA_in);
-    m77         <= MDATA_in[2:0];
-    wfd02_armed <= 1'b0;
-  end
+always @(posedge WFD02n, posedge s0) begin
+  if (s0) m77 <= 3'b110;
+  else begin
+		$display("FD02 Write: %02X", MDATA_in);
+		m77 <= MDATA_in[2:0];
+	end
 end
 
 wire clr = ~(RESETBn & RFD01n & KACKNGn);
