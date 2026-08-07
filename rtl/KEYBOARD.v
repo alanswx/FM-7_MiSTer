@@ -545,7 +545,13 @@ end
 // value, since nothing has been measured about those.
 wire s0 = ~RESETBn;
 always @(posedge WFD02n, posedge s0) begin
-  if (s0) m77 <= 3'b110;
+  // 3'b000, not 3'b110: with bits 1 and 2 now read as enables (see the TMMASK
+  // and LPMASKn assigns), a reset of 0 leaves the timer and printer sources
+  // masked -- which is what CSP resets to (`irqmask_timer = irqmask_printer =
+  // true`, fm7_mainio.cpp:266-267). Behaviour at reset is therefore unchanged;
+  // only the response to a $fd02 write changes. Bit 0 stays 0, keeping the
+  // keyboard routed to the sub, which both references agree on.
+  if (s0) m77 <= 3'b000;
   else begin
 		$display("FD02 Write: %02X", MDATA_in);
 		m77 <= MDATA_in[2:0];
@@ -581,7 +587,29 @@ end
 
 assign KSTROBEn = ~(m132 & ~m77[0]);
 assign KEYINn = ~(m132 & m77[0]);
-assign LPMASKn = m77[1];
-assign TMMASK = m77[2];
+// $fd02's bits are interrupt ENABLES, not masks -- a set bit turns the source
+// ON. Both references agree, despite MAME naming its variable `irq_mask`:
+//
+//   MAME fm7.cpp:1098   if(m_irq_mask & IRQ_FLAG_TIMER) main_irq_set_flag(...)
+//   CSP  fm7_mainio.cpp:482
+//                       if((val & 0x04) != 0) irqmask_timer = false;   // enabled
+//
+// Bit 0 was already written that way here -- `KEYINn = ~(m132 & m77[0])` asserts
+// the main's keyboard IRQ when bit 0 is SET. Bits 1 and 2 were the other way
+// round, so the same write meant "enable" on one bit and "disable" on the next
+// two.
+//
+// The consumers both treat their input as active-high-masks:
+//   CLKCTRL.v:107   if (_2MS_tick) m50_1 <= TMMASK;   m50_1=1 -> IRQn deasserted
+//   PERIPHERAL.v:127                LPINTn <= LPMASKn; LPINTn=1 -> no IRQ
+// so enabling on a set bit means inverting here.
+//
+// Measured: Ys writes $fd02 <- $05 at pc=$116f, immediately ahead of its ISR at
+// $117d -- bit 0 (keyboard) plus bit 2 (timer). With bit 2 read as a mask its
+// timer IRQ never fired, the ISR ran exactly once, and $11e2 (`STA $ffe5`) never
+// executed at all, so the flag its main loop polls at $1113 stayed $00 forever.
+// See P4-8.
+assign LPMASKn = ~m77[1];
+assign TMMASK = ~m77[2];
 
 endmodule

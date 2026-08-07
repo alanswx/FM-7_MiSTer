@@ -1454,6 +1454,112 @@ timer interrupt now being recognised. (A separate attempt to confirm through the
 BASIC clock failed for a silly reason: `print time` is a syntax error, it needs
 `TIME$` and the `$` needs shift.)
 
+### $fd02 [FIXED] the interrupt-enable bits were inverted on 1 and 2 — 1942 was blank because of it
+
+`$fd02`'s bits are interrupt **enables**: a set bit turns the source on. Both
+references say so, despite MAME naming its variable `irq_mask`:
+
+```c
+MAME fm7.cpp:1098   if(m_irq_mask & IRQ_FLAG_TIMER) main_irq_set_flag(...)
+CSP  fm7_mainio.cpp:482   if((val & 0x04) != 0) irqmask_timer = false;  // enabled
+```
+
+The core was **internally inconsistent** — the same write meant "enable" on one
+bit and "disable" on the next two:
+
+| bit | source | was | refs |
+|---|---|---|---|
+| 0 | keyboard | `KEYINn = ~(m132 & m77[0])` — set = enabled | set = enabled ✓ |
+| 1 | printer | `LPMASKn = m77[1]` → set = **disabled** | set = enabled ✗ |
+| 2 | timer | `TMMASK = m77[2]` → set = **disabled** | set = enabled ✗ |
+
+Both consumers treat their input as an active-high mask (`CLKCTRL.v:107`
+`m50_1 <= TMMASK`, `PERIPHERAL.v:127` `LPINTn <= LPMASKn`), so enabling on a set
+bit means inverting in `KEYBOARD.v`. The `m77` reset moved `3'b110` -> `3'b000`,
+which leaves reset behaviour **unchanged** — with the inversion, 0 now means the
+"masked" that 1 used to — and matches CSP resetting every `irqmask_*` to true.
+Bit 0 was already right and keeps its reset value, so the keyboard still routes
+to the sub.
+
+**Scoped before changing anything.** `$fd02` writes over eight titles:
+
+| title | writes | bit 2? |
+|---|---|---|
+| **1942** | `$00`, `$05`x11 | yes |
+| Hydlide II | `$00`, `$05` | yes |
+| Ys | `$00`, `$05` at `pc=$116f` and `$2897` | yes |
+| **Thexder** | `$00`, `$04` | yes — timer only |
+| Penguin-kun Wars | `$00`, `$40`x4 | no — bit 6, rxrdy |
+| Yellow Lemon | `$00`, `$40`x2 | no — bit 6 |
+| Thunder Force, Xanadu | `$00`, `$01` | no |
+| Relics | `$00` | no |
+
+(That also kills the old claim that "Ys writes `$fd02 <- $40`". It writes `$05`;
+`$40` belongs to the blank titles.)
+
+**Result — 1942 was blank and now renders its title screen and menu**, logo plus
+`1PLAYER`/`2PLAYERS` and `HIT X KEY`, 3790 -> 5880 bytes at the same 700-frame
+sweep settings. It writes `$05` eleven times, i.e. it kept asking for a timer
+interrupt the core kept refusing. This was predicted before the run, not fitted
+afterwards.
+
+No regressions:
+
+| check | result |
+|---|---|
+| Hydlide II | screenshot **byte-identical**, counters moved |
+| F-BASIC (4 rows) | screenshots **byte-identical**, +83 main/frame, +70k I/O |
+| Thexder, 2450 frames | title animation completes **identically** at frame 2400; only the animated background's dither phase differs; rates within 1% |
+
+Thexder was the one to watch — it writes `$04` and is the pixel-exact reference.
+Its screenshot does move, so `shots-ref` was re-blessed here; the fixed-frame
+shot lands at a different point in a screen that animates once the ISR actually
+consumes cycles.
+
+**It does NOT fix Ys, which was predicted and wrong.** What it does is move Ys
+one link along: its timer ISR now runs **11554 times instead of 1**. It still
+gives up immediately, for a separate reason — see the `$fd03` entry below.
+
+### $fd03 [NEXT] reading it clears the flag before the CPU can latch it
+
+Ys's handler is the ordinary "which source?" dispatch:
+
+```
+$117d  LDA  $fd03     ; a = $ff, every single time
+$1180  BITA #$04      ; timer bit, active low
+$1182  BEQ  $1195     ; -> timer handler. NEVER TAKEN
+$1184  BITA #$01      ; keyboard bit
+$1186  BEQ  $1189     ; never taken
+$1188  RTI            ; gives up
+```
+
+`$fd03` reads `$ff` — "no source is requesting" — so `$1195` never executes,
+which is what P4-8 recorded without a cause, and `$11e2 STA $ffe5` never runs.
+
+The race:
+
+```verilog
+PERIPHERAL.v:121  assign IRQCLRn = RFD03n & RESETBn;   // low for the WHOLE read
+CLKCTRL.v:108     if (~IRQCLRn) m50_1 <= 1'b1;         // every CLKSYS cycle while low
+```
+
+`CLKSYS` is 48 MHz against a 1.2288 MHz E, so the flag clears a cycle or two into
+the read and the combinational readback at `CLKCTRL.v:126` presents the cleared
+value for the rest of it — which is when the CPU latches. CSP captures first and
+clears afterwards, explicitly:
+
+```c
+val = irqstat_reg0 | 0xf0;   // capture FIRST
+irqstat_timer = false;        // clear AFTER
+return val;                   // pre-clear value
+```
+
+Fix is to clear on the **trailing** edge of `IRQCLRn`, once the CPU has taken the
+data. That keeps the property the comment at `CLKCTRL.v:89-99` cares about — the
+strobe is many `CLKSYS` cycles wide, so its trailing edge cannot be missed. It is
+the mirror of the `$fd37` lesson: capture writes on the leading edge, clear reads
+on the trailing edge.
+
 ### $fd37 multi-page [verified] — the open "needs a check" item checks out
 
 Checked because a wrong display mask produces exactly the Ys symptom below:
