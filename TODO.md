@@ -1557,6 +1557,59 @@ border and gauges all draw correctly, so VRAM writes and the sub's display path
 work. That is a much narrower bug than "deadlock" and is what P4-8 should now
 track.
 
+#### Re-derived on the fixed core
+
+This section used to warn that the `$1113` lead was traced on the broken core
+and had to be re-derived. Done -- 2600 frames, `--key '820:@SPACE'`, `--pc-profile`.
+It is still the loop, and it is now the top of the histogram:
+
+| addr | insn | count |
+|---|---|---|
+| `$1113` | `TST $ffe5` | 1266096 |
+| `$1116` | `BMI $1120` | 1266096 |
+| `$1118` | `TST $28e9` | 1266096 |
+| `$111b` | `BEQ $1113` | 1266062 |
+| **`$1120`** | the `BMI` exit | **2** |
+
+`$1120` is reached exactly **twice** in the whole run, both early, then never
+again. Sub-side, `$c03e`/`$c040` (`LDB -1,U` / `BEQ $c03e`) take 7.83 M hits each
+-- **86.6% of every sub instruction executed** -- so the sub is parked waiting for
+a byte.
+
+**The ISR runs exactly once, and the store never runs at all.** Every address in
+`$117d`-`$1194` shows a count of exactly 1, and **`$11e2` — the `STA $ffe5` —
+does not appear in the histogram at all.** So the flag `$1113` polls is never
+written after boot. The open question is now specific: *why does Ys's interrupt
+fire once and never again?*
+
+**Two candidate causes eliminated, both by measurement:**
+
+*`$ffe0-$ffef` is not mis-mapped* — P3-5 flags it and Ys touches it, so it looked
+compelling. It is wrong. `poke65509,170:?peek(65509)` prints **170**, and the
+boot ROM's own accesses round-trip in the trace:
+
+```
+0 mem  W $ffe5 <- $3c   ... pc=$fef2
+0 mem  R $ffe5 -> $3c   ... pc=$ff04
+```
+
+CSP agrees that region is RAM: `mainmem_readseq.cpp` returns
+`fm7_mainmem_bootrom_vector[]` for `$ffe0-$fffd`, and `mainmem_writeseq.cpp`
+writes it **unconditionally** — no `#if`, no `boot_ram_write` guard. (Careful
+reading the CSP map: the `$fe00`/`$ffe0` split at `fm7_mainmem.cpp:218` sits
+inside `#if defined(_FM77AV40EX)` and is *not* the plain FM-7 path. The FM-7
+boot ROM is `$FE00-$FFEF` per `fm7_common.h:19`.)
+
+*Not a display-mask or palette fault* — the stalled run reports `$fd37 = $00`
+(all three planes visible), identity palette `0 1 2 3 4 5 6 7`, display on. The
+play field is black because nothing drew it, not because it is masked. See the
+`$fd37` section above.
+
+**Also seen, unexplained:** Ys touches four ports the core does not decode --
+`$fd25`, `$fd27`, `$fd29`, `$fd2b`, exactly **7 accesses each**. Even counts on
+four adjacent odd addresses looks like a hardware probe rather than anything in
+the stall loop, but it has not been chased.
+
 Everything below predates P4-15 and was measured on a core where `$8000-$fbff`
 read as zero. Re-derive before relying on it.
 
