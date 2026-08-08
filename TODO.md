@@ -19,12 +19,22 @@ Reference shorthand:
 ## Handoff — read this first
 
 **State.** The core boots F-BASIC (cassette and disk), runs games from `.d77`,
-and boots OS-9's kernel. **62 of the 221 FM-7 disk images in the Neo Kobe
-collection render a real screen** (P4-16), up from 33 before P4-15. The FDC, the main/sub handshake and
-its BUSY completion flag, the shared-RAM aperture, the full keyboard (both
-routings, shift/ctrl/graph/kana/break) and the boot-ROM bank select are all
-verified working against the reference emulators. What remains is mostly
-per-title software archaeology plus a handful of scoped RTL items.
+and boots OS-9's kernel. The FDC, the main/sub handshake and its BUSY completion
+flag, the shared-RAM aperture, the full keyboard (both routings,
+shift/ctrl/graph/kana/break), the boot-ROM bank select and — as of P4-19 — the
+**main-CPU interrupt path** are all verified working against the reference
+emulators. What remains is mostly per-title software archaeology plus a handful
+of scoped RTL items.
+
+**The interrupt path was broken in two places at once, and P4-19 fixed both.**
+`$fd02`'s enable bits were inverted on 1 and 2, so a title that asked for the
+timer interrupt never got one; and `$fd03`'s acknowledge landed on the wrong one
+of the two bus strobes a single read produces, so a handler that did get an
+interrupt could never work out which source fired. **Neither fix does anything
+visible on its own** — they are a chain. Together they made **Ys playable**
+(P4-8, open across four previous investigations) and took **1942** from a blank
+screen to its title menu, with **21+ titles moving blank -> rendering** and no
+title shown to regress.
 
 The single biggest remaining bucket is **18 FM-7 images that are primary, good
 dumps, run at a healthy rate and still draw nothing** (P4-16). That was 46
@@ -166,6 +176,20 @@ these produced a confident wrong answer at least once:
    months behind the core while `run_tests.sh` compared nothing against it and
    still exited 0. "All 8 rows pass" meant only "eight sims produced plausible
    instruction rates". If a suite cannot fail, it is not evidence.
+16. **A FIXED-frame screenshot is only comparable between builds of comparable
+   TIMING.** This is trap 7 in new clothes and it cost a false regression report.
+   The sweep shoots at frame 680. After P4-19 every title spends cycles in an ISR
+   it never used to run, so boot shifts later and the same shot lands *earlier*
+   in each title's startup. Three titles scored as regressions were in fact large
+   gains — Alpha `6710 -> 3790` at 680 but **26281** at 1400, Solitaire Royale
+   `3960 -> 3790` but **32000**, Take Out Vol. 6 `4827 -> 3790` but **13203**. A
+   timing-affecting change makes the sweep under-report in **both** directions.
+   Re-sweep at a longer frame count before believing either number.
+17. **`find <symlink>` does not follow it without a trailing slash**, and
+   `sweep.sh` uses `find "$DISKS"` bare. Pointing `$OUT/disks` at a symlink made
+   the sweep report "0 disk images" and exit successfully in seconds — a
+   mis-set path looks like a clean fast run, not an error. Check the image count
+   in the sweep's own output before trusting the results file.
 
 ### Working practices
 
@@ -1453,6 +1477,31 @@ also rises sharply -- `boot-basic` 777310 -> 1094418 cycles -- consistent with a
 timer interrupt now being recognised. (A separate attempt to confirm through the
 BASIC clock failed for a silly reason: `print time` is a syntax error, it needs
 `TIME$` and the `$` needs shift.)
+
+### P4-19 [in progress] Fifth breadth sweep: the whole collection, after both interrupt fixes
+
+Run at **700 frames** first (`vsim/sweep/results-P4-19-f700.tsv`), joined per
+title against P4-16. Raw over all 350 images: **191 render / 159 blank**, against
+184/166 at P4-16 — net **+7**.
+
+**Treat that +7 as a floor, not the answer.** The 700-frame run is biased against
+this build: see trap 16. Three of its 14 apparent regressions are large *gains*
+when re-shot at frame 1400, and only five titles stayed blank — every one of
+which had a P4-16 "before" of 3976-4056 bytes, i.e. a few hundred bytes of error
+text rather than a working screen, with Wizardry's instruction rate *rising*
+2240 -> 3486. **No title has been shown to regress.**
+
+Confirmed gains (blank -> renders) include Bishoujo Shashinkan `3790 -> 29125`,
+Albatross `-> 11946`, **Penguin-kun Wars (demo)** `-> 9322` — one of the 17
+genuine blanks that would not move for any keypress — Lupin Sansei `-> 9093`,
+Reviver `-> 7260` and **1942** `-> 5880`, plus Alpha `-> 26281`, Solitaire
+Royale `-> 32000` and Take Out Vol. 6 `-> 13203` from the re-shot set.
+
+A **1500-frame** re-sweep is running for a number that is not fighting the fix.
+Early partial (60 titles): 42/60 render at the P4-16 baseline, 44/60 now, 2 gains
+and **0 losses**. When it lands, recompute the headline the way P4-16 did — over
+the **221 real FM-7 images**, after excluding secondary disks, save disks, `[b]`
+bad dumps and halt-stub boot sectors. The 350 raw figure is not "titles".
 
 ### $fd02 [FIXED] the interrupt-enable bits were inverted on 1 and 2 — 1942 was blank because of it
 

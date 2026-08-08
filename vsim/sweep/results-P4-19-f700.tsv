@@ -1,0 +1,351 @@
+MAIN_PF	SUB_PF	PNG	IO	NOTES	TITLE
+6697	8721	3790	6667	-	[Compilation] FM-7 Programs 03
+6671	8721	3790	19486	-	[Compilation] Game 03G [b]
+5622	9730	4383	1790348	-	[Compilation] Game 011
+5622	9730	4383	1790348	-	[Compilation] Game 012
+6671	8721	3790	19480	-	[Compilation] Game 02G [b]
+6671	8721	3790	19251	-	[Compilation] Game 04G [b]
+5596	9665	4401	1706008	-	[Compilation] 5-in-1 Pack
+5622	9730	4383	1790348	-	[Compilation] Game 014
+5622	9730	4383	1790271	-	[Compilation] Game 013
+4983	7102	7847	229993	-	[Compilation] Game 1
+4871	8279	4345	143478	-	[Compilation] FM-Soft
+4864	7685	10923	182868	-	[Compilation] Game 2
+4954	2094	3790	158621	-	[Compilation] Game 4 {boot DOS mode}
+4976	8000	7098	101743	-	[Compilation] Game 3 [b]
+5622	9730	4383	1790348	-	[Compilation] Game Bank (#01)
+5622	9730	4383	1790348	-	[Compilation] Game Bank (#04)
+3830	8721	3790	5298	-	[Compilation] Juegos 5 [b]
+5626	9701	5135	1809861	-	[Compilation] Game Bank (#03)
+5626	9704	5135	1810480	-	[Compilation] Game Bank (#06)
+5626	9704	5135	1810518	-	[Compilation] Game Bank (#02)
+5621	9730	4383	1783303	-	[Compilation] Game Bank (#05)
+5598	9665	4401	1713199	-	[Compilation] Game Bank (#20)
+5626	9704	5135	1810471	-	[Compilation] Game Bank (#07)
+5601	9792	5197	1770622	-	[Compilation] Juegos 3 [b]
+5600	9782	5197	1765631	-	[Compilation] Ura DOS 00 [b]
+3756	8721	3814	4128	-	[Compilation] Ura DOS 01 [b]
+3505	8721	3790	4418102	RUNAWAY-INTO-IO 	[OS] F-BASIC v3.4 L21 (FM77AV40SX)
+5600	9782	5197	1765520	-	[Compilation] Ura DOS 22 [b]
+3381	8721	3790	6666	-	[Utility] Exassave (rom dump utility)
+5598	9665	4401	1713199	-	[OS] F-BASIC v3.0 L10
+5600	9781	5197	1765664	-	[Compilation] Ura DOS 21 [b]
+4560	8721	3790	1316572	-	[OS] F-BASIC v3.3 L11 (FM77AV)
+4560	8721	3790	1316494	-	[OS] F-BASIC v3.3 L10 (FM77AV)
+5555	9769	5197	1864229	-	[OS] OS-9 Level 1 (Disk 1) {boot DOS mode}
+5556	9767	5197	1864479	-	[OS] OS-9 Level 1 (Disk 2) {boot DOS mode}
+5596	9664	4401	1699863	-	[Utility] Expert FM (Construction 1)
+3425	1397	4057	4503191	-	[Utility] FM Graphic Editor II (FM77AV40)
+5049	8651	7726	48872	-	[Utility] Expert FM (Construction 2)
+4983	7856	12095	379504	-	[Utility] Expert FM
+5596	9661	4401	1699286	-	[Utility] The File Master FM (Hot File Express) (1987-03-16)
+4815	7819	6634	350330	-	[Utility] Super Kanji Juushoroku
+5317	8721	3790	1253317	-	[Utility] FM Sound Editor (FM77AV)
+5137	5736	7195	501087	-	[Utility] The File Master FM (Hot File Express) (1987-12-20)
+5137	5736	7170	501087	-	[Utility] The File Master FM (Hot File Express) (1987-02-10)
+5596	9665	4401	1700530	-	[Utility] The File Master FM (Hot File Express) (1989-01-19)
+5137	5736	7173	501087	-	[Utility] The File Master FM (Hot File Express) (1988-08-21)
+5137	5736	7189	501087	-	[Utility] The File Master FM (Hot File Express) (1988-07-11)
+5137	5736	7235	501087	-	[Utility] The File Master FM (Hot File Express) (1988-04-30)
+5137	5736	7214	501087	-	[Utility] The File Master FM (Hot File Express) (1989-01-21)
+5137	5736	7170	501087	-	[Utility] The File Master FM (Hot File Express) (1989-09-01)
+4669	3528	11946	581065	-	Albatross (Disk 1)
+5072	7259	6677	694590	-	[Utility] The File Master FM
+3378	8721	3790	6666	-	Albatross (Disk 2)
+5081	8422	5880	888052	-	1942
+3469	8721	3790	37191	-	Albatross (Disk 3)
+5616	9799	5218	1805956	-	Abyss [b]
+5195	7414	3790	429065	-	Alpha
+4619	8032	9078	432708	-	A-Train (A Ressha de Ikou)
+6671	8721	3790	19545	-	[Compilation] Game 011 [Alt 1] [b]
+6671	8721	3790	19469	-	[Compilation] Game 012 [Alt 1] [b]
+3413	1330	4057	4532853	-	FM77AV demo [Alt 1] [b]
+5622	9731	4383	1790256	-	[Compilation] Game 013 [Alt 1] [b]
+5622	9729	4383	1790214	-	[Compilation] Game 03G [Alt 1] [b]
+6689	8721	4010	14407	-	Kugyokuden (FM77AV) (Disk 1 - Joukan) [Alt 1]
+5986	608	3790	99079	-	Luxsor (FM77AV) (Disk 2) [Alt 1]
+5618	9826	5218	1809159	-	Laydock (FM77AV) (Disk B - Data) [Alt 1]
+5737	8721	3790	2552476	-	Laydock (FM77AV) (Disk A - Program) [Alt 1]
+5618	9826	5218	1809159	-	Laydock (FM77AV) (Disk B - Data) [Alt 2]
+6697	8721	3790	6667	-	Lode Runner (Oh! FM-7 custom levels) [Alt 1]
+5618	9826	5218	1809159	-	Laydock (FM77AV) (Disk B - Data) [Alt 3]
+4667	6304	7263	264190	-	Reviver (FM77AV) (Disk A - Master) [Alt 1]
+3467	8721	3790	32221	-	Might and Magic (FM77AV) (Disk A) [Alt 1]
+5596	9665	4401	1708498	-	Seles (FM77AV) (Disk B) [Alt 1]
+314	8721	3790	112474	RUNAWAY-INTO-IO 	Thexder [Alt 1] [b]
+6608	8629	4189	33639	-	Silpheed (FM77AV) (Disk B) [Alt 1]
+6686	8729	3790	1554511	-	Xanadu (Disk A - Program) [Alt 1] [b]
+3516	8721	3790	8594	-	Wibarm (Data disk) [Alt 1] [b]
+6692	8721	3790	8599	-	Ys (FM77AV) (User disk) [Alt 1] [b]
+3432	8542	4523	91843	-	Xanadu Scenario II (Disk E - Data) [Alt 1]
+6530	8728	3790	1476441	-	Xanadu Scenario II (Disk D - Program) [Alt 2]
+5609	9807	5197	1787313	-	Xanadu Scenario II (Disk C - User) [Alt 1] [b]
+6697	8721	3790	6671	-	Ys (FM7) (User disk) [Alt 1]
+6687	8729	3790	1554743	-	Xanadu Scenario II (Disk D - Program) [Alt 1]
+5609	9807	5197	1787313	-	Xanadu (Disk C - User) [Alt 1] [b]
+4499	8530	4155	302705	-	Amnork
+1043	8727	4057	170928	-	Argo (FM77AV) (Disk A)
+4762	8057	4117	144601	-	Amnork [Set 1]
+5153	5312	11213	834324	-	Archon
+6694	8721	3790	7701	-	Boukenshatachi - Kenja no Yuigon (Disk 1)
+3904	8721	3790	88066	-	Argo (FM77AV) (Disk B)
+5998	7751	4707	71218	-	Arion (Disk A)
+6697	8721	3790	6667	-	Arion (Disk B)
+6094	7426	4400	234751	-	Boukenshatachi - Kenja no Yuigon (Disk 0)
+5042	7103	18986	508177	-	Champion ProWres Special
+4705	6691	12354	533763	-	Castle Excellent
+4500	7208	29125	468348	-	Bishoujo Shashinkan - Moving School
+249	8721	3790	6668	-	Cranston Manor (Disk 2)
+1039	8721	3790	16765	-	Daisenryaku FM
+1174	41	3790	246375	-	Death Force (FM77AV) (Disk A)
+5087	6032	4906	560003	-	Christine
+4816	7053	4245	379808	-	Cranston Manor (Disk 1)
+4945	5898	4732	1270589	-	Cream Lemon - SF Choujigen Densetsu Rall (Disk 1)
+8029	23	4055	6841	-	Daiva Story 2 - Memory in Durga (FM77AV) (Disk B)
+5581	6133	12388	1695791	-	Cream Lemon - SF Choujigen Densetsu Rall (Disk 2)
+5694	6341	6474	355422	-	Crisis Mountain
+4293	6855	3790	2016662	-	Daiva Story 2 - Memory in Durga (FM77AV) (Disk A)
+5727	10043	4787	1939020	-	Daiva (FM-7 parody) {run STARTUP}
+3498	8728	3814	36945	-	Death Force (FM77AV) (Disk B)
+5970	1616	3814	222388	-	Deep Forest (FM77AV) (Disk A)
+3570	8728	3814	37269	-	Death Force (FM77AV) (User disk) [b]
+4696	8721	3790	6666	-	Deep Forest (FM77AV) (Disk B)
+5079	8471	3814	1705358	-	Digital Devil Story - Megami Tensei (FM77AV) (Disk A)
+5131	6667	9014	1500875	-	Dezeni Land
+3379	8721	3790	6666	-	DNA (Disk B)
+3613	8721	3814	110466	-	Digital Devil Story - Megami Tensei (FM77AV) (Disk B)
+4983	8256	4961	202363	-	DiskFM vol. 1
+4992	7097	9963	838389	-	DNA (Disk A)
+5473	8721	3790	964468	-	Dragon Buster (FM77AV) [Set 1]
+5457	9326	3817	1528327	-	Fairie's Residence (Disk 1)
+5473	8721	3790	964468	-	Dragon Buster (FM77AV)
+5598	9665	4401	1713199	-	Fairie's Residence (Disk 2)
+4910	7293	6102	847088	-	Final Lolita [Set 1]
+5130	107	3790	1796245	-	FM77AV demo
+4910	7296	6102	847065	-	Final Lolita
+5180	8721	3790	130165	-	Flicky [b]
+4917	6828	31096	724163	-	Gambler Jikochuushinha (FM77AV)
+539	8721	3790	94656	-	Girls Paradise (Disk C) [b]
+3505	8721	3790	4418102	RUNAWAY-INTO-IO 	FM77AV40SX Nyuumon Disk
+5115	6832	9854	1021531	-	Genmu no Shiro
+3258	8721	3790	94176	-	Girls Paradise (Disk B)
+4584	7505	4702	645114	-	Girls Paradise (Disk A) [b]
+3381	8721	3790	6905	-	Girls Paradise (Disk D) [b]
+3440	8648	4068	38110	-	Girls Paradise (Disk E)
+4565	8040	7310	356120	-	Golf-kyou
+4858	8070	5417	306138	-	Greed (Disk 1)
+5095	8485	10629	404972	-	Helicoid
+5000	7074	5857	897859	-	Greed (Disk 2)
+4671	6156	5270	1075293	-	Hokuto no Ken (Disk 1)
+6274	8007	9614	374966	-	Hokuto no Ken (Disk 2)
+5194	7062	38190	696865	-	Horizon
+5191	7189	3814	2038274	-	Hot Dog [b]
+5530	9360	4630	1610925	-	How Many Robot (FM77AV) (Disk 1)
+4874	8097	3790	627986	-	How Many Robot (FM77AV) (Disk 0)
+6696	8720	3790	6673	-	Hydlide II (User disk)
+6696	8720	3790	6673	-	Hydlide II [Set 1] (User disk)
+5346	7773	28715	390158	-	Hydlide II [Set 1]
+5346	7773	28715	390158	-	Hydlide II
+4904	3492	3790	336898	-	In the Dream (FM77AV) (Disk A)
+6696	8720	3790	6671	-	Jesus (FM77AV) (Disk 2) [b]
+3612	8721	3790	6666	-	Jesus (FM77AV) (Disk 3) [b]
+5727	8700	3790	46406	-	Jesus (FM77AV) (Disk 1) [b]
+1988	8721	3790	10282	-	Kohakuiro no Yuigon (FM77AV) (Disk 2)
+5062	6187	6079	381877	-	In the Dream (FM77AV) (Disk B)
+5043	8702	3790	1716660	-	Kohakuiro no Yuigon (FM77AV) (Disk 1)
+3433	8721	3814	10026	-	Kohakuiro no Yuigon (FM77AV) (Disk 3)
+3433	8721	3814	10026	-	Kohakuiro no Yuigon (FM77AV) (Disk 4)
+5043	8701	3790	1715329	-	Kohakuiro no Yuigon (FM77AV) [Set 1] (Disk 1) [b]
+3357	8721	4057	11199	RUNAWAY-INTO-IO 	Kohakuiro no Yuigon (FM77AV) [Set 1] (Disk 2) [b]
+3357	8721	4057	11197	RUNAWAY-INTO-IO 	Kohakuiro no Yuigon (FM77AV) [Set 1] (Disk 3) [b]
+3429	8721	3790	10909	-	Kohakuiro no Yuigon (FM77AV) [Set 1] (Disk 4) [b]
+6689	8721	4010	14407	-	Kugyokuden (FM77AV) (Disk 1 - Joukan)
+6689	8721	4010	14410	-	Kugyokuden (FM77AV) (Disk 2 - Gekan)
+5891	106	3790	1364196	-	Laydock (FM77AV) (Disk A - Program)
+5727	10043	4787	1939020	-	Kyoufu no Suiyoubi Botsu Program Shuu
+5650	7236	3814	2294930	-	Laydock (FM77AV) [Set 1] (Disk A - Program)
+5618	9826	5218	1809159	-	Laydock (FM77AV) (Disk B - Data)
+4905	8304	4717	112732	-	Lagrange L-2
+5615	9819	5218	1802672	-	Laydock (FM77AV) [Set 1] (Disk B - Data)
+4997	6317	31824	584310	-	Lefty Mouse [b]
+4667	6633	3790	433914	-	Little Box (FM77AV) (Disk A)
+6697	8721	3790	6667	-	Lode Runner (Oh! FM-7 custom levels)
+5593	9616	5483	1707542	-	Little Box (FM77AV) (Disk B)
+5579	781	3790	109249	-	Luxsor (FM77AV) (Disk 1)
+5598	9665	4401	1713083	-	Lovely Gal (Disk 2)
+3559	1320	3790	3998657	RUNAWAY-INTO-IO 	Lupin Sansei - Cagliostro no Shiro (Disk B)
+6697	8721	3790	6667	-	Lupin for XM7
+5087	6854	7010	999828	-	Lovely Gal (Disk 1)
+5986	608	3790	99079	-	Luxsor (FM77AV) (Disk 2)
+4567	7651	9093	714201	-	Lupin Sansei - Cagliostro no Shiro (Disk A)
+5741	8721	3790	60338	-	Mahjong Kyou Jidai Special (FM77AV) (Disk 1)
+63	8721	3790	10026	-	Mahjong Kyou Jidai Special (FM77AV) (Disk 2)
+6683	8714	4087	20666	-	Mahoutsukai no Deshi II (Disk 2)
+5439	5879	14442	540563	-	Mahoutsukai no Deshi II (Disk 1)
+6061	6381	13445	387291	-	Mahoutsukai no Deshi
+5479	7924	3790	128677	-	Marchen Veil [b]
+3467	8721	3790	32221	-	Might and Magic (FM77AV) (Disk A)
+6570	8721	3790	6666	-	Might and Magic (FM77AV) (Disk C)
+3458	8721	3790	6666	-	Might and Magic (FM77AV) (Disk B)
+6570	8721	3790	6666	-	Might and Magic (FM77AV) (Disk D)
+5598	9665	4401	1713199	-	Metal -X- (FM77AV) {run METAL-X-}
+3467	8721	3790	32221	-	Might and Magic (FM77AV) [Set 1] (Disk A)
+3458	8721	3790	6666	-	Might and Magic (FM77AV) [Set 1] (Disk B)
+6570	8721	3790	6666	-	Might and Magic (FM77AV) [Set 1] (Disk C)
+4980	475	3790	1074226	-	Mugen Senshi Valis (FM77AV) (Disk 2)
+5468	171	3790	2446968	-	Mugen Senshi Valis (FM77AV) (Disk 1)
+6570	8721	3790	6666	-	Might and Magic (FM77AV) [Set 1] (Disk D)
+5043	5976	5554	476092	-	Miner 2049er
+3382	8721	3790	6731	-	Mugen no Shinzou II (Disk 2 - Scenario) [b]
+4876	7032	22308	1254269	-	Mugen no Shinzou II (Disk 1 - Program) [b]
+5087	6557	8399	1019421	-	Mission Impossible
+6289	8196	4380	258548	-	Nobunaga no Yabou - Zenkoku-ban (FM77AV) (Disk A)
+3592	8721	3790	8423	-	Nobunaga no Yabou - Zenkoku-ban (FM77AV) (Disk B)
+6697	8721	3790	6667	-	Nugi.com {run NUGI}
+5598	9665	4401	1713199	-	Pacris {loadm CALLEB run MAIN}
+4520	7302	9322	347956	-	Penguin-kun Wars (demo)
+6678	8721	3790	11550	-	Princess Quest (User disk) [b]
+5058	347	4401	2290321	-	Psy-O-Blade (FM77AV) (Disk 1 - Program)
+5107	6311	10974	988167	-	Pop Lemon (Disk 1)
+4421	6559	17481	710616	-	Princess Quest [working]
+5596	9665	4401	1703587	-	Pop Lemon (Disk 2)
+4801	7367	17481	502002	-	Princess Quest
+6686	8723	4095	16663	-	Psy-O-Blade (FM77AV) (Disk 2 - A)
+3613	8721	3814	110466	-	Pro Yakyuu Fan (FM77AV) (Disk B)
+6686	8723	4085	16663	-	Psy-O-Blade (FM77AV) (Disk 3 - B)
+5399	8721	3790	1082343	-	Pro Yakyuu Fan (FM77AV) (Disk A)
+6686	8723	4086	16663	-	Psy-O-Blade (FM77AV) (Disk 4 - C)
+6686	8723	4083	16663	-	Psy-O-Blade (FM77AV) (Disk 5 - D)
+5058	347	4401	2290319	-	Psy-O-Blade (FM77AV) [Set 1] (Disk 1 - Program)
+6686	8723	4085	16061	-	Psy-O-Blade (FM77AV) [Set 1] (Disk 3 - B) [b]
+6686	8723	4095	16618	-	Psy-O-Blade (FM77AV) [Set 1] (Disk 2 - A) [b]
+6686	8723	4086	16507	-	Psy-O-Blade (FM77AV) [Set 1] (Disk 4 - C) [b]
+3423	8721	3790	1672	-	Psy-O-Blade (FM77AV) [Set 1] (User disk)
+6686	8723	4083	16518	-	Psy-O-Blade (FM77AV) [Set 1] (Disk 5 - D) [b]
+3527	8721	3790	21849	RUNAWAY-INTO-IO 	Relics (Disk A)
+3466	8721	3790	37191	-	Relics (Disk B)
+4667	6283	7260	264615	-	Reviver (FM77AV) (Disk A - Master)
+6689	8710	4671	16089	-	Reviver (FM77AV) (Disk B - Data)
+6688	8710	4671	14483	-	Reviver (FM77AV) (User disk) [b]
+4661	8721	3790	18990	-	Riglas
+5990	393	3814	15242	-	Silpheed (FM77AV) (Disk A)
+4621	8455	4017	353210	-	Seles (FM77AV) (Disk A)
+5990	393	3814	15240	-	Silpheed (FM77AV) [Set 1] (Disk A)
+5596	9665	4401	1708498	-	Seles (FM77AV) (Disk B)
+4601	8111	5454	425923	-	Shounen Mike no Hitoritabi (FM-7 parody)
+6477	8707	3790	1285218	-	Shounen Mike no Hitoritabi (FM77AV)
+6608	8629	4189	33639	-	Silpheed (FM77AV) (Disk B)
+6608	8629	4189	33639	-	Silpheed (FM77AV) [Set 1] (Disk B)
+3472	8721	3790	6666	-	Skapon Tankentai (FM7) (Disk 2 - Hatsudou-hen)
+3472	8721	3790	6666	-	Skapon Tankentai (FM7) (Disk 1 - Sesshoku-hen) [b] {run STARTUP}
+3472	8721	3790	6666	-	Skapon Tankentai (FM7) (Disk 3 - Kaiten-hen) [b]
+6697	8721	3790	6667	-	Skapon Tankentai (FM7) (User disk)
+3472	8721	3790	6666	-	Skapon Tankentai (FM77AV) (Disk 1 - Sesshoku-hen) [b] {run STARTUP}
+3472	8721	3790	6666	-	Skapon Tankentai (FM77AV) (Disk 2 - Hatsudou-hen) [b]
+3472	8721	3790	6666	-	Skapon Tankentai (FM77AV) (Disk 3 - Kaiten-hen) [b]
+5752	7914	3790	315625	-	Solitaire Royale
+5727	10043	4787	1939020	-	Sorcerian (FM-7 parody) {run STARTUP}
+3440	8721	3790	7202	RUNAWAY-INTO-IO 	Space Harrier (FM77AV) (Disk 1)
+4853	8069	5228	220695	-	Soukoban 2
+4549	8408	4818	342608	-	Space Harrier (FM77AV) (Disk 0)
+5053	6789	9096	982407	-	Strange Odyssey
+5598	9665	4401	1713192	-	Stone of Deity 1&2 {run SD1, run SD2}
+4830	7286	6987	629346	-	Sunohe Collection
+5598	9665	4401	1713199	-	Super Lonely Terminal
+4166	5964	18355	699431	-	Take Out Vol. 1
+4178	6251	20815	744729	-	Take Out Vol. 2
+3937	6423	14951	626802	-	Take Out Vol. 3
+4344	6368	16303	652951	-	Take Out Vol. 4 (Disk A)
+3846	8721	3790	8373	-	Take Out Vol. 4 (Disk B)
+4656	4674	23935	1165941	-	Take Out Vol. 5
+4757	4888	22444	1043474	-	Take Out Vol. 7 (Disk A)
+4540	7284	3790	200084	-	Take Out Vol. 6
+3410	8721	3790	6666	-	Take Out Vol. 7 (Disk B)
+6451	8514	5621	1435078	-	Team AB Music Disk Ebifuku Zenkyoku Shuu (2D) (Disk 1)
+6451	8514	5621	1435078	-	Team AB Music Disk Ebifuku Zenkyoku Shuu (2D) (Disk 2)
+3681	8425	4938	123788	-	Team AB Music Disk Ebifuku Zenkyoku Shuu (2DD)
+6451	8514	5621	1435078	-	Team AB Music Disk No. 0
+5084	6038	6594	383679	-	Team AB Music Disk No. 1 (XM7 version)
+4306	4737	35048	561491	-	Templo del Sol - Asteka II (Disk A) [b]
+5691	8364	3885	8281	-	Templo del Sol - Asteka II (Disk B) [b]
+6697	8721	3790	6667	-	The Akunin 2 {run AKUNIN-2}
+4883	5800	3790	612825	-	Tetris (FM77AV)
+6697	8721	3790	6667	-	The Akunin {run AKUNIN-1}
+4883	5800	3790	612870	-	Tetris (FM77AV) [Set 1]
+6697	8721	3790	6667	-	The Akunin 3 {run AKUNIN-3}
+5084	6103	7832	406086	-	The Castle & Castle Excellent
+5093	6861	8702	1040146	-	The Count
+5076	5953	4286	394300	-	The Dark Crystal (Disk 0)
+45	8721	3790	6668	-	The Dark Crystal (Disk 1-B)
+4086	8728	3790	6666	-	The Dark Crystal (Disk 1-A)
+69	8721	3790	6666	-	The Quest (Disk 1-A)
+3378	8721	3790	6666	-	The Quest (Disk 1-B)
+3378	8721	3790	6666	-	The Quest (Disk 1-C)
+5557	9315	4584	1699148	-	The Quest (Disk 0)
+5193	7047	10385	878259	-	The Knight of Wonderland
+5289	7006	9712	1172623	-	The Palms
+5155	7514	9045	546025	-	The Return of Ishtar (FM77AV) (Disk A)
+5596	9665	4401	1708498	-	The Return of Ishtar (FM77AV) (Disk B)
+4492	8430	5069	316407	-	The Tower of Druaga (FM77AV)
+4629	6262	63868	613070	-	Thexder [b]
+4996	3972	16228	1283290	-	Thunder Force
+5073	4752	10927	861406	-	Topple Zip
+6697	8721	3790	6667	-	Toriaezu Tinyan da yo! {run toriaezu}
+77	8721	3790	6666	-	Transylvania (Disk 1)
+5624	7168	30724	677355	-	Tritorn
+3669	8542	3815	57405	-	Transylvania (Disk 0) {run FM}
+4934	7969	8580	275060	-	Ultima II (Disk 1 - Program)
+4825	7063	4296	392885	-	Transylvania [Set 1]
+3452	8721	3790	38250	-	Ultima II (Disk 2 - Master Player)
+562	8627	3815	48616	-	Ulysses (Disk 0) {run FM}
+3424	8721	3790	6666	-	Ulysses (Disk 1)
+5623	9807	5197	1810890	-	Uranai Program Collection {run RUN}
+1165	6663	3814	203840	-	Urusei Yatsura - Koi no Survival Birthday (FM77AV) (Disk 1)
+3396	8721	3790	7932	-	Urusei Yatsura - Koi no Survival Birthday (FM77AV) (Disk 2)
+3378	8721	3790	7933	-	Urusei Yatsura - Koi no Survival Birthday (FM77AV) (Disk 3)
+3377	8721	3790	6666	-	Urusei Yatsura - Koi no Survival Birthday (FM77AV) (Save disk)
+4800	6542	15897	901563	-	Utsukushiki Emono-tachi
+4902	5415	8257	607608	-	Weird 2
+6266	6631	17901	300924	-	Wibarm
+5106	6587	11317	1071806	-	Voodoo Castle
+3516	8721	3790	8594	-	Wibarm (Data disk) [b]
+4567	5394	4227	1034945	-	Wing Man 2 (Disk 1)
+4523	5371	4342	1024526	-	Wing Man 2 (Disk 2)
+1298	8721	3790	6690	-	Wizard and the Princess (Disk 1)
+4834	6986	4245	388259	-	Wizard and the Princess (Disk 0)
+3486	8721	3790	83563	RUNAWAY-INTO-IO 	Wizardry II
+3486	8721	3790	83563	RUNAWAY-INTO-IO 	Wizardry III [Set 1]
+3486	8721	3790	83563	RUNAWAY-INTO-IO 	Wizardry III
+6697	8721	3790	6667	-	Wizplus for FM {run STARTUP}
+5033	8453	4746	23007	-	Wizardry IV (FM77AV) (Disk C)
+3486	8721	3790	83563	RUNAWAY-INTO-IO 	Wizardry
+5033	8453	4755	23007	-	Wizardry IV (FM77AV) (Disk B)
+7212	23	3790	1256702	-	Woody Poco (FM77AV) (Disk 1)
+4869	8721	3790	1722594	-	Wizardry IV (FM77AV) (Disk A)
+6697	8721	3790	6666	-	Woody Poco (FM77AV) (Disk 2)
+5999	789	4005	112926	-	World Golf II (FM77AV) (Disk 1)
+45	8721	3790	6666	-	World Golf II (FM77AV) (Disk 2)
+3381	8721	3790	7700	-	Xanadu (Disk C - User)
+3432	8542	4523	91843	-	Xanadu (Disk B - Data)
+6687	8729	3790	1554743	-	Xanadu (Disk A - Program)
+3432	8542	4523	91843	-	Xanadu Scenario II (Disk C - User)
+6694	8721	3790	1559618	-	Xanadu Scenario II (Disk D - Program)
+3432	8542	4523	91843	-	Xanadu Scenario II (Disk E - Data)
+4387	8721	3790	6660	-	Yami no Iyo Densetsu (FM77AV) (Disk 2)
+4964	6077	7729	305488	-	Xevious
+4468	7315	5881	503290	-	Yami no Iyo Densetsu (FM77AV) (Disk 1)
+46	8721	3790	5733	-	Yami no Iyo Densetsu (FM77AV) (Disk 3) [b]
+5598	9665	4401	1713199	-	Yanpara Adventure - Staff Shoumetsu no Nazo {load START}
+4746	7778	3790	368712	-	Yellow Lemon
+4537	3790	35997	813276	-	Ys (FM7) (Disk A)
+6697	8721	3790	6671	-	Ys (FM7) (User disk)
+5034	8721	3790	1171640	-	Ys (FM7) (Disk B)
+5254	6697	3790	2015877	-	Ys (FM77AV) (Disk A)
+5034	8721	3790	1171640	-	Ys (FM77AV) (Disk B)
+5129	6256	3790	1883255	-	Ys (FM77AV) [Set 1] (Disk A)
+6692	8721	3790	8599	-	Ys (FM77AV) (User disk) [b]
+6694	8721	3790	7703	-	Ys II (FM77AV) (Disk A)
+5034	8721	3790	1171640	-	Ys (FM77AV) [Set 1] (Disk B)
+6694	8721	3790	7703	-	Ys II (FM77AV) (Disk B)
+5641	8721	3790	1757119	-	Ys II (FM77AV) (Program disk)
+5609	9806	5197	1787425	-	Ys II (FM77AV) (User disk) [b]
