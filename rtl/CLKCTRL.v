@@ -97,15 +97,77 @@ wire m50_qn = ~m50_1;
 // Running the flip-flop on CLKSYS fixes both problems without an async
 // clock: the strobe is many CLKSYS cycles wide so it cannot be missed, and
 // giving the clear priority over the tick matches the async preset.
+// ...but clearing it while the strobe is LOW destroys the value the CPU came
+// to read. IRQCLRn is `RFD03n & RESETBn` (PERIPHERAL.v:121), so it is asserted
+// for the WHOLE $fd03 read, and CLKSYS is 48 MHz against a 1.2288 MHz E -- the
+// flag therefore cleared a cycle or two into the access, and the combinational
+// readback below then presented the CLEARED value for the rest of it, which is
+// when the CPU latches. $fd03 read $ff -- "no source is requesting" -- on every
+// single interrupt, so a handler could never tell which source had fired.
+//
+// Ys is the worked example. Its ISR is the ordinary dispatch:
+//
+//     $117d  LDA  $fd03      ; a = $ff, every time
+//     $1180  BITA #$04       ; timer bit, active low
+//     $1182  BEQ  $1195      ; -> timer handler. NEVER TAKEN
+//     $1188  RTI             ; gives up
+//
+// so $1195 never ran and $11e2 (`STA $ffe5`, the flag its main loop polls at
+// $1113) never executed. CSP captures first and clears afterwards, explicitly:
+//
+//     val = irqstat_reg0 | 0xf0;   // capture FIRST
+//     irqstat_timer = false;        // clear AFTER
+//     return val;                   // pre-clear value
+//
+// Acknowledging on either edge of RFD03n is wrong, because ONE $fd03 read
+// produces TWO strobes. Measured, printing every RFD03n transition ($time here
+// counts CLKSYS edges, not picoseconds):
+//
+//     t=324215191  RFD03n=0  EB=0  m50_1=0    pulse 1 opens, E LOW
+//     t=324215201  RFD03n=1  EB=0  m50_1=0    pulse 1 shuts, 10 cycles wide
+//     t=324215211  RFD03n=0  EB=1  m50_1=1    pulse 2 opens, E HIGH, ALREADY CLEARED
+//     t=324215231  RFD03n=1  EB=0  m50_1=1    pulse 2 shuts, 20 cycles wide
+//     t=324264351  ...                        next interrupt, 49160 cycles on
+//
+// The decoder is combinational off RDQEn (MDECODE.v:72 , which
+// core.v:348 wires to RDQEn). RDQEn is ~(RWB & (QB|EB)), which assumes Q and E
+// OVERLAP -- one continuous strobe from Q rising to E falling. In this model
+// they do not overlap, so it breaks into a Q-phase pulse and an E-phase pulse
+// with a 10-cycle dead gap between them.
+//
+// Pulse 2, with E high, is the real data cycle -- the 6809 latches on E's fall.
+// So acknowledging anywhere before it destroys the value the CPU is about to
+// take, and $fd03 reads $ff, "no source is requesting", on every interrupt.
+// A plain edge does not work (both edges of pulse 1 are too early) and neither
+// does a short glitch filter (the gap is 10 cycles, not one). Qualify on EB
+// instead: latch, at each strobe opening, whether this is the E-phase pulse,
+// and acknowledge only at the close of that one.
+//
+// CSP does the same thing in software -- capture first, clear afterwards:
+//
+//     val = irqstat_reg0 | 0xf0;   // capture FIRST
+//     irqstat_timer = false;        // clear AFTER
+//     return val;                   // pre-clear value
 reg _2MS_en_d;
 wire _2MS_tick = _2MS_en & ~_2MS_en_d;   // SVIDEOCLK pulse -> 1 CLKSYS pulse
 
+reg irqclr_d;
+reg fd03_ephase;                         // this strobe is the real data cycle
+wire fd03_open  = irqclr_d & ~IRQCLRn;   // strobe opening
+wire fd03_close = ~irqclr_d & IRQCLRn;   // strobe closing
+
 always @(posedge CLKSYS) begin
   _2MS_en_d <= _2MS_en;
-  if (~RESETBn) m50_1 <= 1'b1;
+  irqclr_d  <= IRQCLRn;
+  if (~RESETBn) begin
+    m50_1       <= 1'b1;
+    fd03_ephase <= 1'b0;
+  end
   else begin
+    if (fd03_open) fd03_ephase <= EB;    // E high => the cycle the CPU latches
     if (_2MS_tick) m50_1 <= TMMASK;
-    if (~IRQCLRn)  m50_1 <= 1'b1;   // clear wins, as the async preset does
+    if (fd03_close & fd03_ephase)        // ack only at the end of THAT pulse
+      m50_1 <= 1'b1;                     // clear still wins over a same-cycle tick
   end
 end
 

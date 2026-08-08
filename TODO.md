@@ -1520,7 +1520,66 @@ consumes cycles.
 one link along: its timer ISR now runs **11554 times instead of 1**. It still
 gives up immediately, for a separate reason — see the `$fd03` entry below.
 
-### $fd03 [NEXT] reading it clears the flag before the CPU can latch it
+### $fd03 [FIXED] one read is TWO strobes, and the acknowledge landed on the wrong one — P4-8 solved
+
+**Ys is playable.** The play field draws: town map, walls, trees, buildings,
+Adol standing in the middle, HUD intact underneath. P4-8 is closed after four
+prior investigations.
+
+| | before | after |
+|---|---|---|
+| `$117d` ISR entries | 11554 | 12709 |
+| `$1195` timer handler | **0** | **12708** |
+| `$11e2` `STA $ffe5` | **0** | **4701** |
+| `$1113` spin loop | **1209496** | **209** |
+| `$1120` loop exit | 2 | 176 |
+| screenshot | 18650 | **27180** |
+
+The spin loop went from 1.2 million iterations to 209.
+
+**This and `$fd02` are a chain, and neither alone moves Ys.** `$fd02` turned the
+timer interrupt on (ISR firings 1 -> 11554); `$fd03` let the handler work out
+which source had fired. Predicting that `$fd02` alone would fix Ys was wrong, and
+it was wrong because the second link had not been found yet.
+
+**The measurement that mattered.** Three fixes failed first — clear-during-read,
+one-cycle-glitch filter, 4-sample filter — all of them plausible mechanisms acted
+on before being observed, and all three produced byte-identical output. Printing
+every `RFD03n` transition settled it (`$time` counts CLKSYS edges here, **not**
+picoseconds — misreading that sized the third fix wrongly):
+
+```
+t=324215191  RFD03n=0  EB=0  m50_1=0    pulse 1 opens, E LOW
+t=324215201  RFD03n=1  EB=0  m50_1=0    pulse 1 shuts, 10 cycles wide
+t=324215211  RFD03n=0  EB=1  m50_1=1    pulse 2 opens, E HIGH, ALREADY CLEARED
+t=324215231  RFD03n=1  EB=0  m50_1=1    pulse 2 shuts, 20 cycles wide
+t=324264351  ...                        next interrupt, 49160 cycles later
+```
+
+One `LDA $fd03` produces **two** strobes with a 10-cycle dead gap. `RDQEn` is
+`~(RWB & (QB|EB))`, which assumes Q and E **overlap** — one continuous strobe
+from Q rising to E falling. In this model they do not overlap, so it splits into
+a Q-phase pulse and an E-phase pulse. Pulse 2, with E high, is the real data
+cycle; the 6809 latches on E's fall. Every acknowledge tried before fired at or
+before pulse 1, so the CPU always latched `$ff` — "no source is requesting" — and
+no handler could ever dispatch.
+
+Fix: latch at each strobe opening whether this is the E-phase pulse, and
+acknowledge only at the close of *that* one. Keying on the bus phase the CPU
+latches in is why this is robust; a wide timeout would have "worked" here and
+broken on a title that reads `$fd03` twice in quick succession.
+
+No regressions: 7 of 8 suite rows byte-identical including all four F-BASIC rows.
+`disk-Thexder` moved 0.3% on rates and shifted its animated title phase; at frame
+2400 the animation completes identically (60687 vs 60492 bytes, same logo, same
+artwork), so `shots-ref` was re-blessed.
+
+**Worth checking next:** any other read-clear register decoded the same way sees
+the same double strobe. `$fd04`'s attention latch (P3-2) is exactly that shape,
+and it was validated against behaviour that may itself have been distorted by
+this.
+
+### $fd03-orig [superseded] reading it clears the flag before the CPU can latch it
 
 Ys's handler is the ordinary "which source?" dispatch:
 
