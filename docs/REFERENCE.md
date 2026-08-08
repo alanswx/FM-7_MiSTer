@@ -1,0 +1,346 @@
+# FM-7 core — permanent reference
+
+Durable facts and hard-won method for whoever works on this core next. Bug status lives in git
+history and code comments, not here. `Pn-m` numbers cite sections of the retired `TODO.md` (in git).
+
+---
+
+## 1. Reference emulators — which to trust
+
+| | path | role |
+|---|---|---|
+| **CSP** | `refs/common-src-project/src/vm/fm7/` (Takeda Toshiya) | **Primary authority.** Most complete FM-7: full keyboard tables, kanji, FDC, joystick, bubble cassette. |
+| **77AVEMU** | `refs/77AVEMU/src/fm77av/` (CaptainYS) | **Tiebreaker.** Cleanest structure; best for CRTC/render behaviour and `.T77`; carries notes from experiments on real hardware. |
+| **MAME** | `refs/mame/src/mame/fujitsu/fm7.cpp`, `fm7.h`, `fm7_v.cpp` | Most readable I/O map — and an **unreliable FM-7 driver**. Never treat it as correct on its own. Littered with `BAD_DUMP`; its VRAM-access halt is commented out at `fm7_v.cpp:643`. Following MAME has been the bug more than once. |
+
+**Trap when reading CSP:** large parts are guarded by model defines. Code inside
+`#if defined(_FM77AV40EX)` and friends is **not** the plain FM-7 path. Example: the `$fe00`/`$ffe0`
+split at `fm7_mainmem.cpp:218` is AV40EX-only; the plain FM-7 boot ROM is `$FE00-$FFEF` per
+`fm7_common.h:19`.
+
+### Worked example: VRAM plane order (MAME is the odd one out)
+
+Recorded so nobody "fixes" the display to match MAME:
+
+| VRAM plane | MAME | CSP | 77AVEMU | this core |
+|---|---|---|---|---|
+| `$0000` | blue | blue | plane 0 | blue |
+| `$4000` | **green** | **red** | plane 1 | **red** |
+| `$8000` | **red** | **green** | plane 2 | **green** |
+
+MAME's `fm7_v.cpp:1173-1178` reads `code_g` from `+0x4000` and `code_r` from `+0x8000`. CSP's
+`vram.cpp:512-514` does the opposite, and 77AVEMU's `srcColor` agrees with CSP. This core follows
+CSP (`SDECODE.v`: `SDRAMBn`=$0000, `SDRAMRn`=$4000, `SDRAMGn`=$8000). Changing it to match MAME
+would swap red and green over the whole display. The palette *byte* layout is not in dispute —
+MAME and CSP agree `b`=bit0, `r`=bit1, `g`=bit2, and the top levels match (`VGA_R=grb[1]`,
+`VGA_G=grb[2]`, `VGA_B=grb[0]`).
+
+### MAME's software list is a triage input
+
+MAME ships `refs/mame/hash/fm7_disk.xml`, where an entry can carry `supported="no"` — meaning
+**MAME itself cannot run that title** (14 of its 158 disk entries). Cross-referencing a failing
+title against it separates "our bug" from "problematic for everyone", and it cuts both ways: titles
+have worked here that MAME marks unsupported. **Caveat:** "MAME cannot run it" is evidence about
+the title, not proof about this core — it shifts priority, it does not close a case.
+
+Before counting failures at all, subtract disks that should not boot. `vsim/sweep/bootsector.py`
+classifies them straight from the image: `BRA-self` halt stubs (`ORCC #$50 / STA $fd03 / BRA *`) and
+`uniform-$xx` boot sectors (every byte identical — $e5 is the standard formatted-never-written fill
+on FM/MFM media; $00 and $ff also occur); also exclude secondary disks of multi-disk sets and `[b]`
+(known-bad dump) filenames. **A filter that was tried and is WRONG: "the boot sector is mostly
+zeros, so it is not code".** A short loader padded to the 256-byte sector is the normal shape —
+1942's boot sector is 92% zeros and opens `86 fd 1f 8b 97 0f ...` (6809 code); Tritorn's is 87%
+zeros and renders correctly. Only "every byte identical" is safe; over-count failures, not the
+reverse.
+
+From the same XML: MAME flags `fm7`, `fm8`, `fmnew7` as working, `fm77av` as
+`MACHINE_IMPERFECT_GRAPHICS`, and `fm7740sx`, `fm11`, `fm16beta` as `MACHINE_NOT_WORKING` — so
+MAME is not a reliable oracle for AV40SX behaviour either.
+
+---
+
+## 2. The RDQEn two-strobe mechanism
+
+**The single most valuable insight in this repo.** `RDQEn` (MCPU.v:55) is
+`~(RWB & (QB | EB))`, wired through `core.v:348` into `MDECODE`'s read-strobe decoder. That
+expression assumes Q and E **overlap** into one continuous strobe from Q rising to E falling. In
+this model they do not, so
+**every `$fdxx` read decodes as TWO strobes** — a Q-phase pulse, a dead gap, then an E-phase pulse.
+Measured on `$fd03` (`$time` counts CLKSYS edges, **not** picoseconds — misreading that mis-sized
+one fix attempt):
+
+```
+t=324215191  RFD03n=0  EB=0   pulse 1 opens, E LOW
+t=324215201  RFD03n=1  EB=0   pulse 1 shuts, 10 cycles wide
+t=324215211  RFD03n=0  EB=1   pulse 2 opens, E HIGH  <- the real data cycle
+t=324215231  RFD03n=1  EB=0   pulse 2 shuts, 20 cycles wide
+```
+
+The 6809 latches on E's fall — **in the second pulse**. Any register that acknowledges, clears or
+side-effects on a read edge therefore fires too early and hands the CPU the post-acknowledge
+value. `$fd04`'s attention latch showed the identical signature on OS-9 (`t=171925871` onward:
+clear fired at the close of pulse 1, pulse 2 read "no attention pending" every single time). This
+one mechanism broke both the `$fd03` interrupt-cause register (no handler could ever tell which
+source fired) and the `$fd04` attention flag (the main CPU never once saw an attention the sub had
+sent).
+
+**Why the obvious fixes fail:** a plain edge does not work — both edges of pulse 1 are too early —
+and a short glitch filter does not work either; the gap is 10 cycles, not one.
+
+**The fix idiom** (reference implementations: `rtl/CLKCTRL.v` `fd03_ephase`, `rtl/TIMER.v`
+`fd04_ephase`): at each strobe opening, latch whether `EB` is high — that marks the E-phase pulse,
+the cycle the CPU actually latches — and acknowledge only at the **close of that pulse**. Keep set
+winning over clear, so an event landing on the acknowledge cycle is not swallowed. Keying on the
+bus phase is why this is robust; a wide timeout would "work" and then break on software that reads
+the register twice in quick succession.
+
+```verilog
+reg strobe_d, ephase;
+always @(posedge CLKSYS) begin
+  strobe_d <= RFDxxn;
+  if (strobe_d & ~RFDxxn) ephase <= EB;      // strobe opening: is this the E-phase pulse?
+  if (set_condition)            pend <= 1'b1;
+  else if (~strobe_d & RFDxxn & ephase)      // close of the E-phase pulse
+                                pend <= 1'b0;
+end
+```
+
+**Unaudited:** `$fd00`/`$fd01` (keyboard acknowledge) and every sub-side `SRDQEn` read decode
+(`SCPU.v:36`: `assign SRDQEn = ~((Q|E) & RnW);` — the same shape, so the same two-strobe
+behaviour). Audit any read-clear register on either bus before trusting it.
+
+**Related qualifier hazard:** two early bugs (P0-1, P0-4) were the same fault on the two CPUs — an
+I/O read strobe qualified by `E` alone, which collapses at the exact edge `mc6809i` latches the
+data bus. If a read path misbehaves, check its qualifier first.
+
+---
+
+## 3. Derived clocks in Quartus — a hardware-only bug class
+
+Large parts of `rtl/` transliterate the FM-7 schematic, where a 74LS74 really is clocked by a
+74LS138 decode output. In Verilog that becomes `always @(posedge SOMESTROBEn)` where the "clock"
+is combinational logic over the address bus.
+
+- **Verilator** evaluates the decode once per delta cycle: exactly one clean edge per access.
+  The RTL behaves perfectly.
+- **Quartus** builds the decode from LUTs on general routing. A LUT decode **glitches** as its
+  inputs arrive skewed, and every glitch is a spurious clock edge — the register latches at
+  moments that do not exist in simulation.
+
+**A green simulation is not evidence about this class of bug.** The confirmed case: `core.v` tied
+`FLAGS`' `SRESETn` to `1'b0`, holding four flip-flops in reset (glitchy clocks with nothing to
+clock — latent). Commit `f9548d8` untied it and OS-9 immediately regressed **on real hardware
+while remaining perfect in simulation**. That asymmetry is the diagnosis. Commit `3f85852` moved
+the four onto `CLKSYS`; hardware confirmed the fix.
+
+**Conversion recipe** — a clocking change only, semantics preserved exactly. Filter the strobe
+through a short shift register so a 1-2-cycle decode glitch has to persist to be believed, then
+take the edge from the filtered copy:
+
+```verilog
+reg [2:0] strobe_sr;
+always @(posedge CLKSYS) begin
+  strobe_sr <= { strobe_sr[1:0], WFDxxn };
+  if (~RESETBn)                          m9 <= 3'd0;
+  else if (strobe_sr[2] & ~strobe_sr[1]) m9 <= { ... };  // filtered leading edge
+end
+```
+
+Rules: (1) sample the **leading** edge of the strobe — a trailing-edge sample races the CPU
+releasing the bus (the `$fd37` / P1-4 hazard), with the `m77` exception below; (2) an edge cannot
+be missed — E is 1.2288 MHz against 48 MHz `CLKSYS`, E-high is ~19 CLKSYS cycles, and the filtered
+sample lands two cycles in, still comfortably inside the access; (3) preserve clear/set dominance;
+(4) the module may need an `input CLKSYS` added and wired in `core.v`.
+
+**Converted and confirmed on hardware:**
+
+| file | register | commit |
+|---|---|---|
+| `FLAGS.v` | `m56_5`, `m56_9`, `m45`, `m44_5` | `3f85852` |
+| `PERIPHERAL.v` | `m10`, `m2`, `m9` | `b34171e` |
+| `MFD.v` | `m6_q` (FDC IRQ mask) | `649d054` |
+| `PAL.v` | palette read-back | `5cae28c` |
+| `MB60H010.v` | `SRL`/`SRH` (display offset) | `b632ea1` |
+| `FLAGS.v`, `PERIPHERAL.v` | 3-cycle filters replacing 1-cycle edge detectors | `18e635c` |
+
+**Still on async decode clocks:**
+
+- **`KEYBOARD.v:543` `m77`** (keyboard routing, `LPMASKn`, `TMMASK`) — **three hardware conversion
+  attempts all regressed OS-9, 0 boots in 8 tries each**: leading edge, trailing edge, and
+  mid-strobe (`0ce7ad3`, reverted by `e443a02`). A sim experiment then showed all four designs
+  capture the same values at the same times, so neither the sample point nor the captured data is
+  the variable, and simulation has exhausted what it can say. **Recommendation: leave `m77` on its
+  async clock** — it is empirically working. If it ever misbehaves, the open leads are: `m77` is
+  the only such register fed from `MDATABUS_out`, a wide combinational mux over the whole main bus
+  (a data-side timing question, reproducible in vsim); and the only one whose output crosses into
+  another clock domain (`TMMASK` into `CLKCTRL`).
+- **`SOUND.v:28` `bdir`/`bc1`** (PSG bus protocol → all sound and both joysticks) — not attempted.
+  **A screenshot-based hardware loop cannot validate this**; a conversion needs a listening test
+  or a joystick test.
+- **`FLAGS.v:228` `m46` (`$fd37`)** — behaviour verified correct in sim (latches on the leading
+  `negedge WFD37n`; bit split matches MAME `& 0x77` and CSP `accessmask`/`dispmask`), but it is
+  still an async decode-strobe latch on hardware.
+
+These survivors are not emergencies — they have been live since the beginning and the machine
+works on hardware as built. The narrow rule: **never release a held flip-flop, or re-time anything
+near one of these, without converting its clock first.** Convert **one file per commit** so
+hardware can bisect. `run_tests.sh` and the sweep only prove behaviour did not change; **building
+an `.rbf` and flashing a MiSTer is the only real test** of this class. Good smoke tests: OS-9 at
+`--bootrom 2` (reaches the `OS9:` shell), F-BASIC boot plus typing, a `.t77` `LOAD"` (exercises
+tape motor `m10` end to end; JIS layout — `"` is Shift+2, not Shift+apostrophe), a title with
+sound plus a joystick, and pixel-exact comparison of Thexder/Hydlide II for display-path changes.
+
+Hardware-loop traps, each of which produced a confident wrong verdict: screenshot **byte size** is
+not pass/fail (a garbage screen measured 7444 bytes and was scored as a successful OS-9 boot —
+compare against a known-good reference image and score the text pixels separately, since a garbage
+frame still matches ~95% of a mostly-black screen while matching 0% of the banner); selecting boot
+ROM 2 from the OSD succeeds about one try in three, so a single failed run carries no information —
+8 tries against a baseline that booted within 3 is the minimum worth reporting; and raw Linux
+keycodes (`kbdRawDown:108`) go to the emulated FM-7's keyboard, not the MiSTer menu — only named
+actions (`kbd:down`, `kbd:confirm`) drive the OSD.
+
+---
+
+## 4. Build and simulation gotchas
+
+- **Build:** `cd vsim && make`, then `./obj_dir/Vemu --help`. `./run_tests.sh` is the guard rail.
+- **`vsim` must be run from `vsim/`.** Every ROM loads via `$readmem` on the relative path
+  `./roms/...`; from anywhere else Verilator prints `$readmem file not found` as a **warning**,
+  the ROMs come up empty, and the run still completes with plausible counts and a blank
+  screenshot. Any driving script must `cd` to `vsim/` and grep its log for `readmem file not
+  found`. (Trap 9 below has the full failure story.)
+- **`files.qip` is the canonical Quartus file list**, not the `.qsf` — the qsf sources it, and the
+  IDE re-injects a duplicate per-file list into the `.qsf` whenever the project is opened in the
+  GUI; delete that when it reappears. `vsim` has its own separate list in `vsim/Makefile`.
+- **These files are CRLF** and must stay that way: `rtl/FLAGS.v`, `rtl/MFD.v`, `rtl/SRAM.v`,
+  `rtl/ROMS.v`, `rtl/CLKCTRL.v`, `rtl/PERIPHERAL.v`, `files.qip`, `FM-7_MiSTer.qsf`. Check with
+  `file` after any scripted edit.
+- **macOS `awk` is BSD awk**, not gawk: no `asort()`, no 3-arg `match()`. A script using them
+  fails silently if stderr is discarded.
+- **`--vcd` requires `make clean && make TRACE=1`** and is windowed by
+  `--trace-from`/`--trace-until`. Two frames is ~700 MB, so always window it. It has settled
+  questions that rounds of `$display` could not — reach for it after the second failed printf, not
+  the fifth.
+- **`--trace-from`, `--trace-until` and `--trace-max` work for `--trace-mem`/`--trace-mem-sub` but
+  do NOT apply to `--trace-io`**, which logs the whole run regardless — filter on the frame column
+  yourself (`awk '$1>=1400'`).
+- **`DEBUG_*` and `TRACE` are `+define+` args baked in when Verilator runs** — see trap 3 below.
+- **Test images:** `software/Neo Kobe - Fujitsu FM-7 (2016-02-25).zip` holds 630 `.7z` archives,
+  195 of them `[FD]` floppy sets unpacking to 350 disk images (221 FM-7, 129 FM77AV). `[FD]` is a
+  shell/unzip character class, so `*[FD]*.7z` silently matches the wrong entries. Extract with a
+  bracket-free pattern — `unzip -o -j -q "$Z" "*Hydlide II*FD*.7z" -d . && 7z x -y -o. *.7z` —
+  or, for the whole collection, extract every `.7z` and filter by name afterwards.
+
+---
+
+## 5. Measurement traps — every one of these cost real time
+
+More bugs in this project were *mis-diagnosed* than were hard to fix. All of these produced a
+confident wrong answer at least once:
+
+1. **A trace that hits `--trace-max` is truncated from the START of the run.** If the line count
+   equals the cap, you are looking at the earliest frames, not the ones you asked for. Always
+   check the frame range in the output.
+2. **`--trace-cpu` prints one instruction late.** The log therefore does *not* contain the
+   instruction that stopped the CPU. For "why did execution end", read the CPU state (`--vcd`),
+   not the disassembly.
+3. **`DEBUG_*` and `TRACE` become `+define+` args baked in when Verilator runs.**
+   `make DEBUG_FDC=1` after a plain `make` relinks the old model with the old defines — clean
+   build, clean run, no output, indistinguishable from a real null result. `touch` a file in the
+   target module first and verify with `grep -l <MARKER> obj_dir/*.cpp`.
+4. **Check frame numbers line up before concluding a value did not propagate.** Comparing a
+   sub-CPU read at frame 1074 against a main-CPU write at frame 1076 "proves" a lost write that
+   was never lost.
+5. **A low VRAM write count proves nothing.** Thexder displays a full title screen while writing
+   *zero* VRAM bytes — the image is already there. Only a cumulative count from reset, with the
+   data values checked, means anything.
+6. **Reconstructing state from a bus log is not the same as asking the RTL.** A Python decoder
+   inferring `(track, side, sector)` from `$fd18-$fd1b` traffic reported sectors returning the
+   wrong side's data; a `$display` in the RTL's own match arm showed all 19 matches exact.
+   Instrument the decision, not its inputs.
+7. **Triage a sweep by `main/frame`, not by screenshot.** Healthy titles sit at 4400-5800. Low
+   rate + blank screen is a crash (expect a `CWAI` in page zero); low rate + content is a title
+   idling at a screen it already drew; normal rate + blank is something else again. A screenshot
+   cannot tell these apart.
+8. **A proxy metric can stay flat while the bug is being fixed.** P4-13 was framed around "the
+   main writes 6891 payload bytes and the sub reads 5833, a 15% shortfall". The fix took that to
+   5878/6891 — 84.6% to 85.3%, near enough nothing — while the screen went from unreadable to
+   correct. Commands vary in length, so the sub never had to read every byte of every block and
+   the ratio was never measuring what it looked like it measured. Check the *outcome*, and only
+   trust a proxy you have shown tracks it.
+9. **`vsim` must be run from `vsim/`, and running it from anywhere else fails *silently and
+   plausibly*.** The Verilog loads every ROM with `$readmem` on the relative path `./roms/...`.
+   From another directory Verilator prints `$readmem file not found` as a **warning**, not an
+   error; the ROMs come up empty, the machine runs away into the `$fdxx` window, and the run still
+   completes, still writes a screenshot, and still reports plausible instruction counts. A
+   350-title sweep driven from the repo root returned **3355 main / 2923 sub and a blank 3790-byte
+   PNG for every single title** — which reads as a uniform "nothing boots on this core" result
+   rather than as a broken harness, and is far more dangerous than a crash. Any script driving the
+   simulator must `cd` to `vsim/` and check its log for `readmem file not found`.
+10. **A verified WRITE path says nothing about the READ path.** P4-15 sat undiscovered through
+    several investigations because `$8000-$fbff` accepted every write perfectly and returned zeros
+    on read. An earlier log recorded "a clean contiguous 24 KB program load, no gaps, no
+    double-writes ... this whole path is working" — which was true, and useless. A memory that
+    stores and returns zeros does not look like broken memory; it looks like a software bug in
+    whatever ran next. **Read back what you wrote.**
+11. **`--trace-mem` only logs `$fdxx`, whatever its help text says.** It claims "every main-CPU
+    bus cycle in that hex address range", but `--trace-mem 0100-0110` across the boot-sector load
+    returns *zero lines*. That reads as "this region is never touched", which is a very convincing
+    lie. For RAM use `--dump-shadow`, which records both directions
+    (`shadow_m.mem[addr] = rw ? din : dout`) — a value in it is whichever access happened last,
+    and comparing a written value against a later read is exactly how P4-15 was pinned down.
+12. **`grep` a trace for a hex address and you will match cycle counters.** `grep -c d404` over a
+    `--trace-mem-sub` log reports a healthy count of lines like `cycles 86d4041 reading D0` — the
+    address appears as a substring of a cycle number, and it reads exactly like "the port is being
+    used". Anchor on the trace format instead: `grep -cE 'smem .* \$d404'`. Related: the main-CPU
+    trace prints `mem` followed by **two** spaces, so `grep ' mem W '` silently matches nothing
+    and looks like a clean null result. And the other direction: a grep returning nothing is a
+    claim about your pattern, not about the machine —
+    `grep -oE 'W +\$fd05 <- \$[0-9a-f]{2}'` printed nothing over a log where `grep '\$fd05'`
+    found 70629 hits. **Print raw lines first, then narrow.**
+13. **`| tail -N` and `| head -N` will quietly delete the evidence.** Trace lines come out
+    *before* the end-of-run summary, so `--trace-mem ... | tail -40` shows the summary and none of
+    the trace — and it looks exactly like "the access never happened". The mirror image also bit:
+    a port histogram printed with `head -15` hid `$fd02`, whose two writes ranked 16th, and that
+    produced a confident *retraction* of a correct finding. Both directions cost a wrong
+    conclusion in one session. Write traces to a file and query the file.
+14. **An inherited repro flag becomes an unexamined premise.** `--key '820:@SPACE'` rode along in
+    every Ys command for a whole investigation because it was in the original repro line. It was
+    never the thing breaking a deadlock — Ys renders its title screen with no key at all, and the
+    flag simply advances past it. Run the no-flag case once before characterising behaviour.
+15. **A stale reference is worse than no reference.** `shots-ref/` sat three months behind the
+    core while `run_tests.sh` compared nothing against it and still exited 0. "All 8 rows pass"
+    meant only "eight sims produced plausible instruction rates". If a suite cannot fail, it is
+    not evidence.
+16. **A FIXED-frame screenshot is only comparable between builds of comparable TIMING.** This is
+    trap 7 in new clothes and it cost a false regression report. The sweep shoots at frame 680.
+    After an interrupt-path fix every title spent cycles in an ISR it never used to run, so boot
+    shifted later and the same shot landed *earlier* in each title's startup. Three titles scored
+    as regressions were in fact large gains — Alpha `6710 -> 3790` at 680 but **26281** at 1400,
+    Solitaire Royale `3960 -> 3790` but **32000**, Take Out Vol. 6 `4827 -> 3790` but **13203**.
+    A timing-affecting change makes the sweep under-report in **both** directions. Re-sweep at a
+    longer frame count before believing either number.
+17. **`find <symlink>` does not follow it without a trailing slash**, and `sweep.sh` uses
+    `find "$DISKS"` bare. Pointing `$OUT/disks` at a symlink made the sweep report "0 disk images"
+    and exit successfully in seconds — a mis-set path looks like a clean fast run, not an error.
+    Check the image count in the sweep's own output before trusting the results file.
+
+And one more: **a null result from one title says nothing about a register, only about that
+title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
+
+---
+
+## 6. Working practices
+
+- **Do not assume MAME is correct.** It is the most readable I/O map, but its FM-7 driver is
+  unreliable and its VRAM plane order is the odd one out (section 1). CSP is the primary
+  authority; 77AVEMU is the tiebreaker.
+- **`run_tests.sh` judges itself.** It compares screenshots *and* counters against `shots-ref/`
+  and exits non-zero on a difference. Accept an intentional change with `BLESS=1 ./run_tests.sh`,
+  and say why in the same commit. Run it before and after any RTL change; all 8 rows should be
+  unchanged unless you meant to change them.
+- **Instrument the decision, not its inputs** (trap 6); **read back what you wrote** (trap 10);
+  **run the no-flag case once** (trap 14).
+- **One file per commit** for anything touching clocking or reset, so hardware can bisect
+  (section 3). The CRLF list, `files.qip` discipline and BSD-awk caveat in section 4 apply to
+  every scripted edit.
