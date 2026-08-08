@@ -110,12 +110,21 @@ simulation reports it deterministically fixed (all 289 `$fd04` reads returning
 bit 0 clear). That asymmetry is the same shape as the `FLAGS` case in
 `DERIVED_CLOCKS.md` and suggests something marginal rather than something wrong.
 
-**One further observation, single-sample, needs confirming before it is trusted:**
-on the run that reached `Time ?`, sending Enter produced a garbage screen rather
-than the `Shell` / `OS9:` prompt. Older builds (`c24377a`, `649d054`, `5cae28c`,
-`b632ea1`) all took Enter at that prompt and went on to run `dir`. If that
-reproduces it is a keyboard-path regression sitting behind the boot, not part of
-the `$fd04` story.
+~~**One further observation, single-sample, needs confirming before it is
+trusted:** on the run that reached `Time ?`, sending Enter produced a garbage
+screen rather than the `Shell` / `OS9:` prompt.~~
+
+**RETRACTED — it does not reproduce.** Re-tested on hardware at the simulation
+side's request, against a re-blessed reference: the run that reached the banner
+took Enter and went straight to `Shell` and the `OS9:` prompt, cursor live
+(6452 bytes). Simulation could not reproduce it either. It was a single-sample
+artifact and there is no keyboard-path regression here.
+
+Worth recording as a process point rather than a technical one: that flag was
+raised off one screenshot taken while the reference matcher was known-stale, so
+the result was being read by eye with no discriminator behind it. The
+simulation side's scepticism was better calibrated than the report. One sample
+plus a broken instrument is not a finding.
 
 ### Where a sim-side investigation could start
 
@@ -155,10 +164,17 @@ reference-image comparison that scores *lit* pixels separately — most of the
 frame is black, so garbage still matches ~95% overall while matching 0% of the
 text.
 
-**The OS-9 reference image is stale as of this batch.** Output resolution
-changed to 1280 wide, so every stored reference mismatches on size and the
-matcher returns `MISMATCH (different resolution)` rather than a verdict. The
-results in §3 were eyeballed. Re-bless before relying on the matcher again.
+~~**The OS-9 reference image is stale as of this batch.**~~ **Fixed.** Output
+resolution changed to 1280 wide, so every stored reference mismatched on size
+and the matcher returned `MISMATCH (different resolution)` instead of a verdict
+— which means it had stopped being evidence, and the §3 results were eyeballed
+without that being flagged loudly enough at the time.
+
+Re-blessed at 1280x200 from a visually confirmed boot. It discriminates again:
+banner 100% text, the `System Module Loading Completed` stall 37.9%. **A matcher
+that cannot return a verdict is not a neutral loss — it silently downgrades
+every result behind it to an eyeball.** Re-bless whenever output resolution
+moves.
 
 **Trap 16 applies here too, and harder.** Fixed-settle screenshots are only
 comparable between builds of comparable timing. Every byte-identical comparison
