@@ -119,14 +119,37 @@ assign DMAn = 1'b1; // dummy output
 // across the read is the P0-1 race wearing a different hat. Set wins over
 // clear, so an attention landing on the acknowledge cycle is not swallowed --
 // the same argument as KEYBOARD.v's m132.
+// ...and the trailing edge is NOT "main finished reading \$fd04", because one
+// read makes TWO strobes. Identical structure to the \$fd03 bug, measured here
+// on OS-9 (\$time counts CLKSYS edges):
+//
+//     t=171925871  RFD04n=0  EB=0  attn_pend=1   pulse 1 opens, Q phase
+//     t=171925881  RFD04n=1  EB=0  attn_pend=1   pulse 1 shuts -> CLEAR FIRES
+//     t=171925891  RFD04n=0  EB=1  attn_pend=0   pulse 2 opens, E phase, GONE
+//     t=171925911  RFD04n=1  EB=0  attn_pend=0   pulse 2 shuts
+//
+// RDQEn is ~(RWB & (QB|EB)) and assumes Q and E overlap; they do not, so the
+// decode splits into a Q-phase pulse and an E-phase pulse. The 6809 latches on
+// E's fall, i.e. in pulse 2, so clearing at the close of pulse 1 means the main
+// CPU reads bit 0 = 1, "no attention pending", every single time. OS-9 hits
+// this 578 times in 900 frames and has never once seen an attention it was
+// actually sent.
+//
+// Qualify on EB exactly as CLKCTRL.v does for \$fd03: remember at each strobe
+// opening whether this is the E-phase pulse, and acknowledge only at the close
+// of that one. Set still wins over clear, so an attention landing on the
+// acknowledge cycle is not swallowed -- the same argument as KEYBOARD.v's m132.
 reg attn_pend;              // 1 = an attention is waiting
 reg attn_d, rfd04_d;
+reg fd04_ephase;            // the strobe now open is the cycle the CPU latches
 always @(posedge CLKSYS) begin
   attn_d  <= ATTENTn;
   rfd04_d <= RFD04n;
+  if (rfd04_d & ~RFD04n) fd04_ephase <= EB;        // strobe opening
   if (~RESETBn)               attn_pend <= 1'b0;
-  else if (attn_d & ~ATTENTn) attn_pend <= 1'b1;   // sub read $d404
-  else if (~rfd04_d & RFD04n) attn_pend <= 1'b0;   // main finished reading $fd04
+  else if (attn_d & ~ATTENTn) attn_pend <= 1'b1;   // sub read \$d404
+  else if (~rfd04_d & RFD04n & fd04_ephase)
+                              attn_pend <= 1'b0;   // main REALLY finished reading
 end
 
 wire m45_q8n = ~attn_pend;  // active low, as the bus and FIRQn see it

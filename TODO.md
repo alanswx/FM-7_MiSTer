@@ -26,15 +26,27 @@ shift/ctrl/graph/kana/break), the boot-ROM bank select and — as of P4-19 — t
 emulators. What remains is mostly per-title software archaeology plus a handful
 of scoped RTL items.
 
-**The interrupt path was broken in two places at once, and P4-19 fixed both.**
-`$fd02`'s enable bits were inverted on 1 and 2, so a title that asked for the
-timer interrupt never got one; and `$fd03`'s acknowledge landed on the wrong one
-of the two bus strobes a single read produces, so a handler that did get an
-interrupt could never work out which source fired. **Neither fix does anything
-visible on its own** — they are a chain. Together they made **Ys playable**
-(P4-8, open across four previous investigations) and took **1942** from a blank
-screen to its title menu, with **21+ titles moving blank -> rendering** and no
-title shown to regress.
+**The interrupt path was broken in three places at once, and P4-19 fixed all
+three.** `$fd02`'s enable bits were inverted on 1 and 2, so a title that asked
+for the timer interrupt never got one; `$fd03`'s acknowledge landed on the wrong
+one of the two bus strobes a single read produces, so a handler that did get an
+interrupt could never work out which source fired; and `$fd04`'s attention latch
+had the identical two-strobe bug, so the main CPU never once saw an attention the
+sub had sent it. The first two **do nothing visible on their own** — they are a
+chain. Together they made **Ys playable** (P4-8, open across four previous
+investigations) and took **1942** from a blank screen to its title menu, with
+**21+ titles moving blank -> rendering** and no title shown to regress.
+
+**THE ONE THING TO CARRY FORWARD: `RDQEn` splits every I/O read into TWO
+strobes.** `RDQEn` is `~(RWB & (QB|EB))`, which assumes Q and E overlap into one
+continuous strobe. In this model they do not, so every `$fdxx` read decodes as a
+Q-phase pulse and then an E-phase pulse with a dead gap between. The 6809 latches
+on E's fall — **in the second pulse**. Any register that acknowledges, clears or
+side-effects on a read edge therefore fires too early and hands the CPU the
+post-acknowledge value. That single mechanism was behind both `$fd03` and `$fd04`,
+and the fix in each case is to latch `EB` at the strobe opening and act only at
+the close of the E-phase pulse. **Audit any read-clear register before trusting
+it**; `$fd00`/`$fd01` and the sub-side `SRDQEn` decodes have not been checked.
 
 The single biggest remaining bucket is **18 FM-7 images that are primary, good
 dumps, run at a healthy rate and still draw nothing** (P4-16). That was 46
@@ -1477,6 +1489,44 @@ also rises sharply -- `boot-basic` 777310 -> 1094418 cycles -- consistent with a
 timer interrupt now being recognised. (A separate attempt to confirm through the
 BASIC clock failed for a silly reason: `print time` is a syntax error, it needs
 `TIME$` and the `$` needs shift.)
+
+### $fd04 [FIXED] the attention latch had the same two-strobe bug — OS-9 never saw an attention it was sent
+
+Found by asking "what else is a read-clear register decoded the same way?" right
+after the `$fd03` fix. `TIMER.v` cleared `attn_pend` on the trailing edge of
+`RFD04n`, commented "main finished reading `$fd04`". One read is two strobes, so
+that comment was wrong in exactly the way `$fd03`'s was.
+
+Measured on OS-9, 578 occurrences in 900 frames, perfectly regular:
+
+```
+t=171925871  RFD04n=0  EB=0  attn_pend=1   pulse 1 opens, Q phase, attention PENDING
+t=171925881  RFD04n=1  EB=0  attn_pend=1   pulse 1 shuts -> CLEAR FIRES
+t=171925891  RFD04n=0  EB=1  attn_pend=0   pulse 2 opens, E phase, GONE
+t=171925911  RFD04n=1  EB=0  attn_pend=0   pulse 2 shuts
+```
+
+`$fd04` bit 0 is `~attn_pend`, so the main CPU latched in pulse 2 and read 1 --
+"no attention pending" -- **every single time**. Same `EB`-qualified fix as
+`CLKCTRL.v`: remember at each strobe opening whether this is the E-phase pulse,
+acknowledge only at the close of that one. Set still wins over clear.
+
+**Verified.** Over 900 frames of OS-9, all 289 `$fd04` reads now come back with
+bit 0 **clear** -- `$fa` x284 and `$fe` x5, differing only in BUSY. Before the fix
+bit 0 was set in every one. OS-9 still boots correctly: kernel started, welcome
+banner, `Time ?` prompt, kanji rendering in the version line.
+
+**Two process notes worth keeping.** Ys reads `$fd04` once in 900 frames and never
+sets `attn_pend` at all, so measuring on Ys said the path was unexercised and led
+to briefly downgrading this bug as "possibly latent". **A null result from one
+title says nothing about a register, only about that title** -- OS-9 drives the
+same path 1157 times. And the original comment reasoned carefully about keeping
+the value stable across a bus cycle: the intent was right, the assumption that
+one read is one strobe was wrong.
+
+**Still to check:** every other read-clear register decoded off `RDQEn` has this
+shape. `$fd00`/`$fd01` (keyboard acknowledge) and the sub-side `SRDQEn` decodes
+are the remaining candidates.
 
 ### P4-19 [in progress] Fifth breadth sweep: the whole collection, after both interrupt fixes
 
