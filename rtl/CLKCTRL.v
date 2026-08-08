@@ -25,7 +25,7 @@ module CLKCTRL(
   output SCPUCLK, // 8 | 4
   output reg [7:0] MDATABUS_out,
   output IRQn,
-  output reg switch,
+  output reg switch = 1'b1,   // power-up value; see the SCLKNMIn note below
   output CLK2_5,
   output CLK1_2,
   output CLK0_3
@@ -53,7 +53,27 @@ assign CLK0_3 = m93[3];
 // status is exposed to the main CPU.
 // The implementation of bit zero on main data bus is done in the keyboard
 // module and not here because $FD00 is also populated by the keyboard logic.
-always @(posedge SCLKNMIn)
+// SCLKNMIn is not a clock, and this flip-flop had NO RESET -- so `switch` held
+// whatever Quartus powered it up as until the first SCLKNMIn edge arrived, then
+// changed. That is the P0-2 hazard again (TODO.md), but with a sharper edge to
+// it: `switch` drives the clock multiplexer immediately below
+//
+//     assign MCPUCLK = switch ? CLK4_9 : SCLK1;
+//
+// so the transition is a MID-FLIGHT SWITCH OF THE MAIN CPU'S CLOCK SOURCE
+// between two unrelated clocks, which produces a runt pulse. It happens once
+// per power-on at a moment set by SCLKNMIn's phase, i.e. at a different point
+// in the boot every time -- the shape of an intermittent early-boot failure.
+//
+// On CLKSYS with a defined power-up value. SW2 is tied to a constant (core.v
+// wires it 1'b1, "0 = FM-8 compatibility"), so `switch` now settles one CLKSYS
+// cycle after configuration and the mux never transitions at all. Behaviour is
+// unchanged for any static SW2; only the power-up glitch goes away.
+//
+// See DERIVED_CLOCKS.md. This module is where two independent hardware
+// regressions point: b1aff78 ($fd03 ack) landed here, and it is also TMMASK's
+// destination, the clock domain flagged behind the m77 failures.
+always @(posedge CLKSYS)
   switch <= SW2;
 
 // 74ls158 has inverted outputs, this is not the case here
