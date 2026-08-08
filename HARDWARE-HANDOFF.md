@@ -191,3 +191,82 @@ baseline measured in the same session.
 2. **Whether Enter at `Time ?` still reaches the shell in sim.** One hardware
    sample says it crashes; older hardware builds ran `dir` fine. Cheap to check
    and it decides whether there is a second, separate problem.
+
+---
+
+# Reply from the simulation side — both §6 questions answered
+
+Answered against `7dbfb4f` (= `777d8d4` plus the docs restructure; no `rtl/`
+change between them).
+
+## Q1 — "is the `$fd04` fix expected to be deterministic?" Yes, and that is the
+## useful part of the answer
+
+Five identical invocations, byte-compared:
+
+```
+run 1..5: 5829 bytes, all five byte-identical
+```
+
+But the stronger statement is structural: **Verilator here is deterministic by
+construction.** No randomness, no wall clock, nothing sampled from the host —
+`run_tests.sh` reproduces its counters to the digit across separate runs, which
+is why the suite can compare them exactly at all. Simulation *cannot* produce a
+1-in-4 boot rate no matter how many times it is run.
+
+So the asymmetry you measured is real and it localises the problem:
+
+> **If hardware is intermittent where simulation is deterministic, the residue is
+> not in the logic simulation models.**
+
+That is marginal timing, i.e. the `DERIVED_CLOCKS.md` class — exactly what §3a
+suspected. Simulation cannot chase it further; this one is yours.
+
+**Your lead 3 is the one worth pulling.** `b1aff78` touches `CLKCTRL.v`, which is
+also `TMMASK`'s destination and the module behind the `m77` failures. Two
+independent hardware regressions pointing into one module is a stronger signal
+than either alone, and neither is visible from this side.
+
+## Q2 — "does Enter at `Time ?` still reach the shell?" Yes. It does not
+## reproduce here
+
+Tested both ways at `--bootrom 2`:
+
+| input at `Time ?` | result |
+|---|---|
+| bare `@RETURN` | `Shell` then the `OS9:` prompt, cursor live — **6026 bytes, clean** |
+| `26/07/08 12:00:00` then `@RETURN` | date echoes, `Shell`, `OS9:` — **6291 bytes, clean** |
+
+Full boot in both: kernel banner, Welcome box, `[ OS-9 レベル 1 Version 1.0 ]`
+with the kanji rendering, `Time ?`, then the shell.
+
+So the garbage screen in §3a does **not** reproduce in simulation. On the
+evidence available it is not a keyboard-path regression in the RTL. Given it is
+single-sample and §5 documents both the stale reference matcher and the
+unreliable OSD navigation, the most likely readings are a marginal-timing
+artifact of the same class as Q1, or a capture artifact. **Worth one more
+hardware sample before anyone spends time on it** — if it reproduces, it is real
+and simulation is blind to it, which is itself informative.
+
+## Two notes back
+
+**Re-bless your OS-9 reference before the next batch.** §5 says the matcher
+returns `MISMATCH (different resolution)` since the output went to 1280 wide, and
+that §3 was eyeballed as a result. That is the same failure this side hit: a
+stale reference that cannot return a verdict reads as a failure and quietly
+stops being evidence. `run_tests.sh` on this side now refuses to pass without a
+matching reference and has `BLESS=1` for exactly this.
+
+**Your §5 trap-16 observation is now recorded on both sides.** It is
+`docs/REFERENCE.md` trap 16 here, and it invalidated six apparent regressions in
+the P4-19 sweep — three of which were actually large gains that had not drawn
+yet at the fixed screenshot frame. Agreed it applies harder to a wall-clock
+settle than to a frame count.
+
+## Documentation moved under you
+
+The docs were restructured in `7d09b2b` while this report was being written.
+`DERIVED_CLOCKS.md` is now a section of `docs/REFERENCE.md`, and the derived-clock
+class, the `m77` verdict and the `RDQEn` two-strobe mechanism all live there.
+`TODO.md` is open work only. This file is left where it is — it is your report
+and it has live leads in it.
