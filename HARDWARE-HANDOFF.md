@@ -286,3 +286,70 @@ The docs were restructured in `7d09b2b` while this report was being written.
 class, the `m77` verdict and the `RDQEn` two-strobe mechanism all live there.
 `TODO.md` is open work only. This file is left where it is — it is your report
 and it has live leads in it.
+
+
+---
+
+# `0fbc824` (second floppy) — two defects, one fixed here, one open
+
+Tested on the DE10-Nano after the simulation side added drive 1.
+
+## Fixed here: it did not synthesize at all
+
+`0fbc824` adds unpacked array **ports** — `sd_lba [2]` and `sd_buff_din [2]` on
+both `core` and `FDC` — but `files.qip` declared `core.v` and `FDC.v` as
+`VERILOG_FILE`, and Quartus parses those strictly as Verilog-2001, where an
+unpacked array in a port list is illegal. Eight errors, no bitstream.
+
+Verilator compiles everything as SystemVerilog regardless of extension, so the
+same source elaborates cleanly on the simulation side. **This is a third
+category of sim-invisible defect, distinct from the other two:** the simulator
+never reads `files.qip`, so anything expressed only in the Quartus file list is
+structurally outside what a green `vsim` can tell you — including whether the
+design *parses*.
+
+Fixed in `7fbb1e4` by declaring both `SYSTEMVERILOG_FILE`, matching `wd1793.sv`.
+No RTL change. Builds clean and fits: 40% ALMs (was 34%), 403/553 RAM blocks
+(73%, was 70%), zero negative-slack paths, and both `u_wd1793_0` and
+`u_wd1793_1` appear in the fitter report.
+
+## Open, and it reproduces in simulation: no disk boots
+
+Once it builds, **every disk falls back to cassette F-BASIC.** Not drive 1 —
+drive 0, the one that already worked.
+
+Controlled in one session, same disks, same MGLs, only the bitstream changing:
+
+| build | Thexder | Archon | Ys | Hydlide II |
+|---|---|---|---|---|
+| pre-`0fbc824` | **61828** | boots | 44000 | boots |
+| `0fbc824` + `7fbb1e4` | 4632 | 4632 | 4632 | 4632 |
+
+4632 is the F-BASIC "no disk" screen. Reflashing the earlier bitstream restored
+Thexder to 61828 immediately, so this is the commit and not the SD card, the
+MGLs or the harness.
+
+**It is not hardware-only.** OS-9 at `--bootrom 2` in `vsim` on this same commit
+is blank at frame 250 (3790 bytes) and still blank at frame 880 (3814) — a bare
+cursor, where the fd04 commit had it reaching the banner. So this one is fully
+reproducible on the simulation side with all its tooling, and does not need the
+FPGA to debug.
+
+### One hypothesis tried and refuted
+
+Both WD cores are gated on `drive0_sel` / `drive1_sel`, and `core_dout` falls
+through to `8'hff` when neither matches — so drive numbers **2 and 3 route to
+nothing**, where the single-core version had no routing at all and every access
+reached the one instance whatever the drive bits said. `FDC.v`'s own `$fd1d`
+comment records Ys writing `$82` and `$83`, i.e. drives 2 and 3, and MAME clamps
+`(data & 3) > 1` to drive 0.
+
+That looked decisive. It is not: clamping `drv_eff = (fdc_drv > 1) ? 0 : fdc_drv`
+for routing, leaving `fdc_drv` raw for the `$fd1d` readback, **changed nothing**
+— all four titles still 4632. Reverted rather than left in as unproven logic.
+
+Worth keeping as a narrowing result even though it failed: the drive-number
+routing is *not* what breaks drive 0. Something else in the split does. Note the
+boot ROM reads the boot sector before any `$fd1d` write, when `fdc_drv` is still
+0 and `drive0_sel` is already true — so the failure starts earlier than drive
+selection.
