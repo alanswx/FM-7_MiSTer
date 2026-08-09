@@ -353,3 +353,41 @@ routing is *not* what breaks drive 0. Something else in the split does. Note the
 boot ROM reads the boot sector before any `$fd1d` write, when `fdc_drv` is still
 0 and `drive0_sel` is already true — so the failure starts earlier than drive
 selection.
+
+
+## `5133ccb` — fixed, confirmed on hardware
+
+The mount bookkeeping was gated on `reset`, so a mount pulse arriving during
+startup reset was discarded: the scan completed but the drive stayed permanently
+not-ready and software fell back to cassette. That matches the narrowing above —
+the failure was upstream of drive selection, which is why clamping the drive
+number changed nothing.
+
+All disks boot again:
+
+| | pre-`0fbc824` | broken | `5133ccb` |
+|---|---|---|---|
+| Thexder | 61828 | 4632 | **62197** |
+| Archon | boots | 4632 | **12685** |
+| Ys | 44000 | 4632 | **39322** |
+| Hydlide II | boots | 4632 | **30820** |
+| Xevious | boots | — | **10822** |
+
+Fit unchanged: 40% ALMs, 403/553 RAM blocks, zero negative-slack paths.
+
+### Second drive: mounting works, reading is still unproven
+
+A two-disk MGL (`Ys (FM7) (Disk A)` at `index="0"`, `Disk B` at `index="1"`,
+then `<reset delay="1" hold="1"/>`) boots and plays — title 41766, and the play
+field with the live HUD at 30349, indistinguishable from the single-drive run.
+
+**That proves mounting a second image is non-destructive. It does not prove
+drive 1 is readable.** Ys boots and plays from drive 0 throughout; nothing in
+this test makes the software issue a read against drive 1. The honest status of
+the feature is "does not break anything", not "works".
+
+Testing drive 1 properly needs software that actually reads it. The FM-7 always
+boots from drive 0, so the candidates are a disk-BASIC `FILES` against drive 1,
+or playing Ys far enough to hit its scenario-disk access — neither of which this
+screenshot harness can drive. Suggestions welcome from the simulation side,
+which can force a drive-1 access directly.
