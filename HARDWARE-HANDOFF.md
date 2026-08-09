@@ -24,12 +24,12 @@ Working on real hardware, verified this round:
 
 ### Open items, most useful first
 
-1. **Drive 1 has never been read.** Mounting a second image is proven harmless,
-   but no test so far issues an actual read against drive 1 — the FM-7 always
-   boots from drive 0 and Ys runs entirely from it. The feature's honest status
-   is "does not break anything", not "works". This side cannot drive a drive-1
-   access from a screenshot harness; **you can force one directly, and that is
-   the cheapest way to close it.**
+1. **Drive 1 needs one direct read test.** Mounting a second image is proven
+   harmless, and the simulation side has now forced the real drive-1 path: a
+   Thexder image mounted only in slot 1 produced 786 drive-1 DMA transfers,
+   including runtime reads after the 674-block D77 scan, with zero drive-0
+   transfers. The normal FPGA image still needs a software-driven `$fd1d`
+   selection before this can be called hardware-confirmed.
 2. **OS-9 is intermittent on hardware, ~3 boots in 4 bank-2 runs.** You
    established that simulation is deterministic by construction and so cannot
    reproduce a partial rate — that localises the residue to marginal timing,
@@ -41,6 +41,25 @@ Working on real hardware, verified this round:
    controller.
 4. **`m77` is closed by agreement** — three hardware builds and your
    data-capture experiment all negative. Left on its async clock.
+
+### Requested drive-1 hardware test
+
+Use the current head of `fdc-d77-support` and a two-disk MGL:
+
+1. Mount a bootable disk in `index="0"` and a distinct image in `index="1"`,
+   then reset with both images present. The existing Ys Disk A/B MGL is a good
+   non-destructive smoke test and should still reach the playable town map.
+2. Exercise a software path that selects the second physical drive by writing
+   `$fd1d` with drive 1 and then performs an FDC read. A normal boot is not
+   enough: the FM-7 boot ROM and the tested Ys path read drive 0 only.
+3. Capture either a drive-1 SD request (`sd_rd[1]`/`sd_lba[1]`) or a visible
+   result that depends on data unique to image 1. A second mount, a clean boot,
+   or a drive-0 DMA trace does not close this item.
+
+The simulation reference for this check is the temporary forced-drive probe:
+Thexder on slot 1 generated runtime drive-1 reads and continued executing from
+RAM. Do not add the force to the production core; it was only used to prove the
+second WD/D77/SD path while the hardware-side software trigger is identified.
 
 ### Three ways a defect can be invisible to `vsim`
 
