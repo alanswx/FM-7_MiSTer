@@ -3,9 +3,9 @@ set_global_assignment -name SYSTEMVERILOG_FILE FM-7_MiSTer.sv
 set_global_assignment -name VERILOG_FILE rtl/CLKCTRL.v
 set_global_assignment -name VERILOG_FILE rtl/clk_en.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/clocks.svh
-set_global_assignment -name VERILOG_FILE rtl/core.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/core.v
 set_global_assignment -name VERILOG_FILE rtl/CRTRAM.v
-set_global_assignment -name VERILOG_FILE rtl/FDC.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/FDC.v
 set_global_assignment -name VERILOG_FILE rtl/FLAGS.v
 set_global_assignment -name VERILOG_FILE rtl/KEYBOARD.v
 set_global_assignment -name VERILOG_FILE rtl/KANJI.v
