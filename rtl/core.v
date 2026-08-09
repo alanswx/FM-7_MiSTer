@@ -21,16 +21,16 @@ module core(
   input [1:0] bootrom_sel,
 
   // Floppy: MiSTer block-device interface, straight through to FDC.v
-  input         img_mounted,
+  input  [1:0]  img_mounted,
   input         img_readonly,
   input  [63:0] img_size,
-  output [31:0] sd_lba,
-  output        sd_rd,
-  output        sd_wr,
-  input         sd_ack,
+  output [31:0] sd_lba [2],
+  output [1:0]  sd_rd,
+  output [1:0]  sd_wr,
+  input  [1:0]  sd_ack,
   input   [8:0] sd_buff_addr,
   input   [7:0] sd_buff_dout,
-  output  [7:0] sd_buff_din,
+  output  [7:0] sd_buff_din [2],
   input         sd_buff_wr
 );
 

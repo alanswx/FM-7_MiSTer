@@ -58,18 +58,18 @@ module emu
 
 	// MiSTer block device, driven by sim/sim_blkdevice.cpp. Widths chosen to
 	// match SimBlockDevice's member types: sd_rd/sd_wr/sd_ack/img_mounted are
-	// per-drive bit vectors (SData), img_size is 64-bit (QData). Only drive 0
-	// is connected.
+	// per-drive bit vectors (SData), img_size is 64-bit (QData). The simulator
+	// exposes the first two drive slots, matching hps_io's VDNUM(2) contract.
 	input  [15:0] img_mounted,
 	input         img_readonly,
 	input  [63:0] img_size,
-	output [31:0] sd_lba,
+	output [31:0] sd_lba [2],
 	output [15:0] sd_rd,
 	output [15:0] sd_wr,
 	input  [15:0] sd_ack,
 	input   [8:0] sd_buff_addr,
 	input   [7:0] sd_buff_dout,
-	output  [7:0] sd_buff_din,
+	output  [7:0] sd_buff_din [2],
 	input         sd_buff_wr,
 
 	output  [7:0] VGA_R,
@@ -202,23 +202,23 @@ core u_core(
   .cin         ( cin         ),
   .motor       ( motor       ),
   .bootrom_sel ( bootrom_sel ),
-  // floppy, drive 0 only
-  .img_mounted  ( img_mounted[0]  ),
+  // floppy, two drive slots
+  .img_mounted  ( img_mounted[1:0]  ),
   .img_readonly ( img_readonly    ),
   .img_size     ( img_size        ),
   .sd_lba       ( sd_lba          ),
   .sd_rd        ( sd_rd_0         ),
   .sd_wr        ( sd_wr_0         ),
-  .sd_ack       ( sd_ack[0]       ),
+  .sd_ack       ( sd_ack[1:0]     ),
   .sd_buff_addr ( sd_buff_addr    ),
   .sd_buff_dout ( sd_buff_dout    ),
   .sd_buff_din  ( sd_buff_din     ),
   .sd_buff_wr   ( sd_buff_wr      )
 );
 
-wire sd_rd_0, sd_wr_0;
-assign sd_rd = { 15'd0, sd_rd_0 };
-assign sd_wr = { 15'd0, sd_wr_0 };
+wire [1:0] sd_rd_0, sd_wr_0;
+assign sd_rd = { 14'd0, sd_rd_0 };
+assign sd_wr = { 14'd0, sd_wr_0 };
 
 pcm pcm(
   .CLKSYS         ( CLKSYS    ),

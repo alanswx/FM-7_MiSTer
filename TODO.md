@@ -100,8 +100,9 @@ further to see what breaks next.
 
 ## Media support
 
-- **Second drive.** Only drive 0 is served. Many `(Disk 2)` images in the
-  collection cannot be reached at all, which caps the sweep.
+- **Second drive.** Implemented in the core and simulator: OSD slots S0/S1
+  feed independent D77 scanners, and `$fd1d` selects the active drive. The
+  hardware build still needs a Quartus compile and physical two-disk check.
 - **2DD media** and **multi-disk `.d88`**.
 
 These three together gate a large fraction of the collection — probably the

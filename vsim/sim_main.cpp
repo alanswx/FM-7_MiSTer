@@ -209,7 +209,8 @@ static void print_tail(const char* label, std::vector<Retired>& v, size_t pos, b
 //----------------------------------------------------------------------------
 
 static std::string tape_path;
-static std::string disk_path;   // --disk <file.d77>
+static std::string disk_path;   // --disk <file.d77>, drive 0
+static std::string disk_path1;  // --disk1 <file.d77>, drive 1
 static bool        tape_rewind_pulse = false;
 static int         tape_rewind_frame = -1;
 
@@ -548,6 +549,7 @@ static void print_usage(const char* argv0) {
 	printf("  --disk <file.d77>         Mount a floppy on drive 0, served over the\n");
 	printf("                            MiSTer block device (sd_lba/sd_buff_*), the\n");
 	printf("                            same path hps_io uses on hardware\n");
+	printf("  --disk1 <file.d77>        Mount a floppy on drive 1\n");
 	printf("  --tape <file.t77>         Mount a cassette (ioctl index 1 -> SDRAM ->\n");
 	printf("                            rtl/t77_decode.v, the path that ships)\n");
 	printf("  --tape-audio              Mix the cassette bit and relay click into\n");
@@ -637,6 +639,7 @@ static int parse_args(int argc, char** argv) {
 		else if (a == "--headless" || a == "--no-gui") headless = true;
 		else if (a == "--tape")       { const char* v = next(); if (v) tape_path = v; }
 		else if (a == "--disk")       { const char* v = next(); if (v) disk_path = v; }
+		else if (a == "--disk1")      { const char* v = next(); if (v) disk_path1 = v; }
 		else if (a == "--tape-audio") opt_tape_audio = true;
 		else if (a == "--bootrom")    { const char* v = next(); if (v) opt_bootrom = atoi(v) & 3; }
 		else if (a == "--key-hold")        { const char* v = next(); if (v) key_hold_frames = atoi(v); }
@@ -1295,10 +1298,12 @@ int main(int argc, char** argv, char** env) {
 	bus.ioctl_dout     = &top->ioctl_dout;
 	input.ps2_key      = &top->ps2_key;
 
-	// Block device -> the FDC. Only drive 0 is wired; sd_lba/sd_buff_din are
-	// per-drive arrays in SimBlockDevice, so element 0 points at our scalars.
-	blk.sd_lba[0]      = &top->sd_lba;
-	blk.sd_buff_din[0] = &top->sd_buff_din;
+	// Block device -> the FDC. The core exposes two drive slots, while the
+	// block-device data/address/valid bus remains shared by hps_io.
+	blk.sd_lba[0]      = &top->sd_lba[0];
+	blk.sd_lba[1]      = &top->sd_lba[1];
+	blk.sd_buff_din[0] = &top->sd_buff_din[0];
+	blk.sd_buff_din[1] = &top->sd_buff_din[1];
 	blk.sd_rd          = &top->sd_rd;
 	blk.sd_wr          = &top->sd_wr;
 	blk.sd_ack         = &top->sd_ack;
@@ -1312,6 +1317,10 @@ int main(int argc, char** argv, char** env) {
 	if (!disk_path.empty()) {
 		printf("Mounting disk on drive 0: %s\n", disk_path.c_str());
 		blk.MountDisk(disk_path, 0);
+	}
+	if (!disk_path1.empty()) {
+		printf("Mounting disk on drive 1: %s\n", disk_path1.c_str());
+		blk.MountDisk(disk_path1, 1);
 	}
 
 	if (!tape_path.empty()) {

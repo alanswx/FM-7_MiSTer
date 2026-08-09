@@ -146,13 +146,12 @@ void SimBlockDevice::BeforeEval(uint64_t cycles)
 
         disk[i].clear();
         disk[i].seekg((lba) * kBLKSZ + header_size[i]);
-        // Debug output for floppy (index 0) - show track calculation
-        if (i == 0) {
-            int track = lba / 13;  // 13 sectors per track
-            int sector = lba % 13;
-            printf("FLOPPY DMA: LBA=%d (track=%d sector=%d) seek=%06X reading=%d writing=%d\n",
-                   lba, track, sector, (int)((lba) * kBLKSZ + header_size[i]), reading, writing);
-        }
+        // Diagnostic only: D77 images can have variable track geometries, so
+        // the conventional 2D track/sector calculation is just a useful hint.
+        int track = lba / 13;
+        int sector = lba % 13;
+        printf("FLOPPY DMA: drive=%d LBA=%d (track=%d sector=%d) seek=%06X reading=%d writing=%d\n",
+               i, lba, track, sector, (int)((lba) * kBLKSZ + header_size[i]), reading, writing);
         bytecnt = 0;
         *sd_buff_addr = 0;
         ack_delay = 1200;

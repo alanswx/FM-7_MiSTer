@@ -225,7 +225,8 @@ localparam CONF_STR = {
   "FM-7;;",
   "-;",
   "F1,t77,Load Tape;",
-  "S0,d77d88,Mount Disk;",
+  "S0,d77d88,Mount Disk 1;",
+  "S1,d77d88,Mount Disk 2;",
   "T[8],Tape Rewind;",
   "O[9],Tape Audio,Off,On;",
   "O[11:10],Boot ROM,0 disk,1 alt,2 dos-a,3 empty;",
@@ -258,15 +259,16 @@ wire  [7:0] ioctl_dout;
 
 wire [31:0] joy1, joy2;
 
-// Floppy block-device interface. VDNUM 1 = one drive; the FM-7 supports two,
-// see TODO.md P4-1.
-wire        img_mounted;
+// Floppy block-device interface. VDNUM 2 exposes the FM-7's two physical
+// drives to the OSD and to the single MB8877 controller in core.v.
+wire [1:0]  img_mounted;
 wire        img_readonly;
 wire [63:0] img_size;
-wire [31:0] sd_lba;
-wire        sd_rd, sd_wr, sd_ack;
+wire [31:0] sd_lba [2];
+wire [1:0]  sd_rd, sd_wr, sd_ack;
 wire  [8:0] sd_buff_addr;
-wire  [7:0] sd_buff_dout, sd_buff_din;
+wire  [7:0] sd_buff_dout;
+wire  [7:0] sd_buff_din [2];
 wire        sd_buff_wr;
 
 // WIDE must stay 0. hps_io sizes BOTH the ioctl download path and the floppy
@@ -279,7 +281,7 @@ wire        sd_buff_wr;
 // the boot ROM cleared the screen and hung. vsim never caught it because
 // vsim/sim.v has no hps_io at all and SimBlockDevice speaks 8-bit natively.
 // The tape path is byte-wide to match (see wtbt and tape_size below).
-hps_io #(.CONF_STR(CONF_STR),.WIDE(0),.VDNUM(1)) hps_io
+hps_io #(.CONF_STR(CONF_STR),.WIDE(0),.VDNUM(2)) hps_io
 (
   .clk_sys(clk_sys),
   .HPS_BUS(HPS_BUS),
@@ -308,14 +310,14 @@ hps_io #(.CONF_STR(CONF_STR),.WIDE(0),.VDNUM(1)) hps_io
   .img_mounted(img_mounted),
   .img_readonly(img_readonly),
   .img_size(img_size),
-  .sd_lba('{sd_lba}),
-  .sd_blk_cnt('{6'd0}),
+  .sd_lba(sd_lba),
+  .sd_blk_cnt('{6'd0, 6'd0}),
   .sd_rd(sd_rd),
   .sd_wr(sd_wr),
   .sd_ack(sd_ack),
   .sd_buff_addr(sd_buff_addr),
   .sd_buff_dout(sd_buff_dout),
-  .sd_buff_din('{sd_buff_din}),
+  .sd_buff_din(sd_buff_din),
   .sd_buff_wr(sd_buff_wr)
 );
 

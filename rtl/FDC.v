@@ -53,17 +53,19 @@ module FDC(
   input FD_REn,
 
   // MiSTer block-device interface (hps_io on hardware, SimBlockDevice in vsim).
-  // One drive for now; the FM-7 supports two, see TODO.md P4-1.
-  input         img_mounted,
+  // The FM-7 has one MB8877 controller serving two independently mounted
+  // drives. Each drive gets its own WD core so its D77 sector table survives
+  // while the other drive is selected.
+  input  [1:0]  img_mounted,
   input         img_readonly,
   input  [63:0] img_size,
-  output [31:0] sd_lba,
-  output        sd_rd,
-  output        sd_wr,
-  input         sd_ack,
+  output [31:0] sd_lba [2],
+  output [1:0]  sd_rd,
+  output [1:0]  sd_wr,
+  input  [1:0]  sd_ack,
   input   [8:0] sd_buff_addr,
   input   [7:0] sd_buff_dout,
-  output  [7:0] sd_buff_din,
+  output  [7:0] sd_buff_din [2],
   input         sd_buff_wr
 );
 
@@ -98,7 +100,8 @@ end
 // command that does arrive is rejected on the spot rather than being run at the
 // wrong rate. What is left is the byte replay, which goes as fast as the blocks
 // arrive -- on hardware that means the SD reads set the pace, which is right.
-wire ce_wd = ce | prepare;
+wire prepare0, prepare1;
+wire ce_wd = ce | prepare0 | prepare1;
 
 //----------------------------------------------------------------------------
 // Host strobes
@@ -296,6 +299,14 @@ reg       fdc_side  = 1'b0;
 reg       fdc_motor = 1'b0;
 reg [1:0] fdc_drv   = 2'd0;
 
+wire drive0_sel = (fdc_drv == 2'd0);
+wire drive1_sel = (fdc_drv == 2'd1);
+wire ready0, ready1;
+wire drq0, drq1, intrq0, intrq1;
+wire ready_sel = drive0_sel ? ready0 : drive1_sel ? ready1 : 1'b0;
+wire drq_sel   = drive0_sel ? drq0   : drive1_sel ? drq1   : 1'b0;
+wire intrq_sel = drive0_sel ? intrq0 : drive1_sel ? intrq1 : 1'b0;
+
 always @(posedge CLKSYS) begin
   if (reset) begin
     fdc_side  <= 1'b0;
@@ -317,17 +328,18 @@ end
 wire [7:0] aux_dout =
   (FD_RS[1:0] == 2'd0) ? { 7'h7f, fdc_side } :   // side | $fe
   // { motor&ready, 0, 1111, drive } == CSP's 0x3c | drive | (motor ? 0x80 : 0)
-  (FD_RS[1:0] == 2'd1) ? { fdc_motor & ready, 1'b0, 4'b1111, fdc_drv } :
+  (FD_RS[1:0] == 2'd1) ? { fdc_motor & ready_sel, 1'b0, 4'b1111, fdc_drv } :
   (FD_RS[1:0] == 2'd2) ? 8'hff :                 // mode: FM-7 always $ff
-                         { drq, intrq, 6'd0 };   // status flags
+                         { drq_sel, intrq_sel, 6'd0 }; // status flags
 
 //----------------------------------------------------------------------------
 // The controller
 //----------------------------------------------------------------------------
 
-wire [7:0] core_dout;
-wire       drq, intrq, busy;
-wire       prepare, fmt_wp;
+wire [7:0] core_dout0, core_dout1;
+wire [31:0] sd_lba0, sd_lba1;
+wire sd_rd0, sd_rd1, sd_wr0, sd_wr1;
+wire [7:0] sd_buff_din0, sd_buff_din1;
 
 // The drive is ready once an image is mounted AND the mount-time scan of that
 // image has finished -- until then the sector table is still being built, and a
@@ -350,36 +362,51 @@ wire       prepare, fmt_wp;
 // unbootable. fmt_wp is left exported in case it should one day become a
 // default for an OSD toggle, but the byte records how the physical disk was
 // dumped, not whether the emulated drive should refuse writes.
-reg mounted      = 1'b0;
-reg scanning     = 1'b0;
-reg prepare_seen = 1'b0;
-reg wp_r         = 1'b1;
+reg [1:0] mounted         = 2'b00;
+reg [1:0] scanning        = 2'b00;
+reg [1:0] prepare_seen    = 2'b00;
+reg [1:0] wp_r            = 2'b11;
+reg [1:0] old_img_mounted = 2'b00;
+integer mount_i;
 
 always @(posedge CLKSYS) begin
-  if (img_mounted) begin
-    mounted      <= |img_size;
-    wp_r         <= img_readonly;
-    scanning     <= |img_size;
-    prepare_seen <= 1'b0;
+  if (reset) begin
+    mounted         <= 2'b00;
+    scanning        <= 2'b00;
+    prepare_seen    <= 2'b00;
+    wp_r            <= 2'b11;
+    old_img_mounted <= 2'b00;
   end
   else begin
-    if (prepare) prepare_seen <= 1'b1;
-    if (prepare_seen & ~prepare) begin
-      scanning     <= 1'b0;
-      prepare_seen <= 1'b0;
+    old_img_mounted <= img_mounted;
+    for (mount_i = 0; mount_i < 2; mount_i = mount_i + 1) begin
+      if (img_mounted[mount_i]) begin
+        mounted[mount_i]      <= |img_size;
+        scanning[mount_i]     <= |img_size;
+        prepare_seen[mount_i] <= 1'b0;
+        if (~old_img_mounted[mount_i]) wp_r[mount_i] <= img_readonly;
+      end
+      else begin
+        if ((mount_i == 0) ? prepare0 : prepare1)
+          prepare_seen[mount_i] <= 1'b1;
+        if (prepare_seen[mount_i] && ~((mount_i == 0) ? prepare0 : prepare1)) begin
+          scanning[mount_i]     <= 1'b0;
+          prepare_seen[mount_i] <= 1'b0;
+        end
+      end
     end
   end
 end
 
-wire ready = mounted & ~scanning;
-wire wp    = wp_r;
+assign ready0 = mounted[0] & ~scanning[0];
+assign ready1 = mounted[1] & ~scanning[1];
 
 // EDSK=1 compiles in the mount-time sector-table scanner, which is where the
 // .d77 parser lives -- it fills the same edsk[]/spt[] structures the EDSK parser
 // does, so the runtime path is shared. It must stay 1: with EDSK=0 there is no
 // table at all, and Verilator additionally rejects the file (`spt_addr` is
 // declared inside the generate block yet referenced outside it).
-wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793
+wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_0
 (
   .clk_sys      ( CLKSYS            ),
   .ce           ( ce_wd             ),
@@ -387,34 +414,34 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793
   // io_en is folded into acc_rd/acc_wr, which are only ever set for a selected
   // access to $fd18-$fd1b.
   .io_en        ( 1'b1              ),
-  .rd           ( acc_rd            ),
-  .wr           ( acc_wr            ),
+  .rd           ( acc_rd & drive0_sel ),
+  .wr           ( acc_wr & drive0_sel ),
   .addr         ( acc_addr          ),
   .din          ( acc_din           ),
-  .dout         ( core_dout         ),
-  .drq          ( drq               ),
-  .intrq        ( intrq             ),
-  .busy         ( busy              ),
+  .dout         ( core_dout0        ),
+  .drq          ( drq0              ),
+  .intrq        ( intrq0            ),
+  .busy         (                   ),
 
-  .wp           ( wp                ),
-  .fmt_wp       ( fmt_wp            ),
+  .wp           ( wp_r[0]           ),
+  .fmt_wp       (                   ),
   .size_code    ( 3'd1              ),  // 256-byte sectors, the FM-7 2D norm
   .layout       ( 1'b0              ),  // Track-Side-Sector
   .side         ( fdc_side          ),
-  .ready        ( ready             ),
+  .ready        ( ready0            ),
 
   // SD block interface (RWMODE 1). img_size is 20 bits in the core: 1 MB max,
   // which covers 2D (320-360 KB) and 2DD .d77 images comfortably.
-  .img_mounted  ( img_mounted       ),
+  .img_mounted  ( img_mounted[0]    ),
   .img_size     ( img_size[19:0]    ),
-  .prepare      ( prepare           ),
-  .sd_lba       ( sd_lba            ),
-  .sd_rd        ( sd_rd             ),
-  .sd_wr        ( sd_wr             ),
-  .sd_ack       ( sd_ack            ),
+  .prepare      ( prepare0          ),
+  .sd_lba       ( sd_lba0           ),
+  .sd_rd        ( sd_rd0            ),
+  .sd_wr        ( sd_wr0            ),
+  .sd_ack       ( sd_ack[0]         ),
   .sd_buff_addr ( sd_buff_addr      ),
   .sd_buff_dout ( sd_buff_dout      ),
-  .sd_buff_din  ( sd_buff_din       ),
+  .sd_buff_din  ( sd_buff_din0      ),
   .sd_buff_wr   ( sd_buff_wr        ),
 
   // RAM buffer interface: unused with RWMODE 1.
@@ -426,6 +453,60 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793
   .buff_read    (                   ),
   .buff_din     ( 8'd0              )
 );
+
+wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_1
+(
+  .clk_sys      ( CLKSYS            ),
+  .ce           ( ce_wd             ),
+  .reset        ( reset             ),
+  .io_en        ( 1'b1              ),
+  .rd           ( acc_rd & drive1_sel ),
+  .wr           ( acc_wr & drive1_sel ),
+  .addr         ( acc_addr          ),
+  .din          ( acc_din           ),
+  .dout         ( core_dout1        ),
+  .drq          ( drq1              ),
+  .intrq        ( intrq1            ),
+  .busy         (                   ),
+  .wp           ( wp_r[1]           ),
+  .fmt_wp       (                   ),
+  .size_code    ( 3'd1              ),
+  .layout       ( 1'b0              ),
+  .side         ( fdc_side          ),
+  .ready        ( ready1            ),
+  .img_mounted  ( img_mounted[1]    ),
+  .img_size     ( img_size[19:0]    ),
+  .prepare      ( prepare1          ),
+  .sd_lba       ( sd_lba1           ),
+  .sd_rd        ( sd_rd1            ),
+  .sd_wr        ( sd_wr1            ),
+  .sd_ack       ( sd_ack[1]         ),
+  .sd_buff_addr ( sd_buff_addr      ),
+  .sd_buff_dout ( sd_buff_dout      ),
+  .sd_buff_din  ( sd_buff_din1      ),
+  .sd_buff_wr   ( sd_buff_wr        ),
+  .input_active ( 1'b0              ),
+  .input_addr   ( 20'd0             ),
+  .input_data   ( 8'd0              ),
+  .input_wr     ( 1'b0              ),
+  .buff_addr    (                   ),
+  .buff_read    (                   ),
+  .buff_din     ( 8'd0              )
+);
+
+assign sd_lba[0]      = sd_lba0;
+assign sd_lba[1]      = sd_lba1;
+assign sd_rd[0]       = sd_rd0;
+assign sd_rd[1]       = sd_rd1;
+assign sd_wr[0]       = sd_wr0;
+assign sd_wr[1]       = sd_wr1;
+assign sd_buff_din[0] = sd_buff_din0;
+assign sd_buff_din[1] = sd_buff_din1;
+
+wire [7:0] core_dout = drive0_sel ? core_dout0 :
+                       drive1_sel ? core_dout1 : 8'hff;
+wire drq = drq_sel;
+wire intrq = intrq_sel;
 
 assign FD_Dout   = FD_RS[2] ? aux_dout : core_dout;
 assign FD_DRQn   = ~drq;

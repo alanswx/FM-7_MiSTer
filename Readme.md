@@ -33,6 +33,8 @@ make                     # verilator build
 ./run_tests.sh           # 8-row regression suite, compares against shots-ref/
 ./obj_dir/Vemu --headless --bootrom 0 --disk game.d77 \
     --screenshot 680 --stop-at-frame 700
+./obj_dir/Vemu --headless --disk game-a.d77 --disk1 game-b.d77 \
+    --stop-at-frame 700
 ./obj_dir/Vemu --help    # full flag list
 ```
 
