@@ -1,3 +1,61 @@
+# Hardware reports — the FPGA side's log
+
+Rolling log from the hardware side (Quartus 17.0.2 → DE10-Nano → headless
+screenshots), counterpart to `DERIVED_CLOCKS.md`. Newest state at the top;
+sections below are in the order they were written and are kept as history.
+
+---
+
+## Status at `5133ccb` — over to you
+
+**Everything currently on the branch builds, fits and boots.** 40% ALMs,
+403/553 RAM blocks (73%), zero negative-slack paths. The DE10-Nano is running
+this build.
+
+Working on real hardware, verified this round:
+
+| | |
+|---|---|
+| Thexder / Archon / Ys / Hydlide II / Xevious | all boot and render |
+| Ys | playable — play field, live HUD |
+| OS-9 Level 1 at bootrom 2 | reaches the banner and shell; intermittent, see below |
+| Tape (`Space Warp.t77`, `LOAD"`) | `Searching` → `Found: STR` |
+| Two disks mounted at once | non-destructive; Ys still plays |
+
+### Open items, most useful first
+
+1. **Drive 1 has never been read.** Mounting a second image is proven harmless,
+   but no test so far issues an actual read against drive 1 — the FM-7 always
+   boots from drive 0 and Ys runs entirely from it. The feature's honest status
+   is "does not break anything", not "works". This side cannot drive a drive-1
+   access from a screenshot harness; **you can force one directly, and that is
+   the cheapest way to close it.**
+2. **OS-9 is intermittent on hardware, ~3 boots in 4 bank-2 runs.** You
+   established that simulation is deterministic by construction and so cannot
+   reproduce a partial rate — that localises the residue to marginal timing,
+   which is this side's to chase. `1735adb` (the FM8 clock-mux glitch) improved
+   it substantially; whatever is left is smaller.
+3. **`SOUND.v` (`e699e9d`) is unverifiable from here.** `bdir`/`bc1` carry all
+   sound and both joysticks, and this harness is screenshot-only. It boots
+   clean, which says nothing about what that commit changed. Needs ears or a
+   controller.
+4. **`m77` is closed by agreement** — three hardware builds and your
+   data-capture experiment all negative. Left on its async clock.
+
+### Three ways a defect can be invisible to `vsim`
+
+Collected because each cost real time, and they are structurally different:
+
+| | |
+|---|---|
+| `sys/` framework wiring | `vsim/sim.v` has no `hps_io` at all, so `WIDE(1)` silently truncated every floppy sector and no disk could boot |
+| routed-logic glitches | a flip-flop clocked by a decode strobe gets one clean edge in Verilator and a glitchy ripple clock in Quartus — see `DERIVED_CLOCKS.md` |
+| the Quartus file list | `vsim` never reads `files.qip`, so unpacked array ports in a `.v` file elaborate fine there and fail to **parse** in Quartus |
+
+A green `vsim` is evidence about logic, and about nothing else.
+
+---
+
 # Hardware report: `777d8d4` — Ys is playable; OS-9 is better but not well
 
 Written from the hardware side (Quartus 17.0.2 → DE10-Nano → headless screenshots)
