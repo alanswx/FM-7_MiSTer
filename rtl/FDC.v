@@ -370,29 +370,26 @@ reg [1:0] old_img_mounted = 2'b00;
 integer mount_i;
 
 always @(posedge CLKSYS) begin
-  if (reset) begin
-    mounted         <= 2'b00;
-    scanning        <= 2'b00;
-    prepare_seen    <= 2'b00;
-    wp_r            <= 2'b11;
-    old_img_mounted <= 2'b00;
-  end
-  else begin
-    old_img_mounted <= img_mounted;
-    for (mount_i = 0; mount_i < 2; mount_i = mount_i + 1) begin
-      if (img_mounted[mount_i]) begin
-        mounted[mount_i]      <= |img_size;
-        scanning[mount_i]     <= |img_size;
+  // Do not gate this bookkeeping on reset. hps_io can present the mount pulse
+  // while the machine is still in its startup reset, and the wd1793 scanner
+  // intentionally accepts that pulse so it can build the D77 table. The
+  // single-drive implementation also latched the mount during reset. If this
+  // block clears its state until reset releases, the scan completes but the
+  // drive remains permanently not-ready and software falls back to cassette.
+  old_img_mounted <= img_mounted;
+  for (mount_i = 0; mount_i < 2; mount_i = mount_i + 1) begin
+    if (img_mounted[mount_i]) begin
+      mounted[mount_i]      <= |img_size;
+      scanning[mount_i]     <= |img_size;
+      prepare_seen[mount_i] <= 1'b0;
+      if (~old_img_mounted[mount_i]) wp_r[mount_i] <= img_readonly;
+    end
+    else begin
+      if ((mount_i == 0) ? prepare0 : prepare1)
+        prepare_seen[mount_i] <= 1'b1;
+      if (prepare_seen[mount_i] && ~((mount_i == 0) ? prepare0 : prepare1)) begin
+        scanning[mount_i]     <= 1'b0;
         prepare_seen[mount_i] <= 1'b0;
-        if (~old_img_mounted[mount_i]) wp_r[mount_i] <= img_readonly;
-      end
-      else begin
-        if ((mount_i == 0) ? prepare0 : prepare1)
-          prepare_seen[mount_i] <= 1'b1;
-        if (prepare_seen[mount_i] && ~((mount_i == 0) ? prepare0 : prepare1)) begin
-          scanning[mount_i]     <= 1'b0;
-          prepare_seen[mount_i] <= 1'b0;
-        end
       end
     end
   end
