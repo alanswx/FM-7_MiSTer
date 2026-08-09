@@ -3847,9 +3847,12 @@ begin
         NextState_nxt = CPUSTATE_IRQ_DONTCARE2;
         rAVMA = 1'b1;
         CpuState_nxt = CPUSTATE_IRQ_DONTCARE;
+        // The prefixed forms must be mutually exclusive.  The old second
+        // `if` overwrote SWI3 with ordinary SWI whenever InstPage2 was low,
+        // sending callers of $113F through the wrong vector.
         if (InstPage3)
             IntType_nxt = INTTYPE_SWI3;
-        if (InstPage2)
+        else if (InstPage2)
             IntType_nxt = INTTYPE_SWI2;
         else
             IntType_nxt = INTTYPE_SWI;
