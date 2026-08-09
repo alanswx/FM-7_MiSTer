@@ -107,6 +107,24 @@ x74138 m98(
   .Y7  (              )
 );
 
+`ifdef DEBUG_ACK
+reg debug_kack_d, debug_sirq_d, debug_attn_d, debug_busy_d;
+always @(KACKNGn or SIRQCLRn or ATTENTn or SBUSYSETn) begin
+  if (KACKNGn != debug_kack_d)
+    $display("SACK t=%0t addr=%04X KACKNGn=%b SEB=%b SQB=%b", $time, SADDRBUS, KACKNGn, SEB, SQB);
+  if (SIRQCLRn != debug_sirq_d)
+    $display("SACK t=%0t addr=%04X SIRQCLRn=%b SEB=%b SQB=%b", $time, SADDRBUS, SIRQCLRn, SEB, SQB);
+  if (ATTENTn != debug_attn_d)
+    $display("SACK t=%0t addr=%04X ATTENTn=%b SEB=%b SQB=%b", $time, SADDRBUS, ATTENTn, SEB, SQB);
+  if (SBUSYSETn != debug_busy_d)
+    $display("SACK t=%0t addr=%04X SBUSYSETn=%b SEB=%b SQB=%b", $time, SADDRBUS, SBUSYSETn, SEB, SQB);
+  debug_kack_d = KACKNGn;
+  debug_sirq_d = SIRQCLRn;
+  debug_attn_d = ATTENTn;
+  debug_busy_d = SBUSYSETn;
+end
+`endif
+
 wire [3:0] m95_y;
 
 x74139 m95(

@@ -141,6 +141,14 @@ ifeq ($(DEBUG_TAPE),1)
 V_DEFINE += +define+DEBUG_TAPE
 endif
 
+# `make DEBUG_ACK=1` logs every transition of the main/sub read-side-effect
+# decodes, including the bus phase. This is intentionally separate from the
+# normal trace options: the question is the shape of the decode strobe, not
+# merely which addresses software accessed.
+ifeq ($(DEBUG_ACK),1)
+V_DEFINE += +define+DEBUG_ACK
+endif
+
 UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S), Darwin)

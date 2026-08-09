@@ -84,6 +84,24 @@ x74138 x74138_m52 (
   .Y5  ( RFD05n       )
 );
 
+`ifdef DEBUG_ACK
+reg debug_rfd01_d, debug_rfd02_d, debug_rfd03_d, debug_rfd04_d;
+always @(RFD01n or RFD02n or RFD03n or RFD04n) begin
+  if (RFD01n != debug_rfd01_d)
+    $display("MACK t=%0t addr=%04X RFD01n=%b EB=%b", $time, MADDRBUS, RFD01n, E);
+  if (RFD02n != debug_rfd02_d)
+    $display("MACK t=%0t addr=%04X RFD02n=%b EB=%b", $time, MADDRBUS, RFD02n, E);
+  if (RFD03n != debug_rfd03_d)
+    $display("MACK t=%0t addr=%04X RFD03n=%b EB=%b", $time, MADDRBUS, RFD03n, E);
+  if (RFD04n != debug_rfd04_d)
+    $display("MACK t=%0t addr=%04X RFD04n=%b EB=%b", $time, MADDRBUS, RFD04n, E);
+  debug_rfd01_d = RFD01n;
+  debug_rfd02_d = RFD02n;
+  debug_rfd03_d = RFD03n;
+  debug_rfd04_d = RFD04n;
+end
+`endif
+
 // $fd37 write strobe (the multi-page register: which VRAM planes the CPU can
 // reach, and which of them are displayed).
 //

@@ -8,6 +8,7 @@ module FLAGS(
   // this module is still edge-triggered off its own strobe, as on the
   // schematic.
   input CLKSYS,
+  input SEB,
   input SRWB,
   input SCRTSWn,
   input SRESETn,
@@ -90,6 +91,8 @@ assign INS = m56_9;
 // held because the glitch on these particular decodes happened to be shorter
 // than a CLKSYS period.
 reg [2:0] scrtsw_sr, sled_sr, cancel_sr;
+reg sirqclr_d;
+reg sirqclr_ephase;
 
 always @(posedge CLKSYS) begin
   scrtsw_sr <= { scrtsw_sr[1:0], SCRTSWn };
@@ -105,12 +108,18 @@ always @(posedge CLKSYS) begin
   end
 end
 
-// m45 keeps its original semantics exactly: the clear is level-sensitive on
-// (reset OR the sub's $d402 cancel-acknowledge) and dominates, and CANCELn's
-// rising edge sets. Only the clocking changes.
+// m45 keeps its original semantics exactly: reset or the sub's $d402
+// cancel-acknowledge clears it, and CANCELn's rising edge sets it. The
+// acknowledge is not level-sensitive, however: one sub-CPU read produces a Q
+// pulse followed by an E pulse, and the CPU latches on the E phase. Remember
+// which SIRQCLRn pulse is the E-phase one and clear at that pulse's close.
 always @(posedge CLKSYS) begin
   cancel_sr <= { cancel_sr[1:0], CANCELn };
-  if (~(SRESETn & SIRQCLRn))              m45 <= 1'b0;
+  sirqclr_d <= SIRQCLRn;
+  if (sirqclr_d & ~SIRQCLRn) sirqclr_ephase <= SEB;
+  if (~SRESETn)                          m45 <= 1'b0;
+  else if (~sirqclr_d & SIRQCLRn & sirqclr_ephase)
+                                           m45 <= 1'b0;
   else if (~cancel_sr[2] & cancel_sr[1])  m45 <= 1'b1;
 end
 

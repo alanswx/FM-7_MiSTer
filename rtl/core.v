@@ -505,6 +505,7 @@ SCPU u_SCPU(
 
 FLAGS u_FLAGS(
   .CLKSYS      ( CLKSYS      ),
+  .SEB         ( SEB         ),
   .SRWB        ( SRWB        ),
   .SCRTSWn     ( SCRTSWn     ),
   // Was tied to 1'b0, which holds THREE of FLAGS' flip-flops permanently in
@@ -768,6 +769,8 @@ KEYBOARD KEYBOARD(
   .KACKNGn    ( KACKNGn      ),
   .RFD00n     ( RFD00n       ),
   .RFD01n     ( RFD01n       ),
+  .EB         ( EB           ),
+  .SEB        ( SEB          ),
   .SCLK2      ( SCLK2        ),
   .WFD02n     ( WFD02n       ),
   .KSTROBEn   ( KSTROBEn     ),

@@ -428,7 +428,14 @@ always @(posedge clk_sys) begin
 				end
 			STATE_SEARCH_1:
 				begin
+					// Type-II reads locate a sector under the current head, but the
+					// ID cylinder must still agree with the WD track register.  The
+					// reference FDC checks C unconditionally and only makes H
+					// conditional on the command's side-compare bit.  Omitting C
+					// makes a stale track register read whatever sector number happens
+					// to be under the head; Daisenryaku uses that case deliberately.
 					if(rw_type & (edsk_track == disk_track) &
+									(edsk_trackf == wdreg_track) &
 									 (edsk_side == side) &
 									 (format | (edsk_sector == wdreg_sector))) begin
 						// LOCAL ADDITION (FM-7_MiSTer): a .d77 records whether the
@@ -790,7 +797,14 @@ always @(posedge clk_sys) begin
 `endif
 				end
 				A_SECTOR: begin
-					if (!s_busy) {ra_sector, wdreg_sector} <= {din,din};
+					// Software commonly primes the sector register while a
+					// RESTORE/SEEK/STEP command is busy, then starts the read
+					// command after the head settles.  The WD179x keeps the
+					// register write in that interval; only data-transfer
+					// commands must reject a write that would change the
+					// address of an operation already in progress.
+					if (!s_busy || (state == STATE_WAIT) || (state == STATE_WAIT_2))
+						{ra_sector, wdreg_sector} <= {din,din};
 `ifdef DEBUG_FDC_SCAN
 					else $display("WDDROP SECTOR <- $%02x while BUSY (kept $%02x)", din, wdreg_sector);
 `endif

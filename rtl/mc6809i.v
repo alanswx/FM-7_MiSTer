@@ -235,9 +235,11 @@ reg     InstPage3_nxt;
 reg     [7:0]        Inst1;
 reg     [7:0]        Inst2;
 reg     [7:0]        Inst3;
+reg     [7:0]        InstRaw1;
 reg     [7:0]        Inst1_nxt;
 reg     [7:0]        Inst2_nxt;
 reg     [7:0]        Inst3_nxt;
+reg     [7:0]        InstRaw1_nxt;
 
 
 localparam CPUSTATE_RESET      =  7'd0;
@@ -424,6 +426,11 @@ begin
 
     topnyb = i[7:4];
     btmnyb = i[3:0];
+
+    // $4e is the adjacent CLRA decode. The carry-dependent aliases retain
+    // their normal addressing class and are resolved using InstRaw1 below.
+    if (i == 8'h4e)
+        newinst = 8'h4f;
 
     if ( (topnyb == 4'H0) ||
          (topnyb == 4'H4) ||
@@ -627,6 +634,7 @@ begin
         Inst1 <= Inst1_nxt;
         Inst2 <= Inst2_nxt;
         Inst3 <= Inst3_nxt;
+        InstRaw1 <= InstRaw1_nxt;
         NMIClear <= NMIClear_nxt;
 
         IntType <= IntType_nxt;
@@ -1708,6 +1716,7 @@ begin
     Inst1_nxt  =  Inst1;
     Inst2_nxt  =  Inst2;
     Inst3_nxt  =  Inst3;
+    InstRaw1_nxt = InstRaw1;
     InstPage2_nxt  =  InstPage2;
     InstPage3_nxt  =  InstPage3;
 
@@ -1784,6 +1793,7 @@ begin
             addr_nxt       =  pc;   // Set the address bus for the next instruction, first byte
             pc_nxt =  pc_p1;
             RnWOut =  1;            // Set for a READ
+            InstRaw1_nxt = D;
             Inst1_nxt  =  MappedInstruction;
             InstPage2_nxt  =  0;
             InstPage3_nxt  =  0;
@@ -1834,6 +1844,7 @@ begin
         addr_nxt   =  pc;            // Set the address bus for the next instruction, first byte
         pc_nxt     =  pc_p1;
         RnWOut     =  1;            // Set for a READ
+        InstRaw1_nxt = D;
         Inst1_nxt  =  MappedInstruction;
 
         if (Inst1_nxt == 8'H10)         // Page 2  Note, like the 6809, $10 $10 $10 $10 has the same effect as a single $10.
@@ -1983,7 +1994,10 @@ begin
                     end
                     else
                     begin
-                        ALU_OP =  ALU8Op;
+                        if ((InstRaw1 == 8'h42) || (InstRaw1 == 8'h52))
+                            ALU_OP = cc[CC_C_BIT] ? ALUOP_COM : ALUOP_NEG;
+                        else
+                            ALU_OP = ALU8Op;
                         if (IsTargetRegA)
                             ALU_A  =  a;
                         else
@@ -2664,7 +2678,10 @@ begin
             // cycle where the 6809 likely did the operation.  We'll include a /VMA cycle for accuracy, but we'll do the work primarily in the first cycle.
             addr_nxt       =  ea;
 
-            ALU_OP =  ALU8Op;
+            if (InstRaw1 == 8'h02)
+                ALU_OP = cc[CC_C_BIT] ? ALUOP_COM : ALUOP_NEG;
+            else
+                ALU_OP = ALU8Op;
             ALU_A  =  D[7:0];
             ALU_CC =  cc;
             tmp_nxt[15:8] = cc;  // for debug only
@@ -4153,4 +4170,3 @@ begin
 end
 
 endmodule
-

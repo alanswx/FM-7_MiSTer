@@ -105,9 +105,55 @@ always @(posedge CLKSYS) begin
 end
 ```
 
-**Unaudited:** `$fd00`/`$fd01` (keyboard acknowledge) and every sub-side `SRDQEn` read decode
-(`SCPU.v:36`: `assign SRDQEn = ~((Q|E) & RnW);` — the same shape, so the same two-strobe
-behaviour). Audit any read-clear register on either bus before trusting it.
+Main `$fd01`, sub `$d401`, and sub `$d402` reads were measured as two decode
+strobes; `KEYBOARD.v` and `FLAGS.v` now acknowledge them only at the close of
+the E-phase pulse. The sub `$d402` measurement was made on 1942: Q opened with
+`SEB=0/SQB=1`, then E opened with `SEB=1/SQB=0`. The sub-side `$d40a` BUSY
+handshake uses `SBUSYSETn` from the overlap-qualified `SQANDEn` decode and was
+measured as a single pulse in simulation.
+
+The `$d404` read itself was then measured on OS-9 and 1942 as the same split Q/E
+shape. `TIMER.v` sets `attn_pend` on the trailing edge of `ATTENTn`; both pulse
+closes therefore set the same latch, and there is no lost acknowledge analogous
+to the read-clear paths above. It needs no RTL change.
+
+### FDC seek-time sector priming
+
+Wizardry, Wizardry II, and Wizardry III share a boot loader that writes the
+next sector number while a `$fd18=$1a` RESTORE/SEEK/STEP command is still busy,
+then starts a `$fd18=$80` read. The WD179x retains that sector-register write;
+dropping it makes the following read use the old sector number. `wd1793.sv`
+therefore accepts `$fd1a` writes during those seek/step states, while still
+rejecting sector changes during an active data-transfer command. This fixes all
+three Wizardry images in simulation without changing the normal eight-case
+regression.
+
+### Daisenryaku FM page-zero path
+
+Daisenryaku's apparent `$009f FCB $05` failure was an FDC ID-match bug. The RTL
+matched the physical head track and sector but ignored the D77 ID cylinder
+versus the WD1793 track register. The game leaves the register at 0 while the
+head is physically at track 4; 77AVEMU therefore reports the read as missing,
+restores, and reads track 0 / sector 11. The RTL now checks the ID cylinder
+unconditionally, and its command stream matches the reference through the
+subsequent track loads. The core reaches the Japanese Daisenryaku title screen
+at frame 621. The narrow `$02`/`$42`/`$52` carry-dependent aliases and `$4e`
+CLRA correction in `mc6809i.v` remain covered by the local 77AVEMU comparison.
+With the exact FM-7 ROMs, the first BIOS divergence against 77AVEMU is still
+`$fd05`: 77AVEMU reads `$fe` (BUSY asserted after reset), while this core reads
+`$7e`. Forcing the core BUSY bit high changes boot timing but is not required for
+the title fix.
+
+The supplied sibling `refs/TOWNSEMU` now satisfies 77AVEMU's build contract.
+Its native CUI frontend needs a display, so a small headless driver was used.
+The native-BUSY reference reaches the same loader and later FDC sequence when
+the exact FM-7 ROMs and disk are used. Return and Space reach the keyboard latch
+without affecting the boot path, and the DOS boot-ROM selections do not mount
+this FM-7 disk.
+
+Any other read-clear register driven directly from the sub-side read decode
+(`SCPU.v:36`: `assign SRDQEn = ~((Q|E) & RnW);`) still needs the same audit before
+being trusted.
 
 **Related qualifier hazard:** two early bugs (P0-1, P0-4) were the same fault on the two CPUs — an
 I/O read strobe qualified by `E` alone, which collapses at the exact edge `mc6809i` latches the

@@ -28,24 +28,44 @@ to convert it all failed (0/8) and a sim experiment showed all four candidate
 designs capture identical values at identical times — see `docs/REFERENCE.md`.
 Leave it async unless there is new evidence.
 
+Hardware-side update (2026-08-08): `alanswx/fdc-d77-support` reported that
+`1735adb` fixes an intermittent power-on clock-mux glitch in `CLKCTRL.v` by
+giving `switch` a defined startup value and sampling `SW2` on `CLKSYS`. It is
+integrated locally. The full simulation regression still passes; the reference
+counters moved by the expected startup timing shift, and only the fixed-frame
+Thexder title-reveal screenshot changed, so the references were re-blessed.
+
 ---
 
-## Next: audit the rest of the read-acknowledge registers
+## Next: CHAN.POP and the remaining blank-screen triage
 
-`$fd03` and `$fd04` both had the same bug — a read-clear register acknowledged on
-the wrong one of the two strobes every `$fdxx` read produces. The mechanism is in
-`docs/REFERENCE.md` and it is not specific to those two addresses.
+The read-acknowledge audit is complete for the currently identified paths:
+`$fd01`, `$fd03`, `$fd04`, `$d401`, and `$d402` now acknowledge at the E-phase
+close; `$d40a` is a single overlap-qualified pulse. `$d404` is split Q/E, but
+its effect only sets the attention latch, so both pulse closes are harmless.
 
-**Unaudited candidates:**
+Daisenryaku's first divergence is now captured and fixed. The FDC was matching
+only the physical head track and requested sector; it ignored the D77 ID
+cylinder versus the WD1793 track register. Daisenryaku deliberately leaves the
+track register at 0 while the head is at track 4, so 77AVEMU rejects that read
+and falls back to track 0 / sector 11. The RTL incorrectly accepted track 4 /
+sector 11 and entered the page-zero `$009f FCB $05` path. `wd1793.sv` now checks
+the ID cylinder unconditionally, matching 77AVEMU. The core's FDC command stream
+then follows the reference through the later track loads and reaches the
+Daisenryaku title screen at frame 621. The supplied sibling `refs/TOWNSEMU` now
+satisfies 77AVEMU's build contract. With the exact FM-7 ROMs, the first BIOS
+divergence is still `$fd05`: 77AVEMU reads `$fe` (BUSY asserted after reset),
+while this core reads `$7e`; forcing BUSY high changes timing but is not needed
+for the title fix. Hardware confirmation remains useful. Return and Space reach
+the keyboard latch, and the DOS boot-ROM selections do not mount this FM-7 disk.
 
-- `$fd00` / `$fd01` — keyboard acknowledge (`KACKNGn`, `RFD01n`).
-- The **sub-side** `SRDQEn` decodes in `SDECODE.v`. `SRDQEn` is built the same
-  way as `RDQEn`, so the sub's read-clear registers are exposed to the identical
-  split-strobe problem. `$d404`/`$d40a` are the interesting ones.
-
-Both were invisible until measured; neither shows up in the regression suite.
-Probe the strobe shape first (`$display` on every transition with `EB`), then
-fix — do not reason ahead of the waveform.
+Resolved in simulation: the shared boot loader seeks with `$fd18=$1a`, writes
+the next sector number while the seek is busy, then starts a `$fd18=$80` read.
+The controller was dropping that sector-register write, so it read sector 1
+instead of sector 13 and eventually executed into the `$fdxx` window. Sector
+register writes are now retained during RESTORE/SEEK/STEP busy states. All
+three Wizardry images reach RAM-resident code without runaway; the normal
+eight-case regression remains reference-clean.
 
 ---
 
@@ -58,15 +78,18 @@ Penguin-kun Wars fell out of it. Rebuild the list from
 `vsim/sweep/results-P4-19-f1500.tsv` using the exclusion rules in
 `docs/TESTING.md` before chasing anything.
 
-Known-broken, cause identified, not fixed:
+CHAN.POP now has two concrete simulator fixes: `t77_decode.v` was starting two
+bytes early and decoding each T77 pair as a bit-7 level plus a 15-bit duration;
+it also waited for SDRAM after every segment, stretching each level. 77AVEMU
+uses the first byte as a `< $40` level and the second byte as the 8-bit duration,
+with `7f ff` as low silence. The decoder now prefetches the next segment and
+matches the first 24 entries byte-for-byte. A reduced-image run reaches
+`Found` and `Loading GAME IPL`; the full-image title run remains to be captured.
 
-- **Wizardry / II / III** — `RUNAWAY-INTO-IO` in every sweep, before and after
-  the interrupt fixes. Main CPU leaves its program. Same class as P4-15 but not
-  the same cause.
-- **Daisenryaku FM** — main CPU runs into page zero and dies on an illegal
-  opcode at frame 143 (`$009f FCB $05`). A/B-confirmed as pre-existing: identical
-  before and after the interrupt fixes.
-- **CHAN.POP** — loads further than it used to, then runs off into low memory.
+Remaining validation:
+
+- **CHAN.POP** — rerun the full load/title path with an emulated-time-aligned
+  77AVEMU comparison after the T77 decoder fix.
 
 ### Ys
 

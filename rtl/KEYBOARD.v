@@ -10,6 +10,8 @@ module KEYBOARD(
   input KACKNGn,
   input RFD00n,
   input RFD01n,
+  input EB,
+  input SEB,
   input SCLK2,
   input WFD02n,
   output KSTROBEn,
@@ -558,8 +560,6 @@ always @(posedge WFD02n, posedge s0) begin
 	end
 end
 
-wire clr = ~(RESETBn & RFD01n & KACKNGn);
-
 // "A code is waiting", driven by a real keystroke rather than by
 // `posedge press_btn`.
 //
@@ -580,9 +580,24 @@ reg key_stb;
 always @(posedge CLKSYS)
   key_stb <= input_strobe & press_btn & ~is_modifier;
 
+// One main-CPU or sub-CPU read produces two decode strobes: a Q-phase pulse
+// followed by the E-phase pulse where the 6809 actually latches the data. The
+// old level clear acknowledged either keyboard read during the Q pulse. That
+// made the interrupt disappear before the read had completed and, more
+// importantly, made this read-clear side effect depend on the wrong half of
+// the bus cycle. Remember which pulse is the E-phase one and clear at its
+// close, matching CLKCTRL.v/TIMER.v's $fd03/$fd04 acknowledge idiom.
+reg rfd01_d, kack_d, rfd01_ephase, kack_ephase;
 always @(posedge CLKSYS) begin
-  if (key_stb)  m132 <= 1'b1;
-  else if (clr) m132 <= 1'b0;
+  rfd01_d <= RFD01n;
+  kack_d <= KACKNGn;
+  if (rfd01_d & ~RFD01n) rfd01_ephase <= EB;
+  if (kack_d & ~KACKNGn) kack_ephase <= SEB;
+  if (~RESETBn) m132 <= 1'b0;
+  else if (key_stb) m132 <= 1'b1;
+  else if ((~rfd01_d & RFD01n & rfd01_ephase) ||
+           (~kack_d & KACKNGn & kack_ephase))
+    m132 <= 1'b0;
 end
 
 assign KSTROBEn = ~(m132 & ~m77[0]);
