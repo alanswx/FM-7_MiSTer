@@ -9,19 +9,26 @@ module SMEM(
   input SWTQEn,
   input SRDQEn,
   input SROMSELn,
-  input SROMDn
+  input SROMDn,
+  input machine_av,
+  input [1:0] submon_sel
 );
 
 wire [7:0] m153_q;
 wire [7:0] m154_q;
 wire [7:0] m141_q;
 wire [7:0] m123_q;
+wire [7:0] av_sub_a_q;
+wire [7:0] av_sub_b_q;
+wire [7:0] monitor_q = !machine_av ? m154_q :
+                        (submon_sel == 2'd1) ? av_sub_a_q :
+                        (submon_sel == 2'd2) ? av_sub_b_q : m154_q;
 
 assign SDATABUS_out =
   ~SRAM1CSn ? m141_q :
   ~SRAM2CSn ? m123_q :
   ~SROMDn   ? m153_q :
-  ~SROMSELn ? m154_q : 8'h00;
+  ~SROMSELn ? monitor_q : 8'h00;
 
 ram #(11,8) m141(
   .clk  ( CLKSYS         ),
@@ -55,6 +62,20 @@ rom #("./roms/subsys_m154.rom.mem", 13, 8) m154(
   .addr ( SADDRBUS[12:0] ),
   .dout ( m154_q         ),
   .ce_n ( SROMSELn       )
+);
+
+rom #("./roms/fm77av_subsys_a.rom.mem", 13, 8) av_sub_a(
+  .clk  ( CLKSYS          ),
+  .addr ( SADDRBUS[12:0]  ),
+  .dout ( av_sub_a_q      ),
+  .ce_n ( SROMSELn        )
+);
+
+rom #("./roms/fm77av_subsys_b.rom.mem", 13, 8) av_sub_b(
+  .clk  ( CLKSYS          ),
+  .addr ( SADDRBUS[12:0]  ),
+  .dout ( av_sub_b_q      ),
+  .ce_n ( SROMSELn        )
 );
 
 

@@ -143,11 +143,14 @@ highest title-count-per-effort item after the register audit.
 The OSD and simulator now have a machine-family selector. The initiator overlay
 is mapped at `$6000-$7FFF` (and supplies `$FFFE-$FFFF`), AV F-BASIC is mapped at
 `$8000-$FBFF`, and `AVMEM.v` now models writable boot RAM, `$FD80-$FD93`
-MMR/TWR registers, and the 256 KB physical main-memory map. `make avmem-test`
-covers identity RAM, bank translation, TWR, boot seeding, and boot-RAM writes.
+MMR/TWR registers, and the 256 KB physical main-memory map. The `$FD13`
+sub-monitor selector now switches the secondary CPU's `$E000-$FFFF` window
+between the Type C, A, and B monitor images. `make avmem-test` covers identity
+RAM, bank translation, TWR, boot seeding, boot-RAM writes, and monitor select.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: connect the AV sub-ROM/VRAM aperture, then implement
-the AV display modes, keyboard encoder, and YM2203 paths behind the same family
-signal. Research and reference addresses are in `docs/FM77AV.md`.
+Next, in hardware order: connect the AV sub-ROM's font/VRAM aperture and make
+`$FD13` reset the sub CPU, then implement the AV display modes, keyboard
+encoder, and YM2203 paths behind the same family signal. Research and reference
+addresses are in `docs/FM77AV.md`.

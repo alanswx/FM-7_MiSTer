@@ -18,10 +18,12 @@ module AVMEM(
   output [7:0] DOUT,
   output reg [7:0] IODOUT,
   output       IOSEL,
-  output       TWRSEL
+  output       TWRSEL,
+  output [1:0] SUBMON_SEL
 );
 
 wire io_sel = machine_av && (MADDRBUS >= 16'hfd80) && (MADDRBUS <= 16'hfd93);
+wire submon_io_sel = machine_av && (MADDRBUS == 16'hfd13);
 assign IOSEL = io_sel;
 
 wire bootram_sel = machine_av &&
@@ -36,6 +38,8 @@ reg [7:0] twr_address;
 reg       mmr_enable;
 reg       twr_enable;
 reg       bootram_write_enable;
+reg [1:0] submon_sel;
+assign SUBMON_SEL = submon_sel;
 
 wire twr_sel = machine_av && twr_enable &&
                (MADDRBUS >= 16'h7c00) && (MADDRBUS < 16'h8000);
@@ -48,7 +52,7 @@ wire fbasic_sel = machine_av && (MADDRBUS >= 16'h8000) &&
 
 wire av_write = machine_av && ~WTQEn;
 wire bootram_write = av_write && bootram_sel && bootram_write_enable;
-wire mmr_write = av_write && io_sel;
+wire mmr_write = av_write && (io_sel || submon_io_sel);
 
 // TWR maps the 1 KB window at $7c00-$7fff into page zero. MMR is checked only
 // below $fc00; the entire $fc00-$ffff range stays on the physical FM77AV page.
@@ -103,6 +107,7 @@ always @(posedge CLKSYS) begin
     mmr_enable          <= 1'b0;
     twr_enable          <= 1'b0;
     bootram_write_enable <= 1'b0;
+    submon_sel          <= 2'd0; // Type C monitor
     mmr[0][0] <= 6'd0; mmr[0][1] <= 6'd0; mmr[0][2] <= 6'd0; mmr[0][3] <= 6'd0;
     mmr[0][4] <= 6'd0; mmr[0][5] <= 6'd0; mmr[0][6] <= 6'd0; mmr[0][7] <= 6'd0;
     mmr[0][8] <= 6'd0; mmr[0][9] <= 6'd0; mmr[0][10] <= 6'd0; mmr[0][11] <= 6'd0;
@@ -133,6 +138,15 @@ always @(posedge CLKSYS) begin
         mmr_enable           <= DIN[7];
         twr_enable           <= DIN[6];
         bootram_write_enable <= DIN[0];
+      end
+      8'h13: begin
+        // 0=C, 1=A, 2=B, 4=RAM on AV40. The base AV has no RAM monitor
+        // bank, so retain Type C for unsupported values.
+        case (DIN[2:0])
+          3'd1: submon_sel <= 2'd1;
+          3'd2: submon_sel <= 2'd2;
+          default: submon_sel <= 2'd0;
+        endcase
       end
       default: ;
     endcase

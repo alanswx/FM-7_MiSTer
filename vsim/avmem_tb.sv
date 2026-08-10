@@ -16,12 +16,14 @@ module avmem_tb;
   wire [7:0] iodout;
   wire       iosel;
   wire       twrsel;
+  wire [1:0] submon_sel;
 
   AVMEM dut(
     .CLKSYS(clk), .RESETBn(resetn), .machine_av(machine_av),
     .bootrom_sel(bootrom_sel), .MADDRBUS(addr), .DIN(din),
     .RWBn(rwb_n), .WTQEn(wtq_en), .RDQEn(rdq_en),
-    .DOUT(dout), .IODOUT(iodout), .IOSEL(iosel), .TWRSEL(twrsel)
+    .DOUT(dout), .IODOUT(iodout), .IOSEL(iosel), .TWRSEL(twrsel),
+    .SUBMON_SEL(submon_sel)
   );
 
   task write_bus(input [15:0] a, input [7:0] d);
@@ -87,6 +89,15 @@ module avmem_tb;
     write_bus(16'hfe00, 8'hab);
     read_bus(16'hfe00, value);
     check_value(value, 8'hab, "writable boot RAM");
+
+    // The AV sub-monitor bank is selected from the main CPU side and is
+    // consumed by SMEM for the secondary CPU's $E000-$FFFF window.
+    write_bus(16'hfd13, 8'h01);
+    check_value({6'd0, submon_sel}, 8'h01, "sub-monitor A select");
+    write_bus(16'hfd13, 8'h02);
+    check_value({6'd0, submon_sel}, 8'h02, "sub-monitor B select");
+    write_bus(16'hfd13, 8'h00);
+    check_value({6'd0, submon_sel}, 8'h00, "sub-monitor C select");
 
     $display("AVMEM TEST PASS");
     $finish;

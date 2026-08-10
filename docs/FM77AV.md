@@ -7,8 +7,11 @@ main-memory front end are wired. The front end includes reset-seeded writable
 boot RAM, MMR/TWR registers, and the 256 KB physical map. Changing family
 forces a full reset, and selecting
 FM77AV holds the current FM-7 execution backend in reset. This is deliberate:
-the core must not silently run FM-7 hardware under an FM77AV label. This file preserves the hardware
-research from a longer planning document (deleted; see git history for `FM77AV_PLAN.md`).
+the core must not silently run FM-7 hardware under an FM77AV label. The AV
+`$FD13` sub-monitor selector is also wired to the secondary CPU's A/B/C ROM
+window, but sub-CPU reset-on-write, font banking, and VRAM remain unfinished.
+This file preserves the hardware research from a longer planning document
+(deleted; see git history for `FM77AV_PLAN.md`).
 Claims are cited file:line against the reference emulators in `refs/`; anything marked
 **unverified** was not checked against a reference and may be inference. See
 `docs/REFERENCE.md` for the reference emulators and `docs/IO_MAP.md` for the FM-7 I/O map.

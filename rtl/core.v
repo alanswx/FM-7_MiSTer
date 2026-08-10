@@ -44,6 +44,7 @@ wire [7:0] AVMEM_dout;
 wire [7:0] AVIO_dout;
 wire       AVIO_sel;
 wire       AVTWR_sel;
+wire [1:0] AV_SUBMON_SEL;
 wire [7:0] MAINRAM_dout = machine_av ? AVMEM_dout : MRAM_dout;
 wire [7:0] TIMER_out;
 wire [7:0] CLKCTRL_out;
@@ -358,7 +359,8 @@ AVMEM u_AVMEM(
   .DOUT        ( AVMEM_dout   ),
   .IODOUT      ( AVIO_dout    ),
   .IOSEL       ( AVIO_sel     ),
-  .TWRSEL      ( AVTWR_sel    )
+  .TWRSEL      ( AVTWR_sel    ),
+  .SUBMON_SEL  ( AV_SUBMON_SEL )
 );
 
 // RDQEn, not RDEn, gates the I/O read decoder.
@@ -633,7 +635,9 @@ SMEM u_SMEM(
   .SWTQEn       ( SWTQEn       ),
   .SRDQEn       ( SRDQEn       ),
   .SROMSELn     ( SROMSELn     ),
-  .SROMDn       ( SROMDn       )
+  .SROMDn       ( SROMDn       ),
+  .machine_av   ( machine_av   ),
+  .submon_sel   ( AV_SUBMON_SEL )
 );
 
 // shared RAM
