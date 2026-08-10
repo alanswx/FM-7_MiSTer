@@ -138,8 +138,15 @@ highest title-count-per-effort item after the register audit.
 
 ---
 
-## Not started
+## FM77AV bring-up
 
-**FM77AV** as an OSD option. Hardware research is in `docs/FM77AV.md`; no
-implementation work has begun. Worth doing on a confirmed FM-7 interrupt path
-rather than an unconfirmed one, so it sits behind the hardware results above.
+The OSD and simulator now have a machine-family selector. The first AV ROM
+slice is wired and verified against `refs/fm77av.zip`: the initiator overlay is
+mapped at `$6000-$7FFF` (and supplies `$FFFE-$FFFF`), and AV F-BASIC is mapped
+at `$8000-$FBFF`. Selecting FM77AV still holds execution in reset until the
+remaining AV backend is present.
+
+Next, in hardware order: seed writable boot RAM from `initiate.rom`, implement
+the `$FD80-$FD93` MMR/TWR registers and 256 KB physical main-memory map, then
+move the AV sub-ROM, video, keyboard, and YM2203 paths behind the same family
+signal. Research and reference addresses are in `docs/FM77AV.md`.

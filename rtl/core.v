@@ -323,7 +323,8 @@ ROMS u_ROMS(
   .SUBSELn  ( SUBSELn     ),
   .MIOSn    ( MIOSn       ),
   .RAM1HB1n ( RAM1HB1n    ),
-  .SW2      ( bootrom_sel )
+  .SW2      ( bootrom_sel ),
+  .machine_av ( machine_av )
 );
 
 MRAM u_MRAM(

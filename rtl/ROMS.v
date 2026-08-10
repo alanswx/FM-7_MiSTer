@@ -14,7 +14,8 @@ module ROMS (
   output SUBSELn,
   output MIOSn,
   output RAM1HB1n,
-  input [1:0] SW2
+  input [1:0] SW2,
+  input machine_av
 );
 
 assign FCXXn = ~&MADDRBUS[15:10];
@@ -24,6 +25,16 @@ reg ff_q;
 wire [3:0] m139_q;
 wire [7:0] m151_q;
 wire [7:0] m152_bank_q;
+wire [7:0] av_initiate_q;
+wire [7:0] av_fbasic_q;
+
+// FM77AV reset overlays. The initiator is visible at $6000-$7fff and the AV
+// F-BASIC ROM follows at $8000-$fbff. $fc00-$ffff remains the live machine I/O
+// and RAM window; boot RAM/MMR will be added by the AV memory backend.
+wire av_initiate_sel = machine_av &&
+                       (((MADDRBUS >= 16'h6000) && (MADDRBUS < 16'h8000)) ||
+                        (MADDRBUS >= 16'hfffe));
+wire av_fbasic_sel   = machine_av && (MADDRBUS >= 16'h8000) && FCXXn;
 
 // Boot ROM select. M152 is a single 2 KB chip holding FOUR 512-byte banks, and
 // the OSD's four settings are exactly those banks -- see TODO.md P3-6b. MAME
@@ -41,7 +52,10 @@ wire [7:0] m152_bank_q;
 // bank of the real chip carries RESET=$fe00, so nothing needs forcing now.
 wire [7:0] m152_q = m152_bank_q;
 
-assign ROMDATA = m151_q | m152_q;
+assign ROMDATA = machine_av ?
+                 (av_initiate_sel ? av_initiate_q :
+                  av_fbasic_sel   ? av_fbasic_q   : 8'h00) :
+                 (m151_q | m152_q);
 
 wire m107_q  = ~(MADDRBUS[15] & FCXXn & ff_q);
 wire m120_q  = ~|SW2;
@@ -53,9 +67,9 @@ wire m139_rdy_n;
 
 assign SUBSELn  = FCXXn ? 1'b1 : m139_q[0];
 assign MIOSn    = FCXXn ? 1'b1 : m139_q[1];
-assign BTROMn   = FCXXn ? 1'b1 : m139_q[2];
+assign BTROMn   = machine_av ? 1'b1 : (FCXXn ? 1'b1 : m139_q[2]);
 assign RAM1HB1n = FCXXn ? 1'b1 : m139_q[3];
-assign RAM1HB2n = m107_q;
+assign RAM1HB2n = machine_av ? ~(av_initiate_sel | av_fbasic_sel) : m107_q;
 
 // The boot-ROM/RAM switch at $fd0f: reading it maps the F-BASIC ROM at
 // $8000-$fbff, writing it maps RAM there. CSP describes exactly that
@@ -111,6 +125,22 @@ rom #("./roms/TL11_11_M152.rom.mem", 11, 8) m152(
   .addr ( {SW2, MADDRBUS[8:0]} ),
   .dout ( m152_bank_q          ),
   .ce_n ( m131_q1 | m131_q2    )
+);
+
+rom #("./roms/fm77av_initiate.rom.mem", 13, 8) av_initiate(
+  .clk  ( CLKSYS            ),
+  // The same 8 KB image supplies both the $6000 overlay and the reset-vector
+  // bytes at $fffe/$ffff (offset $1ffe/$1fff).
+  .addr ( MADDRBUS[12:0]    ),
+  .dout ( av_initiate_q     ),
+  .ce_n ( ~av_initiate_sel  )
+);
+
+rom #("./roms/fm77av_fbasic30.rom.mem", 15, 8) av_fbasic(
+  .clk  ( CLKSYS          ),
+  .addr ( MADDRBUS[14:0]  ),
+  .dout ( av_fbasic_q     ),
+  .ce_n ( ~av_fbasic_sel  )
 );
 
 endmodule
