@@ -82,6 +82,10 @@ list from `vsim/sweep/results.tsv` using the exclusion rules in
 `docs/TESTING.md` before chasing anything. The first primary-disk checks are
 Soukoban 2 and Hokuto no Ken (Disk 1); most of the low-rate and fallback rows
 are secondary disks, known-bad dumps, or programs requiring a `RUN` command.
+Soukoban 2 has now been promoted out of this queue: the checked-in D77 reaches
+its title/menu screen at frame 1500 and waits for keyboard input.
+Hokuto no Ken (Disk 1) likewise reaches its title/menu screen at frame 1500
+(`HIT 1-3 KEY`); its earlier partial-render classification was also loader-time.
 
 CHAN.POP now has two concrete simulator fixes: `t77_decode.v` was starting two
 bytes early and decoding each T77 pair as a bit-7 level plus a 15-bit duration;
