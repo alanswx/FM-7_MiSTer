@@ -520,3 +520,67 @@ map — `--key '700:files"1:"'` types `files"1`, losing the colon and the closin
 quote — so the sequence above was driven with raw scancodes. The argument parser
 is fine (`strchr` takes the first colon and passes the rest intact); it is the
 text-to-scancode table that is lossy.
+
+
+---
+
+# OS-9: my earlier boot rates were unsound, and the real picture is worse
+
+## The HDMI capture card changes what this side can verify
+
+The MiSTer's own screenshots composite the core video *before* the OSD overlay,
+so the OSD has been invisible to this side all along and every boot-ROM change
+was made by counting keypresses blind. A capture card on the HDMI output
+(`/dev/video4`) shows the overlay directly:
+
+```
+ffmpeg -f v4l2 -i /dev/video4 -vf "select=gte(n\,40)" -frames:v 1 out.png
+```
+
+The `select` matters — the card emits black until it syncs, which reads as
+"nothing on screen" and is how this looked like a dead end the first time.
+
+Two things fell out immediately:
+
+- **The menu had shifted.** `Mount Disk 2` added a row, so the long-standing
+  "down ×4 to Boot ROM" was landing one item short. Any hardcoded menu position
+  is invalidated by a `CONF_STR` change.
+- **Batched keys get dropped.** Sending the whole navigation in one websocket
+  session loses presses; one key per session with a pause is reliable. That,
+  not menu position, is what made selection look like a 1-in-3 lottery.
+
+`scratchpad/os9run.sh` now navigates, **captures the OSD, and asserts `Boot ROM:
+2 dos-a` is on screen** before proceeding. Every number below is from a run
+where bank 2 was confirmed visually.
+
+## The correction
+
+**Every OS-9 boot rate this side has reported was measured without verifying the
+boot ROM was actually set.** Bank-2-ness was inferred from the screenshot being
+a banner — which is circular, since only bank 2 can produce one. Non-banner runs
+were scored as failures without establishing they were even bank 2. Treat
+"1 in 14", "4 in 12" and "~3 boots in 4 bank-2 runs" as unsound.
+
+With verification, on the current head:
+
+| build | verified bank-2 runs | banners | what the stall shows |
+|---|---|---|---|
+| `5133ccb` | 3 | **0** | blank, 2653–3309 bytes |
+| `+ a19228b` (m46) | 5 | **0** | `Kernel Started` / `Module Loading Completed`, 3665–3712 |
+
+**OS-9 does not boot at all on current head — 0 of 8 verified runs.** It is not
+intermittent; it is consistently broken, and the intermittency I reported was an
+artifact of unverified bank selection.
+
+One suggestive detail, offered as a lead rather than a result: with `m46`
+converted the machine gets *further* — it reaches the kernel banner where
+without it the screen stays blank. Not a fix, and not enough runs to be
+significant, but it points the same way as the rest of the `FLAGS` work.
+
+## What would help from your side
+
+A verified-bank regression between the build where OS-9 genuinely booted
+(`b34171e`/`649d054` era, where the shell ran `dir`) and current head. This side
+can bisect on hardware now that selection is trustworthy, but each point costs a
+15-minute Quartus build, so a sim-side narrowing of which commit changed OS-9's
+behaviour would cut that down a lot.
