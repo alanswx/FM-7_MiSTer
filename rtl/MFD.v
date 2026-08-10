@@ -41,10 +41,8 @@ wire m8_12 = ~(m14_6 & m7_3 & m13_3);
 // $fd1f's decode is qualified by the read strobe, and it has to span the edge
 // on which mc6809i latches the data bus (`always @(negedge E)`). Qualifying on
 // E alone deasserts at exactly that edge, so core.v's read mux falls through
-// past the `~(IOSn | FD1Fn) ? MFD_out` term -- $fd1f is outside FD_CSn, so the
-// next term that matches is the `~IOSn ? 8'hff` default and the CPU latches
-// $ff. That reads as "DRQ set, INTRQ set, always", which makes the boot ROM's
-// sector-read loop take a byte every pass and never see the command end.
+// past the `~(IOSn | FD1Fn) ? MFD_out` term. Keep this status-window decode
+// alive through the latch edge so the CPU sees the controller status bits.
 //
 // This is P0-1 / P0-4 a third time. Q falls a quarter cycle after E, so (E|Q)
 // still covers the latching edge, exactly as RDQEn does for ROM/RAM.
@@ -52,6 +50,13 @@ wire m2_8  = ~(m14_6 & ~m13_3 & m7_3 & EAB[0] & (EE | EQ) & ERW);
 
 wire m12_3 = ~(~EIOSn & ~m8_12); // $FD18-$FD1D
 wire m12_6 = ~(~EIOSn & ~m2_8);  // $FD1F & E
+
+// The WD chip-select ends at $FD1B, but the FM-7 board registers at
+// $FD1C-$FD1F share the same bus strobes. Keep one explicit eight-byte
+// window select here so FDC.v receives the side/drive/mode writes without
+// treating every high I/O address as an auxiliary access.
+wire fd1x = ~EIOSn & (MADDRBUS[15:3] == 13'h1fa3);
+wire fd1x_n = ~fd1x;
 
 wire m14_12 = &(~EAB[4:2]);
 wire m8_8   = ~(m14_6 & m14_12 & EAB[1]);
@@ -98,12 +103,13 @@ assign FD_REn = m3_6;
 assign FD_RS  = EAB[2:0];
 
 assign FD1Fn = m12_6;
-assign FD_CSn = m12_3;
+assign FD_CSn = m12_3 & fd1x_n;
 
-assign MFD_out = ERW & ~(m12_3 & m12_6) ? {
-  ~m12_6 ? ~FD_DRQn   : FD_Din[7],
-  ~m12_6 ? ~FD_INTRQn : FD_Din[6],
-  FD_Din[5:0]
-} : 8'h00;
+assign MFD_out = ERW & (fd1x | ~m12_3 | ~m12_6) ?
+  (fd1x ? FD_Din : {
+    ~m12_6 ? ~FD_DRQn   : FD_Din[7],
+    ~m12_6 ? ~FD_INTRQn : FD_Din[6],
+    FD_Din[5:0]
+  }) : 8'h00;
 
 endmodule
