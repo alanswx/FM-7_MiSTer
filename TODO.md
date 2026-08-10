@@ -147,9 +147,12 @@ MMR/TWR registers, and the 256 KB physical main-memory map. The `$FD13`
 sub-monitor selector now switches the secondary CPU's `$E000-$FFFF` window
 between the Type C, A, and B monitor images. `make avmem-test` covers identity
 RAM, bank translation, TWR, boot seeding, boot-RAM writes, and monitor select.
+The main-CPU MMR aperture into the three shared VRAM planes is wired and
+`make crtram-test` checks blue/red/green storage.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: connect the AV sub-ROM's font/VRAM aperture, then
-implement the AV display modes, keyboard encoder, and YM2203 paths behind the
-same family signal. Research and reference addresses are in `docs/FM77AV.md`.
+Next, in hardware order: add the AV sub-ROM font aperture and 320×200/page
+selection around the shared VRAM, then implement the keyboard encoder and
+YM2203 paths behind the same family signal. Research and reference addresses
+are in `docs/FM77AV.md`.

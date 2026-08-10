@@ -46,6 +46,12 @@ wire       AVIO_sel;
 wire       AVTWR_sel;
 wire [1:0] AV_SUBMON_SEL;
 wire       AV_SUBMON_RESET;
+wire [7:0] AV_VRAM_DOUT;
+wire       AV_VRAM_SEL;
+wire [1:0] AV_VRAM_PLANE;
+wire [13:0] AV_VRAM_ADDR;
+wire       AV_VRAM_WRITE;
+wire [7:0] AV_VRAM_DIN;
 wire [7:0] MAINRAM_dout = machine_av ? AVMEM_dout : MRAM_dout;
 wire [7:0] TIMER_out;
 wire [7:0] CLKCTRL_out;
@@ -357,12 +363,18 @@ AVMEM u_AVMEM(
   .RWBn        ( RWBn         ),
   .WTQEn       ( WTQEn        ),
   .RDQEn       ( RDQEn        ),
+  .VRAM_DOUT   ( AV_VRAM_DOUT  ),
   .DOUT        ( AVMEM_dout   ),
   .IODOUT      ( AVIO_dout    ),
   .IOSEL       ( AVIO_sel     ),
   .TWRSEL      ( AVTWR_sel    ),
   .SUBMON_SEL  ( AV_SUBMON_SEL ),
-  .SUBMON_RESET ( AV_SUBMON_RESET )
+  .SUBMON_RESET ( AV_SUBMON_RESET ),
+  .VRAM_SEL    ( AV_VRAM_SEL    ),
+  .VRAM_PLANE  ( AV_VRAM_PLANE  ),
+  .VRAM_ADDR   ( AV_VRAM_ADDR   ),
+  .VRAM_WRITE  ( AV_VRAM_WRITE  ),
+  .VRAM_DIN    ( AV_VRAM_DIN    )
 );
 
 // RDQEn, not RDEn, gates the I/O read decoder.
@@ -726,6 +738,12 @@ CRTRAM u_CRTRAM(
   .SVCASBn    ( SVCASBn      ),
   .SVCASRn    ( SVCASRn      ),
   .SVCASGn    ( SVCASGn      ),
+  .AV_VRAM_SEL    ( AV_VRAM_SEL    ),
+  .AV_VRAM_PLANE  ( AV_VRAM_PLANE  ),
+  .AV_VRAM_ADDR   ( AV_VRAM_ADDR   ),
+  .AV_VRAM_WRITE  ( AV_VRAM_WRITE  ),
+  .AV_VRAM_DIN    ( AV_VRAM_DIN    ),
+  .AV_VRAM_DOUT   ( AV_VRAM_DOUT   ),
   .SDRAMBn    ( SDRAMBn      ),
   .SDRAMRn    ( SDRAMRn      ),
   .SDRAMGn    ( SDRAMGn      ),

@@ -12,19 +12,28 @@ module avmem_tb;
   reg        rwb_n = 1'b0;
   reg        wtq_en = 1'b1;
   reg        rdq_en = 1'b1;
+  reg [7:0]  vram_dout = 8'h00;
   wire [7:0] dout;
   wire [7:0] iodout;
   wire       iosel;
   wire       twrsel;
   wire [1:0] submon_sel;
   wire       submon_reset;
+  wire       vram_sel;
+  wire [1:0] vram_plane;
+  wire [13:0] vram_addr;
+  wire       vram_write;
+  wire [7:0] vram_din;
 
   AVMEM dut(
     .CLKSYS(clk), .RESETBn(resetn), .machine_av(machine_av),
     .bootrom_sel(bootrom_sel), .MADDRBUS(addr), .DIN(din),
     .RWBn(rwb_n), .WTQEn(wtq_en), .RDQEn(rdq_en),
+    .VRAM_DOUT(vram_dout),
     .DOUT(dout), .IODOUT(iodout), .IOSEL(iosel), .TWRSEL(twrsel),
-    .SUBMON_SEL(submon_sel), .SUBMON_RESET(submon_reset)
+    .SUBMON_SEL(submon_sel), .SUBMON_RESET(submon_reset),
+    .VRAM_SEL(vram_sel), .VRAM_PLANE(vram_plane), .VRAM_ADDR(vram_addr),
+    .VRAM_WRITE(vram_write), .VRAM_DIN(vram_din)
   );
 
   task write_bus(input [15:0] a, input [7:0] d);
@@ -73,6 +82,16 @@ module avmem_tb;
     write_bus(16'hfd93, 8'h00);
     read_bus(16'h0000, value);
     check_value(value, 8'h12, "MMR disabled identity RAM");
+
+    // MMR bank $10 is physical $10000, the blue plane at offset zero.
+    write_bus(16'hfd80, 8'h10);
+    write_bus(16'hfd93, 8'h80);
+    addr = 16'h0000;
+    #1;
+    check_value({7'd0, vram_sel}, 8'h01, "AV VRAM aperture");
+    check_value({6'd0, vram_plane}, 8'h00, "AV VRAM blue plane");
+    check_value({6'd0, vram_addr[1:0]}, 8'h00, "AV VRAM address");
+    check_value(vram_din, din, "AV VRAM write data");
 
     // TWR offset 1 maps $7c00 to physical $00100.
     write_bus(16'hfd92, 8'h01);

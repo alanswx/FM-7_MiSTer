@@ -9,8 +9,9 @@ forces a full reset, and selecting
 FM77AV holds the current FM-7 execution backend in reset. This is deliberate:
 the core must not silently run FM-7 hardware under an FM77AV label. The AV
 `$FD13` sub-monitor selector and its sub-CPU reset-on-write behavior are wired
-to the secondary CPU's A/B/C ROM window, but font banking and VRAM remain
-unfinished.
+to the secondary CPU's A/B/C ROM window. The main CPU's MMR aperture into the
+three shared VRAM planes is also wired, but font banking, page selection, and
+AV display modes remain unfinished.
 This file preserves the hardware research from a longer planning document
 (deleted; see git history for `FM77AV_PLAN.md`).
 Claims are cited file:line against the reference emulators in `refs/`; anything marked

@@ -15,12 +15,18 @@ module AVMEM(
   input        RWBn,
   input        WTQEn,
   input        RDQEn,
+  input  [7:0] VRAM_DOUT,
   output [7:0] DOUT,
   output reg [7:0] IODOUT,
   output       IOSEL,
   output       TWRSEL,
   output [1:0] SUBMON_SEL,
-  output       SUBMON_RESET
+  output       SUBMON_RESET,
+  output       VRAM_SEL,
+  output [1:0] VRAM_PLANE,
+  output [13:0] VRAM_ADDR,
+  output       VRAM_WRITE,
+  output [7:0] VRAM_DIN
 );
 
 wire io_sel = machine_av && (MADDRBUS >= 16'hfd80) && (MADDRBUS <= 16'hfd93);
@@ -69,10 +75,22 @@ always @* begin
     physical_address = 18'h30000 + {2'b00, MADDRBUS};
 end
 
+// The AV's physical $10000-$1BFFF range is the three 16 KB video planes.
+// MMR maps this aperture into the main CPU address space; it is not ordinary
+// RAM and must stay coherent with the raster/sub-CPU VRAM store.
+wire vram_sel = machine_av &&
+                (physical_address >= 18'h10000) &&
+                (physical_address < 18'h1c000);
+assign VRAM_SEL   = vram_sel;
+assign VRAM_PLANE = physical_address[15:14]; // 0=B, 1=R, 2=G
+assign VRAM_ADDR  = physical_address[13:0];
+assign VRAM_WRITE = av_write && vram_sel;
+assign VRAM_DIN   = DIN;
+
 // ROM and boot-RAM windows do not write the physical RAM array. The AV F-BASIC
 // ROM is not shadowed by this first backend; boot RAM has its explicit $FD93
 // bit-0 write enable.
-wire ram_write = av_write && !io_sel && !bootram_sel &&
+wire ram_write = av_write && !io_sel && !bootram_sel && !vram_sel &&
                  (!initiator_sel || twr_sel) && !fbasic_sel &&
                  (MADDRBUS < 16'hfffe);
 wire [7:0] ram_q;
@@ -182,6 +200,6 @@ always @* begin
   endcase
 end
 
-assign DOUT = bootram_sel ? boot_q : ram_q;
+assign DOUT = bootram_sel ? boot_q : vram_sel ? VRAM_DOUT : ram_q;
 
 endmodule

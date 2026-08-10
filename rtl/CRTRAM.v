@@ -15,6 +15,12 @@ module CRTRAM(
   input SDRAMBn,
   input SDRAMRn,
   input SDRAMGn,
+  input AV_VRAM_SEL,
+  input [1:0] AV_VRAM_PLANE,
+  input [13:0] AV_VRAM_ADDR,
+  input AV_VRAM_WRITE,
+  input [7:0] AV_VRAM_DIN,
+  output [7:0] AV_VRAM_DOUT,
   output [7:0] SVDATAB,
   output [7:0] SVDATAR,
   output [7:0] SVDATAG
@@ -26,39 +32,49 @@ assign CRTRAMDATA =
   ~SDRAMGn ? SVDATAG :
   8'h0;
 
-wire bwe_n = ~SDRAMBn ? SVWEn : 1'b1;
-wire rwe_n = ~SDRAMRn ? SVWEn : 1'b1;
-wire gwe_n = ~SDRAMGn ? SVWEn : 1'b1;
+// The original FM-7 has one sub/raster port. The AV adds a main-CPU MMR
+// aperture to the same physical planes. Use the existing bidirectional dual
+// port RAM wrapper so the FPGA keeps the VRAM in block memory.
+wire [7:0] av_blue_q, av_red_q, av_green_q;
 
-
-ram #(14,8) ramb(
-  .clk  ( CLKSYS   ),
-  .addr ( SVRADRS  ),
-  .din  ( SDATABUS ),
-  .q    ( SVDATAB  ),
-  .wr_n ( bwe_n    ),
-  .rd_n ( 1'b0     ),
-  .ce_n ( 1'b0     )
+dpram #(8,14) ramb(
+  .clock    ( CLKSYS          ),
+  .address_a( SVRADRS         ),
+  .data_a   ( SDATABUS        ),
+  .wren_a   ( ~SVWEn & ~SDRAMBn ),
+  .q_a      ( SVDATAB         ),
+  .address_b( AV_VRAM_ADDR    ),
+  .data_b   ( AV_VRAM_DIN     ),
+  .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd0) ),
+  .q_b      ( av_blue_q       )
 );
 
-ram #(14,8) ramr(
-  .clk  ( CLKSYS   ),
-  .addr ( SVRADRS  ),
-  .din  ( SDATABUS ),
-  .q    ( SVDATAR  ),
-  .wr_n ( rwe_n    ),
-  .rd_n ( 1'b0     ),
-  .ce_n ( 1'b0     )
+dpram #(8,14) ramr(
+  .clock    ( CLKSYS          ),
+  .address_a( SVRADRS         ),
+  .data_a   ( SDATABUS        ),
+  .wren_a   ( ~SVWEn & ~SDRAMRn ),
+  .q_a      ( SVDATAR         ),
+  .address_b( AV_VRAM_ADDR    ),
+  .data_b   ( AV_VRAM_DIN     ),
+  .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd1) ),
+  .q_b      ( av_red_q        )
 );
 
-ram #(14,8) ramg(
-  .clk  ( CLKSYS   ),
-  .addr ( SVRADRS  ),
-  .din  ( SDATABUS ),
-  .q    ( SVDATAG  ),
-  .wr_n ( gwe_n    ),
-  .rd_n ( 1'b0     ),
-  .ce_n ( 1'b0     )
+dpram #(8,14) ramg(
+  .clock    ( CLKSYS          ),
+  .address_a( SVRADRS         ),
+  .data_a   ( SDATABUS        ),
+  .wren_a   ( ~SVWEn & ~SDRAMGn ),
+  .q_a      ( SVDATAG         ),
+  .address_b( AV_VRAM_ADDR    ),
+  .data_b   ( AV_VRAM_DIN     ),
+  .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd2) ),
+  .q_b      ( av_green_q      )
 );
+
+assign AV_VRAM_DOUT = (AV_VRAM_PLANE == 2'd0) ? av_blue_q :
+                      (AV_VRAM_PLANE == 2'd1) ? av_red_q :
+                      (AV_VRAM_PLANE == 2'd2) ? av_green_q : 8'hff;
 
 endmodule
