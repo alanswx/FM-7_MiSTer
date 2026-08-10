@@ -298,20 +298,23 @@ end
 reg       fdc_side  = 1'b0;
 reg       fdc_motor = 1'b0;
 reg [1:0] fdc_drv   = 2'd0;
+reg       empty_intrq = 1'b0;
 
 wire drive0_sel = (fdc_drv == 2'd0);
 wire drive1_sel = (fdc_drv == 2'd1);
+wire empty_sel  = (fdc_drv >= 2'd2);
 wire ready0, ready1;
 wire drq0, drq1, intrq0, intrq1;
 wire ready_sel = drive0_sel ? ready0 : drive1_sel ? ready1 : 1'b0;
 wire drq_sel   = drive0_sel ? drq0   : drive1_sel ? drq1   : 1'b0;
-wire intrq_sel = drive0_sel ? intrq0 : drive1_sel ? intrq1 : 1'b0;
+wire intrq_sel = drive0_sel ? intrq0 : drive1_sel ? intrq1 : empty_intrq;
 
 always @(posedge CLKSYS) begin
   if (reset) begin
     fdc_side  <= 1'b0;
     fdc_motor <= 1'b0;
     fdc_drv   <= 2'd0;
+    empty_intrq <= 1'b0;
   end
   else if (aux_sel & wr_stb) begin
     case (FD_RS[1:0])
@@ -319,9 +322,16 @@ always @(posedge CLKSYS) begin
       2'd1: begin
         fdc_motor <= FD_Din[7];    // taken before any drive validation, per CSP
         fdc_drv   <= FD_Din[1:0];
+        if (FD_Din[1:0] >= 2'd2) empty_intrq <= 1'b0;
       end
       default: ;
     endcase
+  end
+  else if (core_sel & wr_stb & empty_sel) begin
+    // The FM-7 exposes four drive-select values, while this implementation
+    // has two mounted block-device slots. Empty selections still complete a
+    // command and raise INTRQ, just as 77AVEMU does for an absent drive.
+    empty_intrq <= 1'b1;
   end
 end
 
@@ -500,8 +510,11 @@ assign sd_wr[1]       = sd_wr1;
 assign sd_buff_din[0] = sd_buff_din0;
 assign sd_buff_din[1] = sd_buff_din1;
 
+wire [7:0] empty_core_dout = (FD_RS[1:0] == 2'd0) ? 8'h94 :
+                             (FD_RS[1:0] == 2'd1) ? 8'h00 :
+                             (FD_RS[1:0] == 2'd2) ? 8'h00 : 8'h00;
 wire [7:0] core_dout = drive0_sel ? core_dout0 :
-                       drive1_sel ? core_dout1 : 8'hff;
+                       drive1_sel ? core_dout1 : empty_core_dout;
 wire drq = drq_sel;
 wire intrq = intrq_sel;
 

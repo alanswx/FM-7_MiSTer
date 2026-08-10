@@ -620,8 +620,17 @@ always @(posedge clk_sys) begin
 				end
 			STATE_WAIT_2:
 				begin
-					if(wait_time) wait_time <= wait_time - 1;
-						else state <= STATE_ENDCOMMAND;
+					// A command issued to an empty drive must still terminate. The
+					// Fujitsu controller reports not-ready/seek-error and raises INTRQ;
+					// 77AVEMU's RESTORE path does the same immediately. Waiting for the
+					// normal media timing here leaves software polling $FD1F forever
+					// after it probes an empty mounted slot.
+					if(!ready) begin
+						s_seekerr <= 1;
+						state <= STATE_ENDCOMMAND;
+					end
+					else if(wait_time) wait_time <= wait_time - 1;
+					else state <= STATE_ENDCOMMAND;
 				end
 
 			// End any command.

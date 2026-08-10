@@ -59,6 +59,11 @@ wire [13:0] AV_VRAM_ADDR;
 wire       AV_VRAM_WRITE;
 wire [7:0] AV_VRAM_DIN;
 wire [7:0] MAINRAM_dout = machine_av ? AVMEM_dout : MRAM_dout;
+// The FM77AV boot-RAM window is a real memory source, not part of the
+// legacy FM-7 RAM1HB decode.  AVMEM owns $fe00-$ffdF (and the boot-ROM
+// selection inside it), so the main read mux must select it explicitly.
+wire AV_BOOTRAM_sel = machine_av &&
+                      (MADDRBUS >= 16'hfe00) && (MADDRBUS < 16'hffe0);
 wire [7:0] TIMER_out;
 wire [7:0] CLKCTRL_out;
 wire [7:0] PERIPH_out;
@@ -296,7 +301,7 @@ assign MDATABUS_in =
   //
   // Reaching this arm with A15 set and FCXXn high necessarily means the RAM
   // window is open, because the ROMDATA arm above has already taken ROM mode.
-  ~(RAM1HB1n & RAM1HB2n) || MADDRBUS <= 16'h8000
+  AV_BOOTRAM_sel || ~(RAM1HB1n & RAM1HB2n) || MADDRBUS <= 16'h8000
                          || (MADDRBUS[15] & FCXXn) ? MAINRAM_dout :
   8'h0;
 
