@@ -11,7 +11,9 @@ module SMEM(
   input SROMSELn,
   input SROMDn,
   input machine_av,
-  input [1:0] submon_sel
+  input [1:0] submon_sel,
+  input RESETBn,
+  output [7:0] av_d430_out
 );
 
 wire [7:0] m153_q;
@@ -20,14 +22,26 @@ wire [7:0] m141_q;
 wire [7:0] m123_q;
 wire [7:0] av_sub_a_q;
 wire [7:0] av_sub_b_q;
+wire [7:0] av_font_q;
+reg [1:0] av_font_bank;
 wire [7:0] monitor_q = !machine_av ? m154_q :
                         (submon_sel == 2'd1) ? av_sub_a_q :
                         (submon_sel == 2'd2) ? av_sub_b_q : m154_q;
 
+wire av_d430_sel = machine_av && (SADDRBUS == 16'hd430);
+assign av_d430_out = 8'h6a | {6'd0, av_font_bank};
+
+always @(posedge CLKSYS) begin
+  if (~RESETBn)
+    av_font_bank <= 2'd0;
+  else if (av_d430_sel && ~SWTQEn)
+    av_font_bank <= SDATABUS_in[1:0];
+end
+
 assign SDATABUS_out =
   ~SRAM1CSn ? m141_q :
   ~SRAM2CSn ? m123_q :
-  ~SROMDn   ? m153_q :
+  ~SROMDn   ? (machine_av ? av_font_q : m153_q) :
   ~SROMSELn ? monitor_q : 8'h00;
 
 ram #(11,8) m141(
@@ -62,6 +76,13 @@ rom #("./roms/subsys_m154.rom.mem", 13, 8) m154(
   .addr ( SADDRBUS[12:0] ),
   .dout ( m154_q         ),
   .ce_n ( SROMSELn       )
+);
+
+rom #("./roms/fm77av_subsyscg.rom.mem", 13, 8) av_font(
+  .clk  ( CLKSYS                         ),
+  .addr ( {av_font_bank, SADDRBUS[10:0]} ),
+  .dout ( av_font_q                      ),
+  .ce_n ( SROMDn                         )
 );
 
 rom #("./roms/fm77av_subsys_a.rom.mem", 13, 8) av_sub_a(

@@ -67,6 +67,7 @@ wire [15:0] SADDRBUS;
 wire [7:0] SDATABUS_in;
 wire [7:0] SDATABUS_out;
 wire [7:0] SMEM_dout;
+wire [7:0] AV_D430_dout;
 wire [7:0] CRTRAMDATA;
 wire [7:0] SKDATA;
 
@@ -283,6 +284,7 @@ assign MDATABUS_in =
 
 assign SDATABUS_in =
   ~(KDATAn & KACKNGn) ? SKDATA :
+  (machine_av && (SADDRBUS == 16'hd430) && SRWB) ? AV_D430_dout :
   ~(SDRAMBn & SDRAMGn & SDRAMRn) ? CRTRAMDATA :
 	~(SSMEMn | SRWBn) ? SRDATA_out :
   ~(SROMDn & SROMSELn & SRAM1CSn & SRAM2CSn) ? SMEM_dout :
@@ -651,7 +653,9 @@ SMEM u_SMEM(
   .SROMSELn     ( SROMSELn     ),
   .SROMDn       ( SROMDn       ),
   .machine_av   ( machine_av   ),
-  .submon_sel   ( AV_SUBMON_SEL )
+  .submon_sel   ( AV_SUBMON_SEL ),
+  .RESETBn      ( SRESETn      ),
+  .av_d430_out  ( AV_D430_dout )
 );
 
 // shared RAM

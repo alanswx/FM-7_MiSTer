@@ -149,10 +149,12 @@ between the Type C, A, and B monitor images. `make avmem-test` covers identity
 RAM, bank translation, TWR, boot seeding, boot-RAM writes, and monitor select.
 The main-CPU MMR aperture into the three shared VRAM planes is wired and
 `make crtram-test` checks blue/red/green storage.
+The AV `$D800-$DFFF` character-generator aperture is now banked by the
+sub-system `$D430` register; `make smem-test` checks the ROM banks and status.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: add the AV sub-ROM font aperture and 320×200/page
-selection around the shared VRAM, then implement the keyboard encoder and
+Next, in hardware order: add AV `$D430` display-page/active-page behavior and
+320×200 mode around the shared VRAM, then implement the keyboard encoder and
 YM2203 paths behind the same family signal. Research and reference addresses
 are in `docs/FM77AV.md`.

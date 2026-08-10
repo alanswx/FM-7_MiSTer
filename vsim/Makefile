@@ -277,7 +277,13 @@ crtram-test: crtram_tb.sv ../rtl/CRTRAM.v ../rtl/wd1793_dpram.v
 		--top-module crtram_tb crtram_tb.sv ../rtl/CRTRAM.v ../rtl/wd1793_dpram.v
 	/tmp/fm7-crtram-obj/Vcrtram_tb
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test
+# Directed check for the AV character-generator aperture and $D430 bank.
+smem-test: smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-smem-obj \
+		--top-module smem_tb smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v
+	/tmp/fm7-smem-obj/Vsmem_tb
+
+.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h
