@@ -40,6 +40,11 @@ wire [7:0] MDATABUS_in;
 wire [7:0] MDATABUS_out;
 wire [7:0] ROMDATA;
 wire [7:0] MRAM_dout;
+wire [7:0] AVMEM_dout;
+wire [7:0] AVIO_dout;
+wire       AVIO_sel;
+wire       AVTWR_sel;
+wire [7:0] MAINRAM_dout = machine_av ? AVMEM_dout : MRAM_dout;
 wire [7:0] TIMER_out;
 wire [7:0] CLKCTRL_out;
 wire [7:0] PERIPH_out;
@@ -239,6 +244,7 @@ assign MDATABUS_in =
   // which is exactly what MAME's kanji_r returns for them.
   ~(RFD22n & RFD23n) ? KANJI_dout :
   ~PLTREGn ? PALDATA :
+  AVIO_sel ? AVIO_dout :
   ~IOSn ? 8'hff :
 
   ~(SUBSELn | RDQEn) ? SRDATA_out :
@@ -264,7 +270,7 @@ assign MDATABUS_in =
   // Reaching this arm with A15 set and FCXXn high necessarily means the RAM
   // window is open, because the ROMDATA arm above has already taken ROM mode.
   ~(RAM1HB1n & RAM1HB2n) || MADDRBUS <= 16'h8000
-                         || (MADDRBUS[15] & FCXXn) ? MRAM_dout :
+                         || (MADDRBUS[15] & FCXXn) ? MAINRAM_dout :
   8'h0;
 
 assign SDATABUS_in =
@@ -324,7 +330,8 @@ ROMS u_ROMS(
   .MIOSn    ( MIOSn       ),
   .RAM1HB1n ( RAM1HB1n    ),
   .SW2      ( bootrom_sel ),
-  .machine_av ( machine_av )
+  .machine_av ( machine_av ),
+  .twr_active ( AVTWR_sel )
 );
 
 MRAM u_MRAM(
@@ -336,6 +343,22 @@ MRAM u_MRAM(
   .DIN      ( MDATABUS_out ),
   .RDQEn    ( RDQEn        ),
   .DOUT     ( MRAM_dout    )
+);
+
+AVMEM u_AVMEM(
+  .CLKSYS      ( CLKSYS       ),
+  .RESETBn     ( RESETBn      ),
+  .machine_av  ( machine_av   ),
+  .bootrom_sel ( bootrom_sel  ),
+  .MADDRBUS    ( MADDRBUS     ),
+  .DIN         ( MDATABUS_out ),
+  .RWBn        ( RWBn         ),
+  .WTQEn       ( WTQEn        ),
+  .RDQEn       ( RDQEn        ),
+  .DOUT        ( AVMEM_dout   ),
+  .IODOUT      ( AVIO_dout    ),
+  .IOSEL       ( AVIO_sel     ),
+  .TWRSEL      ( AVTWR_sel    )
 );
 
 // RDQEn, not RDEn, gates the I/O read decoder.

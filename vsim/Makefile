@@ -193,6 +193,7 @@ V_SRC = \
 	$(RTL)/clocks.svh \
 	$(RTL)/clk_en.v \
 	$(RTL)/CLKCTRL.v \
+	$(RTL)/AVMEM.v \
 	$(RTL)/core.v \
 	$(RTL)/CRTRAM.v \
 	$(RTL)/FDC.v \
@@ -263,7 +264,14 @@ clean:
 clean-shots:
 	rm -f screenshot_*.png shots/*.png
 
-.PHONY: all run test clean clean-shots
+# Directed AV memory-map check. It runs independently of the full machine,
+# because the top-level AV execution gate is intentionally still closed.
+avmem-test: avmem_tb.sv ../rtl/AVMEM.v ../rtl/ram.v
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-avmem-obj \
+		--top-module avmem_tb avmem_tb.sv ../rtl/AVMEM.v ../rtl/ram.v
+	/tmp/fm7-avmem-obj/Vavmem_tb
+
+.PHONY: all run test clean clean-shots avmem-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h

@@ -1,9 +1,10 @@
 # FM77AV hardware notes
 
 Research reference only — the first machine-family plumbing slice is now in the
-core, but no FM77AV hardware backend is implemented yet. The OSD and Verilator
-expose a machine-family bit, and the first AV ROM overlay is wired: initiator at
-`$6000-$7FFF`/reset vector and AV F-BASIC at `$8000-$FBFF`. Changing family
+core, but the AV hardware backend is still partial. The OSD and Verilator
+expose a machine-family bit; the initiator/F-BASIC overlays and an `AVMEM.v`
+main-memory front end are wired. The front end includes reset-seeded writable
+boot RAM, MMR/TWR registers, and the 256 KB physical map. Changing family
 forces a full reset, and selecting
 FM77AV holds the current FM-7 execution backend in reset. This is deliberate:
 the core must not silently run FM-7 hardware under an FM77AV label. This file preserves the hardware

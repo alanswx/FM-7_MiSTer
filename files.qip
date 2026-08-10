@@ -2,6 +2,7 @@
 set_global_assignment -name SYSTEMVERILOG_FILE FM-7_MiSTer.sv
 set_global_assignment -name VERILOG_FILE rtl/CLKCTRL.v
 set_global_assignment -name VERILOG_FILE rtl/clk_en.v
+set_global_assignment -name VERILOG_FILE rtl/AVMEM.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/clocks.svh
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/core.v
 set_global_assignment -name VERILOG_FILE rtl/CRTRAM.v

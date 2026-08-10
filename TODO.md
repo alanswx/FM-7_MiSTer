@@ -140,13 +140,14 @@ highest title-count-per-effort item after the register audit.
 
 ## FM77AV bring-up
 
-The OSD and simulator now have a machine-family selector. The first AV ROM
-slice is wired and verified against `refs/fm77av.zip`: the initiator overlay is
-mapped at `$6000-$7FFF` (and supplies `$FFFE-$FFFF`), and AV F-BASIC is mapped
-at `$8000-$FBFF`. Selecting FM77AV still holds execution in reset until the
-remaining AV backend is present.
+The OSD and simulator now have a machine-family selector. The initiator overlay
+is mapped at `$6000-$7FFF` (and supplies `$FFFE-$FFFF`), AV F-BASIC is mapped at
+`$8000-$FBFF`, and `AVMEM.v` now models writable boot RAM, `$FD80-$FD93`
+MMR/TWR registers, and the 256 KB physical main-memory map. `make avmem-test`
+covers identity RAM, bank translation, TWR, boot seeding, and boot-RAM writes.
+Selecting FM77AV still holds execution in reset until the AV sub-system and
+video paths are present.
 
-Next, in hardware order: seed writable boot RAM from `initiate.rom`, implement
-the `$FD80-$FD93` MMR/TWR registers and 256 KB physical main-memory map, then
-move the AV sub-ROM, video, keyboard, and YM2203 paths behind the same family
+Next, in hardware order: connect the AV sub-ROM/VRAM aperture, then implement
+the AV display modes, keyboard encoder, and YM2203 paths behind the same family
 signal. Research and reference addresses are in `docs/FM77AV.md`.
