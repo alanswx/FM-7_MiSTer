@@ -19,6 +19,7 @@ module core(
   output [13:0] audio_out,
   output buzzer,
   input [1:0] bootrom_sel,
+  input machine_av,
 
   // Floppy: MiSTer block-device interface, straight through to FDC.v
   input  [1:0]  img_mounted,
@@ -212,6 +213,11 @@ wire CLK2_5;
 wire CLK1_2;
 wire CLK0_3;
 
+// FM77AV is not an FM-7 boot-ROM variant. Keep the family signal at the core
+// boundary now, but fail safe until the AV memory/video/I/O backend is wired:
+// selecting AV in the OSD must not present an FM-7 machine under an AV label.
+wire RESETn_active = RESETn & ~machine_av;
+
 assign HSync = SHSYNCn;
 assign VSync = SVSYNCn;
 assign HBLANK = ~HBLANKn;
@@ -391,7 +397,7 @@ KANJI u_KANJI(
 
 MCPU u_MCPU(
   .MDATABUS_in  ( MDATABUS_in  ),
-  .RESETn       ( RESETn       ),
+  .RESETn       ( RESETn_active ),
   .Z80W         ( Z80W         ),
   .MCPUCLK      ( MCPUCLK      ),
   .GHn          ( GHn          ),

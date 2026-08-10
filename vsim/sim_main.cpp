@@ -97,6 +97,7 @@ static std::string      screenshot_prefix = "screenshot";
 static std::set<int>    screenshots_taken;
 
 static int  opt_bootrom    = 0;      // status[11:10]: 0 Basic, 1..3 DOS
+static bool opt_machine_av = false;  // status[12]: FM77AV bring-up selector
 static bool opt_tape_audio = false;  // status[9]
 
 static bool  trace_io  = false;
@@ -556,6 +557,7 @@ static void print_usage(const char* argv0) {
 	printf("                            the audio output (OSD \"Tape Audio\")\n");
 	printf("  --rewind-at-frame <n>     Pulse the tape rewind bit at frame n\n");
 	printf("  --bootrom <0-3>           0 = F-BASIC (default), 1-3 = DOS boot ROMs\n");
+	printf("  --machine <fm7|fm77av>   Select machine family; FM77AV is bring-up\n");
 	printf("\nRun control:\n");
 	printf("  --headless, --no-gui      No SDL window. Implied by HEADLESS=1.\n");
 	printf("  --stop-at-frame <n>       Exit after frame n. Required headless;\n");
@@ -642,6 +644,12 @@ static int parse_args(int argc, char** argv) {
 		else if (a == "--disk1")      { const char* v = next(); if (v) disk_path1 = v; }
 		else if (a == "--tape-audio") opt_tape_audio = true;
 		else if (a == "--bootrom")    { const char* v = next(); if (v) opt_bootrom = atoi(v) & 3; }
+		else if (a == "--machine") {
+			const char* v = next();
+			if (v && (!strcmp(v, "fm77av") || !strcmp(v, "FM77AV"))) opt_machine_av = true;
+			else if (v && (!strcmp(v, "fm7") || !strcmp(v, "FM-7"))) opt_machine_av = false;
+			else printf("Error: --machine needs fm7 or fm77av\n");
+		}
 		else if (a == "--key-hold")        { const char* v = next(); if (v) key_hold_frames = atoi(v); }
 		else if (a == "--stop-at-frame")   { const char* v = next(); if (v) stop_at_frame = atoi(v); }
 		else if (a == "--reset-at-frame")  { const char* v = next(); if (v) reset_at_frame = atoi(v); }
@@ -972,6 +980,7 @@ static void sim_cycle() {
 	input.BeforeEval();
 
 	top->bootrom_sel = opt_bootrom;
+	top->machine_av  = opt_machine_av;
 	top->tape_audio  = opt_tape_audio;
 	top->tape_rewind = (rewind_hold > 0) || tape_rewind_pulse;
 	if (rewind_hold > 0) rewind_hold--;
@@ -1252,6 +1261,7 @@ static void draw_state_window() {
 	ImGui::SameLine();
 	ImGui::Checkbox("tape rewind", &tape_rewind_pulse);
 	ImGui::SliderInt("boot ROM", &opt_bootrom, 0, 3);
+	ImGui::Checkbox("FM77AV (bring-up)", &opt_machine_av);
 
 	ImGui::End();
 }
@@ -1274,6 +1284,8 @@ int main(int argc, char** argv, char** env) {
 	if (parse_args(argc, argv)) return 0;
 
 	top = new Vemu();
+	if (opt_machine_av)
+		printf("Machine family: FM77AV (bring-up; execution held in reset)\n");
 
 #if VM_TRACE_VCD
 	if (!vcd_path.empty()) {
@@ -1349,6 +1361,10 @@ int main(int argc, char** argv, char** env) {
 		while (true) {
 			sim_cycle();
 			if (stop_at_frame >= 0 && video.count_frame > stop_at_frame) break;
+			// The deliberate AV bring-up gate holds the current FM-7 video
+			// backend in reset, so no frame edge exists to satisfy a frame-based
+			// stop. Keep this probe bounded and report its zero-frame state.
+			if (opt_machine_av && main_time >= 100000) break;
 			// Progress ping so long runs don't look hung.
 			if (video.count_frame != last_reported && (video.count_frame % 100) == 0) {
 				last_reported = video.count_frame;

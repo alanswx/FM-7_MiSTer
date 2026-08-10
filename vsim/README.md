@@ -58,6 +58,7 @@ video chain, which is exactly what the core depends on.
 | `--tape <file.t77>` | Loaded through the real `ioctl` path at index 1, exactly as `hps_io` does for `F1,t77`, into the behavioural SDRAM and played by `rtl/t77_decode.v`. |
 | `--tape-audio` / `--rewind-at-frame <n>` | The `Tape Audio` and `Tape Rewind` OSD bits. |
 | `--bootrom <0-3>` | The `BootROM` OSD bits: 0 = F-BASIC, 1-3 = the DOS boot ROMs. |
+| `--machine <fm7\|fm77av>` | Machine-family selector matching the OSD. `fm77av` is a bring-up gate and currently holds the core in reset until the AV backend is implemented. |
 | `--key <frame>:<text>` | Types text, or `@NAME` for `SPACE RETURN TAB BS ESC CAPS UP DOWN LEFT RIGHT HOME INS DEL CTRL SHIFT GRAPH KANA BREAK F1`..`F10`. |
 | `--key-hold <frames>` | Frames to hold each key, default 6. |
 | `--screenshot <n,...>` / `--screenshot-name <path>` | PNG per listed frame / exact path, for scripting. |

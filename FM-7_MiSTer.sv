@@ -215,9 +215,10 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 //   8         Tape Rewind (trigger)      rewind -> t77_decode
 //   9         Tape Audio                 cin_audio, relay_audio
 //   11:10     Boot ROM                   bootrom_sel -> ROMS.v M152 bank
+//   12        Machine family             machine_av -> core bring-up gate
 //   122:121   Aspect ratio               VIDEO_ARX / VIDEO_ARY
 //
-// Bits 1..7 and 12..120 are free. The hole at 1..7 is where the template's
+// Bits 1..7 and 13..120 are free. The hole at 1..7 is where the template's
 // "TV Mode" (O[2]) and "Noise" (O[4:3]) demo options used to sit; they drove
 // nothing in this core and are gone. The hole is left as-is deliberately --
 // renumbering would only invalidate saved .cfg files for no gain.
@@ -230,6 +231,7 @@ localparam CONF_STR = {
   "T[8],Tape Rewind;",
   "O[9],Tape Audio,Off,On;",
   "O[11:10],Boot ROM,0 disk,1 alt,2 dos-a,3 empty;",
+  "O[12],Machine,FM-7,FM77AV (experimental);",
   "-;",
   "O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
   "-;",
@@ -250,6 +252,11 @@ localparam CONF_STR = {
 wire   [1:0] buttons;
 wire [127:0] status;
 wire  [10:0] ps2_key;
+
+// The AV selector is a machine-family bit, not a second boot-ROM choice.
+// FM77AV has a different memory map, video system, sub-I/O and sound device;
+// those must all see the same family selection.
+wire machine_av = status[12];
 
 wire        ioctl_download;
 wire [15:0] ioctl_index;
@@ -351,7 +358,16 @@ pll pll
 // machine on every mid-game disk swap -- Ys (Disk A/B) and Mugen no Shinzou II
 // (Disk 1/2) both do that. Mount-then-boot belongs in the MGL instead, as a
 // <reset delay="1" hold="1"/> after the <file> element.
-wire reset_req = RESET | status[0] | buttons[1];
+reg machine_av_d = 1'b0;
+always @(posedge clk_sys)
+  machine_av_d <= machine_av;
+
+// A family change is a board change. Hold reset long enough for every
+// clock-enable domain to observe it. core.v also gates execution while the AV
+// backend is under construction, rather than silently running FM-7 hardware
+// under an FM77AV label.
+wire machine_mode_changed = machine_av_d ^ machine_av;
+wire reset_req = RESET | status[0] | buttons[1] | machine_mode_changed;
 reg [19:0] reset_count = {20{1'b1}};
 
 always @(posedge clk_sys) begin
@@ -441,6 +457,7 @@ core u_core(
   .cin         ( cin           ),
   .motor       ( motor         ),
   .bootrom_sel ( status[11:10] ),
+  .machine_av  ( machine_av    ),
   // floppy
   .img_mounted  ( img_mounted  ),
   .img_readonly ( img_readonly ),

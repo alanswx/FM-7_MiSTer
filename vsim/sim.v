@@ -37,6 +37,7 @@ module emu
 
 	// core options, mirroring the OSD status bits in FM-7_MiSTer.sv
 	input   [1:0] bootrom_sel,      // status[11:10] "BootROM" Basic/1/2/3
+	input         machine_av,       // status[12]    "Machine" FM77AV bring-up
 	input         tape_rewind,      // status[8]     "Tape Rewind"
 	input         tape_audio,       // status[9]     "Tape Audio"
 
@@ -202,6 +203,7 @@ core u_core(
   .cin         ( cin         ),
   .motor       ( motor       ),
   .bootrom_sel ( bootrom_sel ),
+  .machine_av  ( machine_av  ),
   // floppy, two drive slots
   .img_mounted  ( img_mounted[1:0]  ),
   .img_readonly ( img_readonly    ),
