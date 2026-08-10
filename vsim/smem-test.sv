@@ -12,13 +12,15 @@ module smem_tb;
   reg sromsel_n = 1'b1, sromd_n = 1'b0;
   wire [7:0] data_out;
   wire [7:0] d430_out;
+  wire display_page, active_page;
 
   SMEM dut(
     .CLKSYS(clk), .SADDRBUS(addr), .SDATABUS_in(data_in),
     .SDATABUS_out(data_out), .SRAM1CSn(sram1_n), .SRAM2CSn(sram2_n),
     .SWTQEn(swtq_n), .SRDQEn(srdq_n), .SROMSELn(sromsel_n),
     .SROMDn(sromd_n), .machine_av(machine_av), .submon_sel(submon_sel),
-    .RESETBn(resetn), .av_d430_out(d430_out)
+    .RESETBn(resetn), .av_d430_out(d430_out),
+    .av_display_page(display_page), .av_active_page(active_page)
   );
 
   task check(input [7:0] actual, input [7:0] wanted, input [255:0] label);
@@ -53,6 +55,11 @@ module smem_tb;
     check(d430_out, 8'h6b, "D430 font-bank status");
     font_read(16'hdd30, value);
     check(value, 8'h08, "AV font bank 1");
+
+    @(negedge clk); addr = 16'hd430; data_in = 8'h61; swtq_n = 1'b0;
+    @(posedge clk); #1 swtq_n = 1'b1;
+    check({7'd0, display_page}, 8'h01, "AV display page");
+    check({7'd0, active_page}, 8'h01, "AV active page");
 
     @(negedge clk); addr = 16'hd430; data_in = 8'h02; swtq_n = 1'b0;
     @(posedge clk); #1 swtq_n = 1'b1;

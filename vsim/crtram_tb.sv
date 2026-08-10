@@ -4,6 +4,9 @@ module crtram_tb;
 
   reg [7:0] sdata = 8'h00;
   reg [13:0] video_addr = 14'd0;
+  reg display_page = 1'b0;
+  reg active_page = 1'b0;
+  reg scassel = 1'b0;
   reg video_we_n = 1'b1;
   reg blue_n = 1'b1;
   reg red_n = 1'b1;
@@ -18,7 +21,8 @@ module crtram_tb;
 
   CRTRAM dut(
     .CLKSYS(clk), .SDATABUS(sdata), .CRTRAMDATA(),
-    .SVRADRS(video_addr), .SVWEn(video_we_n), .SCASSEL(1'b0),
+    .SVRADRS(video_addr), .SVWEn(video_we_n), .SCASSEL(scassel),
+    .AV_DISPLAY_PAGE(display_page), .AV_ACTIVE_PAGE(active_page),
     .SVCASBn(1'b0), .SVCASRn(1'b0), .SVCASGn(1'b0),
     .SDRAMBn(blue_n), .SDRAMRn(red_n), .SDRAMGn(green_n),
     .AV_VRAM_SEL(av_sel), .AV_VRAM_PLANE(av_plane),
@@ -27,7 +31,7 @@ module crtram_tb;
     .SVDATAB(video_b), .SVDATAR(video_r), .SVDATAG(video_g)
   );
 
-  task check(input [7:0] actual, input [7:0] wanted, input [127:0] label);
+  task check(input [7:0] actual, input [7:0] wanted, input [255:0] label);
     begin
       if (actual !== wanted) begin
         $display("FAIL %s got=%02x wanted=%02x", label, actual, wanted);
@@ -56,6 +60,20 @@ module crtram_tb;
     @(posedge clk); #1;
     av_write = 1'b0; @(posedge clk); #1;
     check(av_dout, 8'h3c, "AV green plane");
+
+    // The sub/raster port uses the active page during blanking. The raster
+    // port then sees the same byte only when the display page is selected.
+    @(negedge clk); scassel = 1'b1; active_page = 1'b1;
+      video_addr = 14'h0042; sdata = 8'hc3; video_we_n = 1'b0; blue_n = 1'b0;
+    @(posedge clk); #1;
+    video_we_n = 1'b1; blue_n = 1'b1;
+    @(posedge clk); #1;
+    check(video_b, 8'hc3, "active VRAM page");
+
+    @(negedge clk); scassel = 1'b0; display_page = 1'b1;
+      video_addr = 14'h0042;
+    @(posedge clk); #1;
+    check(video_b, 8'hc3, "display VRAM page");
 
     $display("CRTRAM TEST PASS");
     $finish;

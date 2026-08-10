@@ -13,7 +13,9 @@ module SMEM(
   input machine_av,
   input [1:0] submon_sel,
   input RESETBn,
-  output [7:0] av_d430_out
+  output [7:0] av_d430_out,
+  output av_display_page,
+  output av_active_page
 );
 
 wire [7:0] m153_q;
@@ -23,19 +25,21 @@ wire [7:0] m123_q;
 wire [7:0] av_sub_a_q;
 wire [7:0] av_sub_b_q;
 wire [7:0] av_font_q;
-reg [1:0] av_font_bank;
+reg [7:0] av_d430_reg;
 wire [7:0] monitor_q = !machine_av ? m154_q :
                         (submon_sel == 2'd1) ? av_sub_a_q :
                         (submon_sel == 2'd2) ? av_sub_b_q : m154_q;
 
 wire av_d430_sel = machine_av && (SADDRBUS == 16'hd430);
-assign av_d430_out = 8'h6a | {6'd0, av_font_bank};
+assign av_d430_out = 8'h6a | {6'd0, av_d430_reg[1:0]};
+assign av_display_page = av_d430_reg[6];
+assign av_active_page = av_d430_reg[5];
 
 always @(posedge CLKSYS) begin
   if (~RESETBn)
-    av_font_bank <= 2'd0;
+    av_d430_reg <= 8'd0;
   else if (av_d430_sel && ~SWTQEn)
-    av_font_bank <= SDATABUS_in[1:0];
+    av_d430_reg <= SDATABUS_in;
 end
 
 assign SDATABUS_out =
@@ -80,7 +84,7 @@ rom #("./roms/subsys_m154.rom.mem", 13, 8) m154(
 
 rom #("./roms/fm77av_subsyscg.rom.mem", 13, 8) av_font(
   .clk  ( CLKSYS                         ),
-  .addr ( {av_font_bank, SADDRBUS[10:0]} ),
+  .addr ( {av_d430_reg[1:0], SADDRBUS[10:0]} ),
   .dout ( av_font_q                      ),
   .ce_n ( SROMDn                         )
 );

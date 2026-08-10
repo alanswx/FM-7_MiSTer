@@ -151,10 +151,12 @@ The main-CPU MMR aperture into the three shared VRAM planes is wired and
 `make crtram-test` checks blue/red/green storage.
 The AV `$D800-$DFFF` character-generator aperture is now banked by the
 sub-system `$D430` register; `make smem-test` checks the ROM banks and status.
+The `$D430` display/active page bits now select the page on the shared
+raster/sub-CPU VRAM port; `make crtram-test` covers both page paths.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: add AV `$D430` display-page/active-page behavior and
-320×200 mode around the shared VRAM, then implement the keyboard encoder and
+Next, in hardware order: add AV 320×200 mode and main-CPU VRAM page-bank
+behavior around the shared VRAM, then implement the keyboard encoder and
 YM2203 paths behind the same family signal. Research and reference addresses
 are in `docs/FM77AV.md`.

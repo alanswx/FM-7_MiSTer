@@ -68,6 +68,8 @@ wire [7:0] SDATABUS_in;
 wire [7:0] SDATABUS_out;
 wire [7:0] SMEM_dout;
 wire [7:0] AV_D430_dout;
+wire       AV_DISPLAY_PAGE;
+wire       AV_ACTIVE_PAGE;
 wire [7:0] CRTRAMDATA;
 wire [7:0] SKDATA;
 
@@ -655,7 +657,9 @@ SMEM u_SMEM(
   .machine_av   ( machine_av   ),
   .submon_sel   ( AV_SUBMON_SEL ),
   .RESETBn      ( SRESETn      ),
-  .av_d430_out  ( AV_D430_dout )
+  .av_d430_out  ( AV_D430_dout ),
+  .av_display_page ( AV_DISPLAY_PAGE ),
+  .av_active_page  ( AV_ACTIVE_PAGE  )
 );
 
 // shared RAM
@@ -739,6 +743,8 @@ CRTRAM u_CRTRAM(
   .SVWEn      ( SVWEn        ),
   .SCASSEL    ( SCASSEL      ),
   .SVRADRS    ( SVRADRS      ),
+  .AV_DISPLAY_PAGE ( AV_DISPLAY_PAGE ),
+  .AV_ACTIVE_PAGE  ( AV_ACTIVE_PAGE  ),
   .SVCASBn    ( SVCASBn      ),
   .SVCASRn    ( SVCASRn      ),
   .SVCASGn    ( SVCASGn      ),

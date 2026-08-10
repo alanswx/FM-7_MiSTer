@@ -12,6 +12,8 @@ module CRTRAM(
   input SVCASBn,
   input SVCASRn,
   input SVCASGn,
+  input AV_DISPLAY_PAGE,
+  input AV_ACTIVE_PAGE,
   input SDRAMBn,
   input SDRAMRn,
   input SDRAMGn,
@@ -37,37 +39,37 @@ assign CRTRAMDATA =
 // port RAM wrapper so the FPGA keeps the VRAM in block memory.
 wire [7:0] av_blue_q, av_red_q, av_green_q;
 
-dpram #(8,14) ramb(
+dpram #(8,15) ramb(
   .clock    ( CLKSYS          ),
-  .address_a( SVRADRS         ),
+  .address_a( {SCASSEL ? AV_ACTIVE_PAGE : AV_DISPLAY_PAGE, SVRADRS} ),
   .data_a   ( SDATABUS        ),
   .wren_a   ( ~SVWEn & ~SDRAMBn ),
   .q_a      ( SVDATAB         ),
-  .address_b( AV_VRAM_ADDR    ),
+  .address_b( {1'b0, AV_VRAM_ADDR} ),
   .data_b   ( AV_VRAM_DIN     ),
   .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd0) ),
   .q_b      ( av_blue_q       )
 );
 
-dpram #(8,14) ramr(
+dpram #(8,15) ramr(
   .clock    ( CLKSYS          ),
-  .address_a( SVRADRS         ),
+  .address_a( {SCASSEL ? AV_ACTIVE_PAGE : AV_DISPLAY_PAGE, SVRADRS} ),
   .data_a   ( SDATABUS        ),
   .wren_a   ( ~SVWEn & ~SDRAMRn ),
   .q_a      ( SVDATAR         ),
-  .address_b( AV_VRAM_ADDR    ),
+  .address_b( {1'b0, AV_VRAM_ADDR} ),
   .data_b   ( AV_VRAM_DIN     ),
   .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd1) ),
   .q_b      ( av_red_q        )
 );
 
-dpram #(8,14) ramg(
+dpram #(8,15) ramg(
   .clock    ( CLKSYS          ),
-  .address_a( SVRADRS         ),
+  .address_a( {SCASSEL ? AV_ACTIVE_PAGE : AV_DISPLAY_PAGE, SVRADRS} ),
   .data_a   ( SDATABUS        ),
   .wren_a   ( ~SVWEn & ~SDRAMGn ),
   .q_a      ( SVDATAG         ),
-  .address_b( AV_VRAM_ADDR    ),
+  .address_b( {1'b0, AV_VRAM_ADDR} ),
   .data_b   ( AV_VRAM_DIN     ),
   .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd2) ),
   .q_b      ( av_green_q      )

@@ -13,7 +13,9 @@ to the secondary CPU's A/B/C ROM window. The main CPU's MMR aperture into the
 three shared VRAM planes is also wired, but font banking, page selection, and
 AV display modes remain unfinished. The sub-system `$D800-$DFFF` font window
 now selects the checked-in `subsyscg.rom` banks through `$D430`; its display
-page/active-page bits are still not latched by the RTL.
+now selects the checked-in `subsyscg.rom` banks through `$D430`. The display
+and active page bits are latched and select the raster/sub-CPU VRAM page; the
+320×200 mode and main-CPU VRAM page bank are still unfinished.
 This file preserves the hardware research from a longer planning document
 (deleted; see git history for `FM77AV_PLAN.md`).
 Claims are cited file:line against the reference emulators in `refs/`; anything marked
