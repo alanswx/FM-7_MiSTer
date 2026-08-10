@@ -62,6 +62,7 @@ wire [7:0] PERIPH_out;
 wire [7:0] MFD_out;
 wire [7:0] RS232_dout;
 wire [7:0] PALDATA;
+wire [23:0] AV_ANALOG_RGB;
 wire [7:0] MKDATA;
 wire [7:0] SOUND_dout;
 wire [7:0] KANJI_dout;
@@ -819,6 +820,7 @@ PAL PAL(
   .SVDATAR  ( SVDATAR      ),
   .SVDATAG  ( SVDATAG      ),
   .SFTCLK   ( SFTCLK       ),
+  .machine_av ( machine_av ),
   .AV_MODE_320 ( AV_MODE_320 ),
   .SFTSTEP  ( SFTSTEP      ),
   .SFTLODn  ( SFTLODn      ),
@@ -832,7 +834,9 @@ PAL PAL(
   .RDQEn    ( RDQEn        ),
   .WTQEn    ( WTQEn        ),
   .RESETBn  ( RESETBn      ),
-  .grb      ( grb          )
+  .grb      ( grb          ),
+  .ANALOG_CODE ( 12'd0     ),
+  .ANALOG_RGB  ( AV_ANALOG_RGB )
 );
 
 KEYBOARD KEYBOARD(

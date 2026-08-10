@@ -292,7 +292,13 @@ mb60h010-test: mb60h010_tb.sv ../rtl/MB60H010.v ../rtl/clk_en.v ../rtl/clocks.sv
 		../rtl/MB60H010.v ../rtl/clk_en.v
 	/tmp/fm7-mb60-obj/Vmb60h010_tb
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test mb60h010-test
+# Directed check for the FM77AV analog palette registers at $FD30-$FD34.
+pal-test: pal_tb.sv ../rtl/PAL.v
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-pal-obj \
+		--top-module PAL_tb pal_tb.sv ../rtl/PAL.v
+	/tmp/fm7-pal-obj/VPAL_tb
+
+.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test mb60h010-test pal-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h

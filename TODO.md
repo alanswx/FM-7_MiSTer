@@ -158,9 +158,13 @@ The main-CPU VRAM aperture now uses `$D430` bit 5 as its bank select;
 address transform are wired through `$FD12` and the existing scroll offset;
 `make avmem-test` covers both masks. The raster now uses 40-byte lines and
 doubles each logical pixel, while retaining the FM-7's 640-clock line timing.
+The FM77AV `$FD30-$FD34` analog palette index/component registers are now
+separated from the FM-7 digital palette and tested with the reference reset
+ramp and DAC expansion.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: add the AV 320-pixel raster timing and analog pixel
-compositor, then implement the keyboard encoder and YM2203 paths behind the
-same family signal. Research and reference addresses are in `docs/FM77AV.md`.
+Next, in hardware order: connect the analog palette to the AV 12-plane pixel
+fetch/compositor, then implement the keyboard encoder and YM2203 paths behind
+the same family signal. Research and reference addresses are in
+`docs/FM77AV.md`.
