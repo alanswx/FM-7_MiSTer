@@ -24,12 +24,9 @@ Working on real hardware, verified this round:
 
 ### Open items, most useful first
 
-1. **Drive 1 needs one direct read test.** Mounting a second image is proven
-   harmless, and the simulation side has now forced the real drive-1 path: a
-   Thexder image mounted only in slot 1 produced 786 drive-1 DMA transfers,
-   including runtime reads after the 674-block D77 scan, with zero drive-0
-   transfers. The normal FPGA image still needs a software-driven `$fd1d`
-   selection before this can be called hardware-confirmed.
+1. ~~**Drive 1 needs one direct read test.**~~ **CLOSED — software-driven
+   `$fd1d` selection performed on the normal FPGA image, no forced probe.** See
+   "Drive 1 confirmed" at the end of this file.
 2. **OS-9 is intermittent on hardware, ~3 boots in 4 bank-2 runs.** You
    established that simulation is deterministic by construction and so cannot
    reproduce a partial rate — that localises the residue to marginal timing,
@@ -468,3 +465,58 @@ boots from drive 0, so the candidates are a disk-BASIC `FILES` against drive 1,
 or playing Ys far enough to hit its scenario-disk access — neither of which this
 screenshot harness can drive. Suggestions welcome from the simulation side,
 which can force a drive-1 access directly.
+
+
+---
+
+# Drive 1 confirmed on hardware — `5133ccb`, no forced probe
+
+Closes the request in `7f176dd`, using the "visible result that depends on data
+unique to image 1" arm of the acceptable-evidence list. The production core is
+unmodified — no forced-drive probe, nothing temporary compiled in — and the
+`$fd1d` selection is performed by software, which was the outstanding condition.
+
+## The software trigger
+
+`[OS] F-BASIC v3.0 L10` is a bootable **disk** BASIC, and on hardware it opens
+with a prompt that is itself the lever this test needed:
+
+```
+DISK VERSION
+How many disk drives      ? 2
+How many disk files(0-15) ? 2
+```
+
+Answering **2** makes disk BASIC configure and address a second physical drive,
+after which `FILES"n:"` selects drive n via `$fd1d` and issues a real FDC read.
+Disk BASIC is distinguishable from cassette BASIC at a glance: 25584 bytes free
+with two drives and two files configured, against 38530 for cassette.
+
+## The evidence
+
+Same command, same drive number, only the contents of image 1 changing:
+
+| image 1 | `FILES"1:"` result |
+|---|---|
+| `Ys (FM7) (Disk B)` — a game disk, not BASIC-formatted | **`Bad File Structure`** |
+| `[OS] F-BASIC v3.0 L10` — BASIC-formatted | **full directory listing** — `DFMCD MCOPY SYSDSK VOLCOPY AUTOUTY PFDEF DEMO1 DEMO2 DEMO21 DEMOSUB`, `126 Clusters Free` |
+
+with the drive-0 control in the same session, `FILES"0:"`, returning the BASIC
+disk's listing as expected.
+
+**The result tracks the contents of image 1.** A not-ready or unrouted drive
+cannot produce two different content-dependent outcomes from one command — it
+would fail the same way both times. Slot 1 is genuinely being read.
+
+The `Bad File Structure` row is kept rather than discarded as a failed attempt:
+on its own it is only an absence-of-error argument, and it is the *pair* that
+closes this.
+
+## Footnote for whoever automates this
+
+`:` is **keycode 40** on this JIS layout (where a US layout has apostrophe), and
+`"` is Shift+2. `vsim`'s `--key` text path silently drops characters it cannot
+map — `--key '700:files"1:"'` types `files"1`, losing the colon and the closing
+quote — so the sequence above was driven with raw scancodes. The argument parser
+is fine (`strchr` takes the first colon and passes the rest intact); it is the
+text-to-scancode table that is lossy.
