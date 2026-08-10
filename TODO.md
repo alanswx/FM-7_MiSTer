@@ -93,12 +93,19 @@ the same `RUN""` autostart that 77AVEMU uses, reaches `Loading GAME IPL` at
 frame 3000. Its tape address is `$03f50a` (9.4%); 77AVEMU reports `GAME IPL`
 at raw pointer 202540, so the core has crossed the same block and is actively
 transferring it. Motor cycling and the extra `$fd02` control write also match
-the reference sequence. The extended title checkpoint is still running.
+the reference sequence. At frame 4500 the loader has completed that transfer
+and is searching for the game payload. At frame 6000 it reports `Device I/O
+Error` and the main CPU is in the `$0124` zero loop, with the tape address at
+`$082802` (19.3%). 77AVEMU's full-image file scan also reports a malformed
+block (`Device I/O Error` at raw `$214b42`), so the error text alone is not
+evidence of an RTL defect. Runtime alignment of that payload/error remains
+open; do not change the decoder without that reference trace.
 
 Remaining validation:
 
-- **CHAN.POP** — finish the extended title checkpoint; the decoder and full
-  tape-load comparison have already matched through `Loading GAME IPL`.
+- **CHAN.POP** — align the post-`GAME IPL` `Device I/O Error` against a
+  77AVEMU runtime trace before changing RTL; the decoder and full tape-load
+  comparison match through the payload transfer.
 
 ### Ys
 
