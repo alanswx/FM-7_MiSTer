@@ -27,6 +27,8 @@ module MB60H010(
   output SCLK1,
   output SCLK2, // clock for MB88401 MCU
   output [13:0] SVRADRS, // $0000-$3FFF - 7bits multiplexed on schematics
+  output [13:0] SVRADRS0,
+  output [13:0] SVRADRS1,
   output [13:0] VRAM_OFFSET,
   output [13:0] VRAM_OFFSET0,
   output [13:0] VRAM_OFFSET1,
@@ -100,6 +102,8 @@ reg [8:0] yy;
 wire [6:0] char_x = AV_MODE_320 ? {1'b0, xx[9:4]} : xx[9:3];
 
 wire [13:0] line_base = AV_MODE_320 ? yy * 14'd40 : yy * 14'd80;
+wire [13:0] SRA0 = VOFFSET0 + line_base + {7'd0, char_x};
+wire [13:0] SRA1 = VOFFSET1 + line_base + {7'd0, char_x};
 wire [13:0] SRA = DISPLAY_OFFSET + line_base + {7'd0, char_x};
 wire [13:0] SUBRA_640 = SADDRBUS[13:0] + VOFFSET;
 wire [13:0] SUBRA_320 = {SADDRBUS[13],
@@ -107,6 +111,8 @@ wire [13:0] SUBRA_320 = {SADDRBUS[13],
 
 // SVRADRS (VRAM address) mux based on blank (SUB or VIDEO)
 assign SVRADRS = SCASSEL ? (AV_MODE_320 ? SUBRA_320 : SUBRA_640) : SRA;
+assign SVRADRS0 = SCASSEL ? SVRADRS : (AV_MODE_320 ? SRA0 : SRA);
+assign SVRADRS1 = SCASSEL ? SVRADRS : (AV_MODE_320 ? SRA1 : SRA);
 
 assign SHSYNCn = ~(xx >= 10'd800 && xx < 10'd864);
 assign SVSYNCn = ~(yy >= 9'd224 && yy < 9'd233);

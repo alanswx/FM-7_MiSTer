@@ -390,10 +390,11 @@ always @(posedge clk_sys)
   old_ioctl_download <= tape_download;
 
 wire [2:0] grb;
+wire [23:0] rgb;
 
-assign VGA_R = {8{grb[1]}};
-assign VGA_G = {8{grb[2]}};
-assign VGA_B = {8{grb[0]}};
+assign VGA_R = machine_av ? rgb[23:16] : {8{grb[1]}};
+assign VGA_G = machine_av ? rgb[15:8]  : {8{grb[2]}};
+assign VGA_B = machine_av ? rgb[7:0]   : {8{grb[0]}};
 
 wire HBlank;
 wire HSync;
@@ -446,6 +447,7 @@ core u_core(
   .VSync       ( VSync         ),
   .HSync       ( HSync         ),
   .grb         ( grb           ),
+  .rgb         ( rgb           ),
   .ps2_key     ( ps2_key       ),
   .joystick_0  ( joy1[5:0]     ),
   .joystick_1  ( joy2[5:0]     ),

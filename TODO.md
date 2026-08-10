@@ -165,10 +165,13 @@ The reference-matched 12-plane pixel-code combiner now assembles
 `{G3,G2,G1,G0,R3,R2,R1,R0,B3,B2,B1,B0}` MSB-first and has a directed test.
 The raster offset latches now retain separate access/display page values and
 reset to zero; `make mb60h010-test` covers the split selection.
+CRTRAM now stores each gun as four 8 KB slices, exposes all twelve raster
+bytes in 320 mode, and feeds the analog palette's 24-bit RGB result at the
+core boundary; `make crtram-test` covers the four B slices.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: connect the combiner and analog palette to the AV
-12-plane VRAM fetch path, then implement the keyboard encoder and YM2203 paths behind
-the same family signal. Research and reference addresses are in
+Next, in hardware order: validate the complete AV raster against 77AVEMU, then
+implement the keyboard encoder and YM2203 paths behind the same family signal.
+Research and reference addresses are in
 `docs/FM77AV.md`.

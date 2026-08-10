@@ -5,7 +5,7 @@ module PAL_tb;
   reg resetn = 1'b0;
   reg machine_av = 1'b1;
   reg mode_320 = 1'b0;
-  reg [11:0] code = 12'h123;
+  wire [11:0] code;
   reg [15:0] addr = 16'hfd30;
   reg [7:0] data = 8'h00;
   reg pltreg_n = 1'b1;
@@ -24,6 +24,9 @@ module PAL_tb;
   PAL dut(
     .CLKSYS(clk), .SVDOFFn(svdoff_n), .SBLANKn(sblank_n),
     .SVDATAB(sdatab), .SVDATAR(sdatar), .SVDATAG(sdatag),
+    .SVDATAB2(8'h00), .SVDATAB1(8'h00), .SVDATAB0(8'h00),
+    .SVDATAR2(8'h00), .SVDATAR1(8'h00), .SVDATAR0(8'h00),
+    .SVDATAG2(8'h00), .SVDATAG1(8'h00), .SVDATAG0(8'h00),
     .SFTCLK(sftclk), .machine_av(machine_av), .AV_MODE_320(mode_320),
     .SFTSTEP(1'b1), .SFTLODn(sftlod_n), .DPAGE1(dp1), .DPAGE2(dp2),
     .DPAGE3(dp3), .MDATA(mdata), .PALDATA(paldata), .MADDRBUS(addr),
@@ -49,6 +52,7 @@ module PAL_tb;
     // reset scrub finish before checking an untouched entry.
     repeat (4097) @(posedge clk);
     resetn = 1'b1;
+    force dut.analog_code_reg = 12'h123;
     #1;
     if (analog_rgb !== 24'h2f_1f_3f) begin
       $display("FAIL reset ramp got=%06x wanted=2f1f3f", analog_rgb);
@@ -86,6 +90,7 @@ module PAL_tb;
       $fatal(1);
     end
     $display("PAL TEST PASS");
+    release dut.analog_code_reg;
     $finish;
   end
 endmodule

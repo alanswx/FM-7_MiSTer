@@ -175,6 +175,7 @@ wire        RESETn = ~reset;
 wire        CLKSYS = clk_sys;
 
 wire  [2:0] grb;
+wire [23:0] rgb;
 wire        HBlank, VBlank, HSync, VSync, ce_pix;
 wire        SVIDEOCLK;
 wire [13:0] audio_out;
@@ -192,6 +193,7 @@ core u_core(
   .VSync       ( VSync       ),
   .HSync       ( HSync       ),
   .grb         ( grb         ),
+  .rgb         ( rgb         ),
   .ps2_key     ( ps2_key     ),
   .joystick_0  ( joystick_0  ),
   .joystick_1  ( joystick_1  ),

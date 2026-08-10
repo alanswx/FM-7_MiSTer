@@ -6,6 +6,15 @@ module PAL(
   input [7:0] SVDATAB,
   input [7:0] SVDATAR,
   input [7:0] SVDATAG,
+  input [7:0] SVDATAB2,
+  input [7:0] SVDATAB1,
+  input [7:0] SVDATAB0,
+  input [7:0] SVDATAR2,
+  input [7:0] SVDATAR1,
+  input [7:0] SVDATAR0,
+  input [7:0] SVDATAG2,
+  input [7:0] SVDATAG1,
+  input [7:0] SVDATAG0,
   input SFTCLK,
   input machine_av,
   input AV_MODE_320,
@@ -22,7 +31,7 @@ module PAL(
   input WTQEn,
   input RESETBn,
   output reg [2:0] grb,
-  input [11:0] ANALOG_CODE,
+  output [11:0] ANALOG_CODE,
   output [23:0] ANALOG_RGB
 );
 
@@ -33,9 +42,13 @@ reg [2:0] pal[7:0];
 reg [7:0] SFT1;
 reg [7:0] SFT2;
 reg [7:0] SFT3;
+reg [7:0] B3SHIFT, B2SHIFT, B1SHIFT, B0SHIFT;
+reg [7:0] R3SHIFT, R2SHIFT, R1SHIFT, R0SHIFT;
+reg [7:0] G3SHIFT, G2SHIFT, G1SHIFT, G0SHIFT;
 reg [11:0] analog[0:4095];
 reg [11:0] analog_reset_idx = 12'd0;
 reg [11:0] analog_index = 12'd0;
+reg [11:0] analog_code_reg = 12'd0;
 
 wire m25_3 = ~(SVDOFFn & SBLANKn);
 
@@ -76,6 +89,7 @@ function [7:0] expand4;
 endfunction
 
 wire [11:0] analog_pixel = analog[ANALOG_CODE];
+assign ANALOG_CODE = analog_code_reg;
 assign ANALOG_RGB = { expand4(analog_pixel[7:4]),
                       expand4(analog_pixel[11:8]),
                       expand4(analog_pixel[3:0]) };
@@ -111,11 +125,20 @@ wire [2:0] color = { qh3, qh2, qh1 };
 
 always @(posedge SFTCLK) begin
 //$display("pal[color] %x",pal[color]);
-  if (~AV_MODE_320 | SFTSTEP) begin
+  if (~RESETBn) begin
+    analog_code_reg <= 12'd0;
+  end
+  else if (~AV_MODE_320 | SFTSTEP) begin
     grb <= pal[color];
     qh1 <= SFT1[7];
     qh2 <= SFT2[7];
     qh3 <= SFT3[7];
+    if (AV_MODE_320)
+      analog_code_reg <= {
+        G3SHIFT[7], G2SHIFT[7], G1SHIFT[7], G0SHIFT[7],
+        R3SHIFT[7], R2SHIFT[7], R1SHIFT[7], R0SHIFT[7],
+        B3SHIFT[7], B2SHIFT[7], B1SHIFT[7], B0SHIFT[7]
+      };
   end
 end
 
@@ -137,6 +160,48 @@ always @(posedge SFTCLK, posedge sftlod, posedge clr3) begin
   if (clr3) SFT3 <= 8'd0;
   else if (sftlod) SFT3 <= SVDATAG;
   else if (~AV_MODE_320 | SFTSTEP) SFT3 <= { SFT3[6:0], 1'b0 };
+end
+
+always @(posedge SFTCLK, posedge sftlod, posedge clr1) begin
+  if (clr1) begin
+    B3SHIFT <= 8'd0; B2SHIFT <= 8'd0; B1SHIFT <= 8'd0; B0SHIFT <= 8'd0;
+  end
+  else if (sftlod) begin
+    B3SHIFT <= SVDATAB;  B2SHIFT <= SVDATAB2;
+    B1SHIFT <= SVDATAB1; B0SHIFT <= SVDATAB0;
+  end
+  else if (AV_MODE_320 && SFTSTEP) begin
+    B3SHIFT <= {B3SHIFT[6:0], 1'b0}; B2SHIFT <= {B2SHIFT[6:0], 1'b0};
+    B1SHIFT <= {B1SHIFT[6:0], 1'b0}; B0SHIFT <= {B0SHIFT[6:0], 1'b0};
+  end
+end
+
+always @(posedge SFTCLK, posedge sftlod, posedge clr2) begin
+  if (clr2) begin
+    R3SHIFT <= 8'd0; R2SHIFT <= 8'd0; R1SHIFT <= 8'd0; R0SHIFT <= 8'd0;
+  end
+  else if (sftlod) begin
+    R3SHIFT <= SVDATAR;  R2SHIFT <= SVDATAR2;
+    R1SHIFT <= SVDATAR1; R0SHIFT <= SVDATAR0;
+  end
+  else if (AV_MODE_320 && SFTSTEP) begin
+    R3SHIFT <= {R3SHIFT[6:0], 1'b0}; R2SHIFT <= {R2SHIFT[6:0], 1'b0};
+    R1SHIFT <= {R1SHIFT[6:0], 1'b0}; R0SHIFT <= {R0SHIFT[6:0], 1'b0};
+  end
+end
+
+always @(posedge SFTCLK, posedge sftlod, posedge clr3) begin
+  if (clr3) begin
+    G3SHIFT <= 8'd0; G2SHIFT <= 8'd0; G1SHIFT <= 8'd0; G0SHIFT <= 8'd0;
+  end
+  else if (sftlod) begin
+    G3SHIFT <= SVDATAG;  G2SHIFT <= SVDATAG2;
+    G1SHIFT <= SVDATAG1; G0SHIFT <= SVDATAG0;
+  end
+  else if (AV_MODE_320 && SFTSTEP) begin
+    G3SHIFT <= {G3SHIFT[6:0], 1'b0}; G2SHIFT <= {G2SHIFT[6:0], 1'b0};
+    G1SHIFT <= {G1SHIFT[6:0], 1'b0}; G0SHIFT <= {G0SHIFT[6:0], 1'b0};
+  end
 end
 
 

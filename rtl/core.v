@@ -9,6 +9,7 @@ module core(
   output HSync,
   output ce_pix,
   output [2:0] grb,
+  output [23:0] rgb,
   input [10:0] ps2_key,
   // Joysticks (MiSTer order: [0]=right [1]=left [2]=down [3]=up [4]=A [5]=B)
   input [5:0] joystick_0,
@@ -64,6 +65,7 @@ wire [7:0] PERIPH_out;
 wire [7:0] MFD_out;
 wire [7:0] RS232_dout;
 wire [7:0] PALDATA;
+wire [11:0] AV_ANALOG_CODE;
 wire [23:0] AV_ANALOG_RGB;
 wire [7:0] MKDATA;
 wire [7:0] SOUND_dout;
@@ -216,9 +218,14 @@ wire FD1Fn;
 wire [7:0] SVDATAB;
 wire [7:0] SVDATAR;
 wire [7:0] SVDATAG;
+wire [7:0] SVDATAB2, SVDATAB1, SVDATAB0;
+wire [7:0] SVDATAR2, SVDATAR1, SVDATAR0;
+wire [7:0] SVDATAG2, SVDATAG1, SVDATAG0;
 wire SADRSEL;
 wire SFTCLK;
 wire [13:0] SVRADRS;
+wire [13:0] SVRADRS0;
+wire [13:0] SVRADRS1;
 wire SVSYNCn;
 wire SHSYNCn;
 wire SFTLODn;
@@ -247,6 +254,8 @@ assign HBLANK = ~HBLANKn;
 assign VBLANK = ~VBLANKn;
 assign ce_pix = SFTCLK;
 assign buzzer = SOUND;
+assign rgb = AV_MODE_320 ? AV_ANALOG_RGB :
+             { {8{grb[1]}}, {8{grb[2]}}, {8{grb[0]}} };
 
 assign MDATABUS_in =
   ~(RFD00n & RFD01n) ? MKDATA :
@@ -753,6 +762,8 @@ CRTRAM u_CRTRAM(
   .SVWEn      ( SVWEn        ),
   .SCASSEL    ( SCASSEL      ),
   .SVRADRS    ( SVRADRS      ),
+  .SVRADRS0   ( SVRADRS0     ),
+  .SVRADRS1   ( SVRADRS1     ),
   .AV_DISPLAY_PAGE ( AV_DISPLAY_PAGE ),
   .AV_ACTIVE_PAGE  ( AV_ACTIVE_PAGE  ),
   .AV_VRAM_BANK    ( AV_VRAM_BANK    ),
@@ -768,9 +779,19 @@ CRTRAM u_CRTRAM(
   .SDRAMBn    ( SDRAMBn      ),
   .SDRAMRn    ( SDRAMRn      ),
   .SDRAMGn    ( SDRAMGn      ),
+  .AV_MODE_320( AV_MODE_320  ),
   .SVDATAB    ( SVDATAB      ),
   .SVDATAR    ( SVDATAR      ),
-  .SVDATAG    ( SVDATAG      )
+  .SVDATAG    ( SVDATAG      ),
+  .SVDATAB2   ( SVDATAB2     ),
+  .SVDATAB1   ( SVDATAB1     ),
+  .SVDATAB0   ( SVDATAB0     ),
+  .SVDATAR2   ( SVDATAR2     ),
+  .SVDATAR1   ( SVDATAR1     ),
+  .SVDATAR0   ( SVDATAR0     ),
+  .SVDATAG2   ( SVDATAG2     ),
+  .SVDATAG1   ( SVDATAG1     ),
+  .SVDATAG0   ( SVDATAG0     )
 );
 
 SUBCRTADDR u_SUBCRTADDR(
@@ -802,6 +823,8 @@ MB60H010 u_MB60H010(
   .SCLK1     ( SCLK1     ),
   .SCLK2     ( SCLK2     ),
   .SVRADRS   ( SVRADRS   ),
+  .SVRADRS0  ( SVRADRS0  ),
+  .SVRADRS1  ( SVRADRS1  ),
   .VRAM_OFFSET ( AV_VRAM_OFFSET ),
   .VRAM_OFFSET0 ( AV_VRAM_OFFSET0 ),
   .VRAM_OFFSET1 ( AV_VRAM_OFFSET1 ),
@@ -825,6 +848,15 @@ PAL PAL(
   .SVDATAB  ( SVDATAB      ),
   .SVDATAR  ( SVDATAR      ),
   .SVDATAG  ( SVDATAG      ),
+  .SVDATAB2 ( SVDATAB2     ),
+  .SVDATAB1 ( SVDATAB1     ),
+  .SVDATAB0 ( SVDATAB0     ),
+  .SVDATAR2 ( SVDATAR2     ),
+  .SVDATAR1 ( SVDATAR1     ),
+  .SVDATAR0 ( SVDATAR0     ),
+  .SVDATAG2 ( SVDATAG2     ),
+  .SVDATAG1 ( SVDATAG1     ),
+  .SVDATAG0 ( SVDATAG0     ),
   .SFTCLK   ( SFTCLK       ),
   .machine_av ( machine_av ),
   .AV_MODE_320 ( AV_MODE_320 ),
@@ -841,7 +873,7 @@ PAL PAL(
   .WTQEn    ( WTQEn        ),
   .RESETBn  ( RESETBn      ),
   .grb      ( grb          ),
-  .ANALOG_CODE ( 12'd0     ),
+  .ANALOG_CODE ( AV_ANALOG_CODE ),
   .ANALOG_RGB  ( AV_ANALOG_RGB )
 );
 

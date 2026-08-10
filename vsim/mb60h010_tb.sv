@@ -20,7 +20,7 @@ module mb60h010_tb;
     .AV_MODE_320(mode_320), .AV_DISPLAY_PAGE(display_page),
     .AV_ACTIVE_PAGE(active_page), .SREGLn(sregl_n), .SREGHn(sregh_n),
     .SADRSEL(adrsel), .SFTCLK(sftclk), .SCLK1(sclk1), .SCLK2(sclk2),
-    .SVRADRS(vram_addr), .VRAM_OFFSET(vram_offset),
+    .SVRADRS(vram_addr), .SVRADRS0(), .SVRADRS1(), .VRAM_OFFSET(vram_offset),
     .VRAM_OFFSET0(vram_offset0), .VRAM_OFFSET1(vram_offset1),
     .SFTSTEP(sftstep),
     .SVIDEOCLK(svideoclk), .SVSYNCn(svsync_n), .SHSYNCn(shsync_n),
