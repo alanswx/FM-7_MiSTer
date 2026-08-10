@@ -194,6 +194,7 @@ V_SRC = \
 	$(RTL)/clk_en.v \
 	$(RTL)/CLKCTRL.v \
 	$(RTL)/AVMEM.v \
+	$(RTL)/AVPIXEL.v \
 	$(RTL)/core.v \
 	$(RTL)/CRTRAM.v \
 	$(RTL)/FDC.v \
@@ -298,7 +299,13 @@ pal-test: pal_tb.sv ../rtl/PAL.v
 		--top-module PAL_tb pal_tb.sv ../rtl/PAL.v
 	/tmp/fm7-pal-obj/VPAL_tb
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test mb60h010-test pal-test
+# Reference-matched 12-plane pixel-code combiner check.
+avpixel-test: avpixel_tb.sv ../rtl/AVPIXEL.v
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-avpixel-obj \
+		--top-module AVPIXEL_tb avpixel_tb.sv ../rtl/AVPIXEL.v
+	/tmp/fm7-avpixel-obj/VAVPIXEL_tb
+
+.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test mb60h010-test pal-test avpixel-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h
