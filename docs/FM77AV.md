@@ -5,9 +5,8 @@ core, but the AV hardware backend is still partial. The OSD and Verilator
 expose a machine-family bit; the initiator/F-BASIC overlays and an `AVMEM.v`
 main-memory front end are wired. The front end includes reset-seeded writable
 boot RAM, MMR/TWR registers, and the 256 KB physical map. Changing family
-forces a full reset, and selecting
-FM77AV holds the current FM-7 execution backend in reset. This is deliberate:
-the core must not silently run FM-7 hardware under an FM77AV label. The AV
+forces a full reset, and selecting FM77AV releases the AV CPUs through their
+normal reset-vector path. The AV
 `$FD13` sub-monitor selector and its sub-CPU reset-on-write behavior are wired
 to the secondary CPU's A/B/C ROM window. The main CPU's MMR aperture into the
 three shared VRAM planes is wired, including `$D430` bit 5 selecting the

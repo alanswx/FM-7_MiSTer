@@ -557,7 +557,7 @@ static void print_usage(const char* argv0) {
 	printf("                            the audio output (OSD \"Tape Audio\")\n");
 	printf("  --rewind-at-frame <n>     Pulse the tape rewind bit at frame n\n");
 	printf("  --bootrom <0-3>           0 = F-BASIC (default), 1-3 = DOS boot ROMs\n");
-	printf("  --machine <fm7|fm77av>   Select machine family; FM77AV is bring-up\n");
+	printf("  --machine <fm7|fm77av>   Select machine family\n");
 	printf("\nRun control:\n");
 	printf("  --headless, --no-gui      No SDL window. Implied by HEADLESS=1.\n");
 	printf("  --stop-at-frame <n>       Exit after frame n. Required headless;\n");
@@ -1285,7 +1285,7 @@ int main(int argc, char** argv, char** env) {
 
 	top = new Vemu();
 	if (opt_machine_av)
-		printf("Machine family: FM77AV (bring-up; execution held in reset)\n");
+		printf("Machine family: FM77AV\n");
 
 #if VM_TRACE_VCD
 	if (!vcd_path.empty()) {
@@ -1361,10 +1361,9 @@ int main(int argc, char** argv, char** env) {
 		while (true) {
 			sim_cycle();
 			if (stop_at_frame >= 0 && video.count_frame > stop_at_frame) break;
-			// The deliberate AV bring-up gate holds the current FM-7 video
-			// backend in reset, so no frame edge exists to satisfy a frame-based
-			// stop. Keep this probe bounded and report its zero-frame state.
-			if (opt_machine_av && main_time >= 100000) break;
+			// Keep a no-video boot failure bounded while allowing a normal AV
+			// raster to reach --stop-at-frame like the FM-7 path.
+			if (opt_machine_av && main_time >= 2000000 && video.count_frame == 0) break;
 			// Progress ping so long runs don't look hung.
 			if (video.count_frame != last_reported && (video.count_frame % 100) == 0) {
 				last_reported = video.count_frame;

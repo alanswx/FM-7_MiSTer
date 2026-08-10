@@ -243,10 +243,10 @@ wire CLK2_5;
 wire CLK1_2;
 wire CLK0_3;
 
-// FM77AV is not an FM-7 boot-ROM variant. Keep the family signal at the core
-// boundary now, but fail safe until the AV memory/video/I/O backend is wired:
-// selecting AV in the OSD must not present an FM-7 machine under an AV label.
-wire RESETn_active = RESETn & ~machine_av;
+// FM77AV has its own reset-vector overlay and memory map in ROMS/AVMEM.  The
+// family selector therefore changes the machine, not the CPU reset state; the
+// AV backend must be allowed to fetch its initiator ROM and boot normally.
+wire RESETn_active = RESETn;
 
 assign HSync = SHSYNCn;
 assign VSync = SVSYNCn;

@@ -215,7 +215,7 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 //   8         Tape Rewind (trigger)      rewind -> t77_decode
 //   9         Tape Audio                 cin_audio, relay_audio
 //   11:10     Boot ROM                   bootrom_sel -> ROMS.v M152 bank
-//   12        Machine family             machine_av -> core bring-up gate
+//   12        Machine family             machine_av -> AV memory/video/I/O
 //   122:121   Aspect ratio               VIDEO_ARX / VIDEO_ARY
 //
 // Bits 1..7 and 13..120 are free. The hole at 1..7 is where the template's
@@ -363,9 +363,8 @@ always @(posedge clk_sys)
   machine_av_d <= machine_av;
 
 // A family change is a board change. Hold reset long enough for every
-// clock-enable domain to observe it. core.v also gates execution while the AV
-// backend is under construction, rather than silently running FM-7 hardware
-// under an FM77AV label.
+// clock-enable domain to observe it. core.v then releases the selected
+// machine's CPUs through their normal reset-vector path.
 wire machine_mode_changed = machine_av_d ^ machine_av;
 wire reset_req = RESET | status[0] | buttons[1] | machine_mode_changed;
 reg [19:0] reset_count = {20{1'b1}};

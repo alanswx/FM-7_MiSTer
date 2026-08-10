@@ -168,8 +168,11 @@ reset to zero; `make mb60h010-test` covers the split selection.
 CRTRAM now stores each gun as four 8 KB slices, exposes all twelve raster
 bytes in 320 mode, and feeds the analog palette's 24-bit RGB result at the
 core boundary; `make crtram-test` covers the four B slices.
-Selecting FM77AV still holds execution in reset until the AV sub-system and
-video paths are present.
+Selecting FM77AV now releases both CPUs through the normal reset path so the
+initiator ROM can execute. `make av-boot-test` verifies the reset vector,
+initiator execution, both CPU liveness, and the first raster frame; the checked
+in 77AVEMU demo disk also mounts and reaches the AV FDC command path, but has
+not yet been promoted to a successful title boot.
 
 Next, in hardware order: validate the complete AV raster against 77AVEMU, then
 implement the keyboard encoder and YM2203 paths behind the same family signal.

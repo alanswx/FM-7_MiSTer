@@ -265,8 +265,8 @@ clean:
 clean-shots:
 	rm -f screenshot_*.png shots/*.png
 
-# Directed AV memory-map check. It runs independently of the full machine,
-# because the top-level AV execution gate is intentionally still closed.
+# Directed AV memory-map check. It runs independently of the full machine so
+# address-map failures remain easy to localize from the boot smoke test.
 avmem-test: avmem_tb.sv ../rtl/AVMEM.v ../rtl/ram.v
 	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-avmem-obj \
 		--top-module avmem_tb avmem_tb.sv ../rtl/AVMEM.v ../rtl/ram.v
@@ -305,7 +305,13 @@ avpixel-test: avpixel_tb.sv ../rtl/AVPIXEL.v
 		--top-module AVPIXEL_tb avpixel_tb.sv ../rtl/AVPIXEL.v
 	/tmp/fm7-avpixel-obj/VAVPIXEL_tb
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test mb60h010-test pal-test avpixel-test
+# AV reset-vector and first-frame smoke test. The checker requires both CPUs to
+# retire instructions and the raster to produce a frame; it does not bless a
+# screenshot, so it remains valid while the AV display is still evolving.
+av-boot-test: all av_boot_test.sh
+	bash av_boot_test.sh
+
+.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test mb60h010-test pal-test avpixel-test av-boot-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h
