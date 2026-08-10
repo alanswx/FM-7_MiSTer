@@ -15,6 +15,7 @@ module AVMEM(
   input        RWBn,
   input        WTQEn,
   input        RDQEn,
+  input  [13:0] VRAM_OFFSET,
   input  [7:0] VRAM_DOUT,
   output [7:0] DOUT,
   output reg [7:0] IODOUT,
@@ -22,6 +23,7 @@ module AVMEM(
   output       TWRSEL,
   output [1:0] SUBMON_SEL,
   output       SUBMON_RESET,
+  output       AV_MODE_320,
   output       VRAM_SEL,
   output [1:0] VRAM_PLANE,
   output [13:0] VRAM_ADDR,
@@ -29,9 +31,13 @@ module AVMEM(
   output [7:0] VRAM_DIN
 );
 
-wire io_sel = machine_av && (MADDRBUS >= 16'hfd80) && (MADDRBUS <= 16'hfd93);
+reg av_mode_320;
+wire mode_io_sel = machine_av && (MADDRBUS == 16'hfd12);
+wire io_sel = machine_av && (((MADDRBUS >= 16'hfd80) && (MADDRBUS <= 16'hfd93)) ||
+                             mode_io_sel);
 wire submon_io_sel = machine_av && (MADDRBUS == 16'hfd13);
 assign IOSEL = io_sel;
+assign AV_MODE_320 = av_mode_320;
 
 wire bootram_sel = machine_av &&
                    (MADDRBUS >= 16'hfe00) && (MADDRBUS < 16'hffe0);
@@ -83,7 +89,15 @@ wire vram_sel = machine_av &&
                 (physical_address < 18'h1c000);
 assign VRAM_SEL   = vram_sel;
 assign VRAM_PLANE = physical_address[15:14]; // 0=B, 1=R, 2=G
-assign VRAM_ADDR  = physical_address[13:0];
+// 77AVEMU's TransformVRAMAddress preserves the plane/page high bits while
+// wrapping the low address at 8 KB in 320x200 mode (16 KB in 640x200 mode).
+// VRAM_OFFSET is the existing sub-system display offset, so main-CPU MMR
+// accesses follow the same scroll transform as the reference machine.
+wire [13:0] vram_addr_raw = physical_address[13:0];
+wire [13:0] vram_addr_640 = vram_addr_raw + VRAM_OFFSET;
+wire [13:0] vram_addr_320 = {vram_addr_raw[13],
+                             vram_addr_raw[12:0] + VRAM_OFFSET[12:0]};
+assign VRAM_ADDR  = av_mode_320 ? vram_addr_320 : vram_addr_640;
 assign VRAM_WRITE = av_write && vram_sel;
 assign VRAM_DIN   = DIN;
 
@@ -128,6 +142,7 @@ always @(posedge CLKSYS) begin
     mmr_enable          <= 1'b0;
     twr_enable          <= 1'b0;
     bootram_write_enable <= 1'b0;
+    av_mode_320         <= 1'b0;
     submon_sel          <= 2'd0; // Type C monitor
     submon_reset_count  <= 8'd0;
     mmr[0][0] <= 6'd0; mmr[0][1] <= 6'd0; mmr[0][2] <= 6'd0; mmr[0][3] <= 6'd0;
@@ -153,6 +168,7 @@ always @(posedge CLKSYS) begin
 
     if (mmr_write) begin
       case (MADDRBUS[7:0])
+      8'h12: av_mode_320 <= DIN[6];
       8'h80, 8'h81, 8'h82, 8'h83,
       8'h84, 8'h85, 8'h86, 8'h87,
       8'h88, 8'h89, 8'h8a, 8'h8b,
@@ -189,6 +205,7 @@ end
 
 always @* begin
   case (MADDRBUS[7:0])
+    8'h12: IODOUT = 8'hbf | (av_mode_320 ? 8'h40 : 8'h00);
     8'h80, 8'h81, 8'h82, 8'h83,
     8'h84, 8'h85, 8'h86, 8'h87,
     8'h88, 8'h89, 8'h8a, 8'h8b,

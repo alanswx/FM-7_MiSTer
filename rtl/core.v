@@ -46,6 +46,8 @@ wire       AVIO_sel;
 wire       AVTWR_sel;
 wire [1:0] AV_SUBMON_SEL;
 wire       AV_SUBMON_RESET;
+wire       AV_MODE_320;
+wire [13:0] AV_VRAM_OFFSET;
 wire [7:0] AV_VRAM_DOUT;
 wire       AV_VRAM_SEL;
 wire [1:0] AV_VRAM_PLANE;
@@ -368,6 +370,7 @@ AVMEM u_AVMEM(
   .RWBn        ( RWBn         ),
   .WTQEn       ( WTQEn        ),
   .RDQEn       ( RDQEn        ),
+  .VRAM_OFFSET ( AV_VRAM_OFFSET ),
   .VRAM_DOUT   ( AV_VRAM_DOUT  ),
   .DOUT        ( AVMEM_dout   ),
   .IODOUT      ( AVIO_dout    ),
@@ -375,6 +378,7 @@ AVMEM u_AVMEM(
   .TWRSEL      ( AVTWR_sel    ),
   .SUBMON_SEL  ( AV_SUBMON_SEL ),
   .SUBMON_RESET ( AV_SUBMON_RESET ),
+  .AV_MODE_320 ( AV_MODE_320 ),
   .VRAM_SEL    ( AV_VRAM_SEL    ),
   .VRAM_PLANE  ( AV_VRAM_PLANE  ),
   .VRAM_ADDR   ( AV_VRAM_ADDR   ),
@@ -791,6 +795,7 @@ MB60H010 u_MB60H010(
   .SCLK1     ( SCLK1     ),
   .SCLK2     ( SCLK2     ),
   .SVRADRS   ( SVRADRS   ),
+  .VRAM_OFFSET ( AV_VRAM_OFFSET ),
   .SVIDEOCLK ( SVIDEOCLK ),
   .SVSYNCn   ( SVSYNCn   ),
   .SHSYNCn   ( SHSYNCn   ),

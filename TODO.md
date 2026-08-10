@@ -155,11 +155,12 @@ The `$D430` display/active page bits now select the page on the shared
 raster/sub-CPU VRAM port; `make crtram-test` covers both page paths.
 The main-CPU VRAM aperture now uses `$D430` bit 5 as its bank select;
 `make crtram-test` covers a bank-1 write/read. Mode gating and the 320×200
-address transform are still pending.
+address transform are wired through `$FD12` and the existing scroll offset;
+`make avmem-test` covers both masks. The raster still runs the FM-7's fixed
+640-pixel timing.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: add AV 320×200 mode and complete its mode-dependent
-VRAM address transform, then implement the keyboard encoder and YM2203 paths
-behind the same family signal. Research and reference addresses are in
-`docs/FM77AV.md`.
+Next, in hardware order: add the AV 320-pixel raster timing and analog pixel
+compositor, then implement the keyboard encoder and YM2203 paths behind the
+same family signal. Research and reference addresses are in `docs/FM77AV.md`.

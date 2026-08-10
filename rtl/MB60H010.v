@@ -24,6 +24,7 @@ module MB60H010(
   output SCLK1,
   output SCLK2, // clock for MB88401 MCU
   output [13:0] SVRADRS, // $0000-$3FFF - 7bits multiplexed on schematics
+  output [13:0] VRAM_OFFSET,
   output SVIDEOCLK, // video clock
   output SVSYNCn,
   output SHSYNCn,
@@ -46,6 +47,7 @@ clk_en #(CORE_CLK_16) u_ck_en(.ref_clk(CLKSYS), .clk(_16128KHz));
 reg [7:0] SRL;
 reg [7:0] SRH;
 wire [13:0] VOFFSET = { SRH, SRL[7:5], 5'd0 };
+assign VRAM_OFFSET = VOFFSET;
 
 assign SFTCLK = _16128KHz;
 

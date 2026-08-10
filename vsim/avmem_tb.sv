@@ -12,6 +12,7 @@ module avmem_tb;
   reg        rwb_n = 1'b0;
   reg        wtq_en = 1'b1;
   reg        rdq_en = 1'b1;
+  reg [13:0] vram_offset = 14'd0;
   reg [7:0]  vram_dout = 8'h00;
   wire [7:0] dout;
   wire [7:0] iodout;
@@ -19,6 +20,7 @@ module avmem_tb;
   wire       twrsel;
   wire [1:0] submon_sel;
   wire       submon_reset;
+  wire       av_mode_320;
   wire       vram_sel;
   wire [1:0] vram_plane;
   wire [13:0] vram_addr;
@@ -29,9 +31,11 @@ module avmem_tb;
     .CLKSYS(clk), .RESETBn(resetn), .machine_av(machine_av),
     .bootrom_sel(bootrom_sel), .MADDRBUS(addr), .DIN(din),
     .RWBn(rwb_n), .WTQEn(wtq_en), .RDQEn(rdq_en),
+    .VRAM_OFFSET(vram_offset),
     .VRAM_DOUT(vram_dout),
     .DOUT(dout), .IODOUT(iodout), .IOSEL(iosel), .TWRSEL(twrsel),
     .SUBMON_SEL(submon_sel), .SUBMON_RESET(submon_reset),
+    .AV_MODE_320(av_mode_320),
     .VRAM_SEL(vram_sel), .VRAM_PLANE(vram_plane), .VRAM_ADDR(vram_addr),
     .VRAM_WRITE(vram_write), .VRAM_DIN(vram_din)
   );
@@ -60,6 +64,16 @@ module avmem_tb;
         $fatal(1);
       end
       $display("PASS %s = %02x", label, actual);
+    end
+  endtask
+
+  task check_address(input [13:0] actual, input [13:0] wanted, input [255:0] label);
+    begin
+      if (actual !== wanted) begin
+        $display("FAIL %s got=%04x wanted=%04x", label, actual, wanted);
+        $fatal(1);
+      end
+      $display("PASS %s = %04x", label, actual);
     end
   endtask
 
@@ -92,6 +106,25 @@ module avmem_tb;
     check_value({6'd0, vram_plane}, 8'h00, "AV VRAM blue plane");
     check_value({6'd0, vram_addr[1:0]}, 8'h00, "AV VRAM address");
     check_value(vram_din, din, "AV VRAM write data");
+
+    // FD12 bit 6 selects the AV 320x200 address mask. With a non-zero scroll
+    // offset, 640 mode wraps at 16 KB while 320 mode wraps at 8 KB.
+    write_bus(16'hfd81, 8'h11);
+    vram_offset = 14'h0120;
+    addr = 16'h1f80;
+    #1;
+    check_value({7'd0, av_mode_320}, 8'h00, "AV 640x200 mode");
+    check_address(vram_addr, 14'h20a0, "AV 640x200 VRAM transform");
+    write_bus(16'hfd12, 8'h40);
+    check_value({7'd0, av_mode_320}, 8'h01, "AV 320x200 mode");
+    addr = 16'h1f80;
+    #1;
+    check_address(vram_addr, 14'h00a0, "AV 320x200 VRAM transform");
+    addr = 16'hfd12;
+    #1;
+    check_value(iodout, 8'hff, "AV 320x200 mode status");
+    write_bus(16'hfd12, 8'h00);
+    check_value({7'd0, av_mode_320}, 8'h00, "AV mode restore");
 
     // TWR offset 1 maps $7c00 to physical $00100.
     write_bus(16'hfd92, 8'h01);
