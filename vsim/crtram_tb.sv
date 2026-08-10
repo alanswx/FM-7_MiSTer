@@ -24,6 +24,7 @@ module crtram_tb;
   wire [7:0] video_b2, video_b1, video_b0;
   wire [7:0] video_r2, video_r1, video_r0;
   wire [7:0] video_g2, video_g1, video_g0;
+  reg [12:0] ref_addr0, ref_addr1;
 
   CRTRAM dut(
     .CLKSYS(clk), .SDATABUS(sdata), .CRTRAMDATA(),
@@ -51,6 +52,19 @@ module crtram_tb;
       $display("PASS %s = %02x", label, actual);
     end
   endtask
+
+  // 77AVEMU's TransformVRAMAddress() for 320x200 mode preserves the plane
+  // high bits and wraps the byte address at 8 KB.  The four local CRTRAM
+  // slices correspond to the reference renderer's B3/B2/B1/B0 offsets
+  // (0x0000/0x2000/0xc000/0xe000), so all four slices see these low 13 bits.
+  function [12:0] ref_320_offset(input [12:0] addr_base,
+                                  input [12:0] vram_offset);
+    reg [13:0] sum;
+    begin
+      sum = addr_base + vram_offset;
+      ref_320_offset = sum[12:0];
+    end
+  endfunction
 
   initial begin
     // Write/read each physical plane through the AV main-CPU port.
@@ -100,6 +114,33 @@ module crtram_tb;
     check(video_b2, 8'h24, "320 B2 raster byte");
     check(video_b1, 8'h35, "320 B1 raster byte");
     check(video_b0, 8'h46, "320 B0 raster byte");
+
+    // Reference-derived scroll check.  The first address wraps at 0x2000;
+    // the second does not.  The bank bit selects B3/B2 versus B1/B0 through
+    // the same four-slice mapping as 77AVEMU's 0x0000/0x2000/0xc000/0xe000
+    // layout.
+    ref_addr0 = ref_320_offset(13'h1ff0, 13'h0040);
+    ref_addr1 = ref_320_offset(13'h0720, 13'h0120);
+
+    @(negedge clk); vram_bank = 1'b0; av_plane = 2'd0;
+      av_addr = {1'b0, ref_addr0}; av_din = 8'h53; av_write = 1'b1;
+    @(posedge clk); #1; av_write = 1'b0;
+    @(negedge clk); vram_bank = 1'b0;
+      av_addr = {1'b1, ref_addr0}; av_din = 8'h64; av_write = 1'b1;
+    @(posedge clk); #1; av_write = 1'b0;
+    @(negedge clk); vram_bank = 1'b1;
+      av_addr = {1'b0, ref_addr1}; av_din = 8'h75; av_write = 1'b1;
+    @(posedge clk); #1; av_write = 1'b0;
+    @(negedge clk); vram_bank = 1'b1;
+      av_addr = {1'b1, ref_addr1}; av_din = 8'h86; av_write = 1'b1;
+    @(posedge clk); #1; av_write = 1'b0;
+    @(negedge clk); video_addr0 = {1'b0, ref_addr0};
+      video_addr1 = {1'b0, ref_addr1};
+    @(posedge clk); #1;
+    check(video_b, 8'h53, "77AVEMU B3 wrapped offset");
+    check(video_b2, 8'h64, "77AVEMU B2 wrapped offset");
+    check(video_b1, 8'h75, "77AVEMU B1 offset");
+    check(video_b0, 8'h86, "77AVEMU B0 offset");
 
     // The sub/raster port uses the active page during blanking. The raster
     // port then sees the same byte only when the display page is selected.
