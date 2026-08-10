@@ -13,6 +13,7 @@ module smem_tb;
   wire [7:0] data_out;
   wire [7:0] d430_out;
   wire display_page, active_page;
+  wire vram_bank;
 
   SMEM dut(
     .CLKSYS(clk), .SADDRBUS(addr), .SDATABUS_in(data_in),
@@ -20,7 +21,8 @@ module smem_tb;
     .SWTQEn(swtq_n), .SRDQEn(srdq_n), .SROMSELn(sromsel_n),
     .SROMDn(sromd_n), .machine_av(machine_av), .submon_sel(submon_sel),
     .RESETBn(resetn), .av_d430_out(d430_out),
-    .av_display_page(display_page), .av_active_page(active_page)
+    .av_display_page(display_page), .av_active_page(active_page),
+    .av_vram_bank(vram_bank)
   );
 
   task check(input [7:0] actual, input [7:0] wanted, input [255:0] label);
@@ -60,6 +62,7 @@ module smem_tb;
     @(posedge clk); #1 swtq_n = 1'b1;
     check({7'd0, display_page}, 8'h01, "AV display page");
     check({7'd0, active_page}, 8'h01, "AV active page");
+    check({7'd0, vram_bank}, 8'h01, "AV VRAM bank");
 
     @(negedge clk); addr = 16'hd430; data_in = 8'h02; swtq_n = 1'b0;
     @(posedge clk); #1 swtq_n = 1'b1;

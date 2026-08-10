@@ -10,12 +10,11 @@ FM77AV holds the current FM-7 execution backend in reset. This is deliberate:
 the core must not silently run FM-7 hardware under an FM77AV label. The AV
 `$FD13` sub-monitor selector and its sub-CPU reset-on-write behavior are wired
 to the secondary CPU's A/B/C ROM window. The main CPU's MMR aperture into the
-three shared VRAM planes is also wired, but font banking, page selection, and
-AV display modes remain unfinished. The sub-system `$D800-$DFFF` font window
-now selects the checked-in `subsyscg.rom` banks through `$D430`; its display
-now selects the checked-in `subsyscg.rom` banks through `$D430`. The display
-and active page bits are latched and select the raster/sub-CPU VRAM page; the
-320×200 mode and main-CPU VRAM page bank are still unfinished.
+three shared VRAM planes is wired, including `$D430` bit 5 selecting the
+second VRAM bank. The sub-system `$D800-$DFFF` font window selects the checked-in
+`subsyscg.rom` banks through `$D430`; its display and active page bits are
+latched and select the raster/sub-CPU VRAM page. Mode gating and the 320×200
+address transform are still unfinished.
 This file preserves the hardware research from a longer planning document
 (deleted; see git history for `FM77AV_PLAN.md`).
 Claims are cited file:line against the reference emulators in `refs/`; anything marked

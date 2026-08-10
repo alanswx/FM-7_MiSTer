@@ -6,6 +6,7 @@ module crtram_tb;
   reg [13:0] video_addr = 14'd0;
   reg display_page = 1'b0;
   reg active_page = 1'b0;
+  reg vram_bank = 1'b0;
   reg scassel = 1'b0;
   reg video_we_n = 1'b1;
   reg blue_n = 1'b1;
@@ -23,6 +24,7 @@ module crtram_tb;
     .CLKSYS(clk), .SDATABUS(sdata), .CRTRAMDATA(),
     .SVRADRS(video_addr), .SVWEn(video_we_n), .SCASSEL(scassel),
     .AV_DISPLAY_PAGE(display_page), .AV_ACTIVE_PAGE(active_page),
+    .AV_VRAM_BANK(vram_bank),
     .SVCASBn(1'b0), .SVCASRn(1'b0), .SVCASGn(1'b0),
     .SDRAMBn(blue_n), .SDRAMRn(red_n), .SDRAMGn(green_n),
     .AV_VRAM_SEL(av_sel), .AV_VRAM_PLANE(av_plane),
@@ -60,6 +62,13 @@ module crtram_tb;
     @(posedge clk); #1;
     av_write = 1'b0; @(posedge clk); #1;
     check(av_dout, 8'h3c, "AV green plane");
+
+    // D430 bit 5 selects the second 64 KB VRAM bank for the main-CPU aperture.
+    @(negedge clk); vram_bank = 1'b1; av_plane = 2'd0; av_addr = 14'h0007;
+      av_din = 8'h96; av_write = 1'b1; av_sel = 1'b1;
+    @(posedge clk); #1 av_write = 1'b0;
+    @(posedge clk); #1;
+    check(av_dout, 8'h96, "AV VRAM bank 1");
 
     // The sub/raster port uses the active page during blanking. The raster
     // port then sees the same byte only when the display page is selected.

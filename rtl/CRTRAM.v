@@ -14,6 +14,7 @@ module CRTRAM(
   input SVCASGn,
   input AV_DISPLAY_PAGE,
   input AV_ACTIVE_PAGE,
+  input AV_VRAM_BANK,
   input SDRAMBn,
   input SDRAMRn,
   input SDRAMGn,
@@ -45,7 +46,7 @@ dpram #(8,15) ramb(
   .data_a   ( SDATABUS        ),
   .wren_a   ( ~SVWEn & ~SDRAMBn ),
   .q_a      ( SVDATAB         ),
-  .address_b( {1'b0, AV_VRAM_ADDR} ),
+  .address_b( {AV_VRAM_BANK, AV_VRAM_ADDR} ),
   .data_b   ( AV_VRAM_DIN     ),
   .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd0) ),
   .q_b      ( av_blue_q       )
@@ -57,7 +58,7 @@ dpram #(8,15) ramr(
   .data_a   ( SDATABUS        ),
   .wren_a   ( ~SVWEn & ~SDRAMRn ),
   .q_a      ( SVDATAR         ),
-  .address_b( {1'b0, AV_VRAM_ADDR} ),
+  .address_b( {AV_VRAM_BANK, AV_VRAM_ADDR} ),
   .data_b   ( AV_VRAM_DIN     ),
   .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd1) ),
   .q_b      ( av_red_q        )
@@ -69,7 +70,7 @@ dpram #(8,15) ramg(
   .data_a   ( SDATABUS        ),
   .wren_a   ( ~SVWEn & ~SDRAMGn ),
   .q_a      ( SVDATAG         ),
-  .address_b( {1'b0, AV_VRAM_ADDR} ),
+  .address_b( {AV_VRAM_BANK, AV_VRAM_ADDR} ),
   .data_b   ( AV_VRAM_DIN     ),
   .wren_b   ( AV_VRAM_WRITE & AV_VRAM_SEL & (AV_VRAM_PLANE == 2'd2) ),
   .q_b      ( av_green_q      )

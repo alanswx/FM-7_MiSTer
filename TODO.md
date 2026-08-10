@@ -153,10 +153,13 @@ The AV `$D800-$DFFF` character-generator aperture is now banked by the
 sub-system `$D430` register; `make smem-test` checks the ROM banks and status.
 The `$D430` display/active page bits now select the page on the shared
 raster/sub-CPU VRAM port; `make crtram-test` covers both page paths.
+The main-CPU VRAM aperture now uses `$D430` bit 5 as its bank select;
+`make crtram-test` covers a bank-1 write/read. Mode gating and the 320×200
+address transform are still pending.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: add AV 320×200 mode and main-CPU VRAM page-bank
-behavior around the shared VRAM, then implement the keyboard encoder and
-YM2203 paths behind the same family signal. Research and reference addresses
-are in `docs/FM77AV.md`.
+Next, in hardware order: add AV 320×200 mode and complete its mode-dependent
+VRAM address transform, then implement the keyboard encoder and YM2203 paths
+behind the same family signal. Research and reference addresses are in
+`docs/FM77AV.md`.

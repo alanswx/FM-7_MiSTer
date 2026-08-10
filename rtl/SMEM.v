@@ -15,7 +15,8 @@ module SMEM(
   input RESETBn,
   output [7:0] av_d430_out,
   output av_display_page,
-  output av_active_page
+  output av_active_page,
+  output av_vram_bank
 );
 
 wire [7:0] m153_q;
@@ -34,6 +35,7 @@ wire av_d430_sel = machine_av && (SADDRBUS == 16'hd430);
 assign av_d430_out = 8'h6a | {6'd0, av_d430_reg[1:0]};
 assign av_display_page = av_d430_reg[6];
 assign av_active_page = av_d430_reg[5];
+assign av_vram_bank = av_d430_reg[5];
 
 always @(posedge CLKSYS) begin
   if (~RESETBn)
