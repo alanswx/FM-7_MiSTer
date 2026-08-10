@@ -163,6 +163,8 @@ separated from the FM-7 digital palette and tested with the reference reset
 ramp and DAC expansion.
 The reference-matched 12-plane pixel-code combiner now assembles
 `{G3,G2,G1,G0,R3,R2,R1,R0,B3,B2,B1,B0}` MSB-first and has a directed test.
+The raster offset latches now retain separate access/display page values and
+reset to zero; `make mb60h010-test` covers the split selection.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 

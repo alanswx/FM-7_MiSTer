@@ -18,6 +18,8 @@ module MB60H010(
   input [15:0] SADDRBUS,
   input [7:0] SDATA,
   input AV_MODE_320,
+  input AV_DISPLAY_PAGE,
+  input AV_ACTIVE_PAGE,
   input SREGLn,
   input SREGHn,
   input SADRSEL,
@@ -26,6 +28,8 @@ module MB60H010(
   output SCLK2, // clock for MB88401 MCU
   output [13:0] SVRADRS, // $0000-$3FFF - 7bits multiplexed on schematics
   output [13:0] VRAM_OFFSET,
+  output [13:0] VRAM_OFFSET0,
+  output [13:0] VRAM_OFFSET1,
   output SFTSTEP,
   output SVIDEOCLK, // video clock
   output SVSYNCn,
@@ -46,10 +50,15 @@ clk_en #(CORE_CLK_4) u_ck2_en(.ref_clk(CLKSYS), .clk(SCLK2));
 clk_en #(CORE_CLK_2) u_ck3_en(.ref_clk(CLKSYS), .clk(SVIDEOCLK));
 clk_en #(CORE_CLK_16) u_ck_en(.ref_clk(CLKSYS), .clk(_16128KHz));
 
-reg [7:0] SRL;
-reg [7:0] SRH;
-wire [13:0] VOFFSET = { SRH[5:0], SRL[7:5], 5'd0 };
+reg [7:0] SRL [0:1];
+reg [7:0] SRH [0:1];
+wire [13:0] VOFFSET0 = { SRH[0][5:0], SRL[0][7:5], 5'd0 };
+wire [13:0] VOFFSET1 = { SRH[1][5:0], SRL[1][7:5], 5'd0 };
+wire [13:0] VOFFSET = AV_ACTIVE_PAGE ? VOFFSET1 : VOFFSET0;
+wire [13:0] DISPLAY_OFFSET = AV_DISPLAY_PAGE ? VOFFSET1 : VOFFSET0;
 assign VRAM_OFFSET = VOFFSET;
+assign VRAM_OFFSET0 = VOFFSET0;
+assign VRAM_OFFSET1 = VOFFSET1;
 // 320x200 keeps the 15.75 kHz line timing but presents each logical pixel
 // twice on the 16 MHz shift clock. PAL uses this to hold each bit for two
 // clocks while the raster address below advances in 40 bytes per line.
@@ -68,10 +77,20 @@ assign SFTCLK = _16128KHz;
 // inside the access while no longer sampling at the instant the decode settles.
 reg [2:0] sregl_sr, sregh_sr;
 always @(posedge CLKSYS) begin
-  sregl_sr <= { sregl_sr[1:0], SREGLn };
-  sregh_sr <= { sregh_sr[1:0], SREGHn };
-  if (sregl_sr[2] & ~sregl_sr[1]) SRL <= SDATA;
-  if (sregh_sr[2] & ~sregh_sr[1]) SRH <= SDATA;
+  if (~SRESETn) begin
+    sregl_sr <= 3'b111;
+    sregh_sr <= 3'b111;
+    SRL[0] <= 8'd0;
+    SRL[1] <= 8'd0;
+    SRH[0] <= 8'd0;
+    SRH[1] <= 8'd0;
+  end
+  else begin
+    sregl_sr <= { sregl_sr[1:0], SREGLn };
+    sregh_sr <= { sregh_sr[1:0], SREGHn };
+    if (sregl_sr[2] & ~sregl_sr[1]) SRL[AV_ACTIVE_PAGE] <= SDATA;
+    if (sregh_sr[2] & ~sregh_sr[1]) SRH[AV_ACTIVE_PAGE] <= SDATA;
+  end
 end
 
 
@@ -81,7 +100,7 @@ reg [8:0] yy;
 wire [6:0] char_x = AV_MODE_320 ? {1'b0, xx[9:4]} : xx[9:3];
 
 wire [13:0] line_base = AV_MODE_320 ? yy * 14'd40 : yy * 14'd80;
-wire [13:0] SRA = VOFFSET + line_base + {7'd0, char_x};
+wire [13:0] SRA = DISPLAY_OFFSET + line_base + {7'd0, char_x};
 wire [13:0] SUBRA_640 = SADDRBUS[13:0] + VOFFSET;
 wire [13:0] SUBRA_320 = {SADDRBUS[13],
                          SADDRBUS[12:0] + VOFFSET[12:0]};
