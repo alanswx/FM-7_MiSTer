@@ -172,9 +172,11 @@ Selecting FM77AV now releases both CPUs through the normal reset path so the
 initiator ROM can execute. `make av-boot-test` verifies the reset vector,
 initiator execution, both CPU liveness, and the first raster frame. The checked
 in 77AVEMU demo disk now passes the four-drive probe, loads its bootstrap into
-RAM, and reaches the AV PIO sector loader; it has not yet been promoted to a
-successful title boot. The AV boot-RAM read window previously fell through to
-zero-filled RAM and is fixed in `a0d4bd2`.
+RAM, reaches the AV PIO sector loader, and produces visible analog-raster
+output after the post-load delay (frame 1100 checkpoint). The remaining AV
+work is reference-raster comparison and confirming the later demo stages. The
+AV boot-RAM read window previously fell through to zero-filled RAM and is fixed
+in `a0d4bd2`.
 
 Next, in hardware order: validate the complete AV raster against 77AVEMU, then
 implement the keyboard encoder and YM2203 paths behind the same family signal.
