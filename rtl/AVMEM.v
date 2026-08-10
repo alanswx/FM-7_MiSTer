@@ -19,7 +19,8 @@ module AVMEM(
   output reg [7:0] IODOUT,
   output       IOSEL,
   output       TWRSEL,
-  output [1:0] SUBMON_SEL
+  output [1:0] SUBMON_SEL,
+  output       SUBMON_RESET
 );
 
 wire io_sel = machine_av && (MADDRBUS >= 16'hfd80) && (MADDRBUS <= 16'hfd93);
@@ -39,7 +40,9 @@ reg       mmr_enable;
 reg       twr_enable;
 reg       bootram_write_enable;
 reg [1:0] submon_sel;
+reg [7:0] submon_reset_count;
 assign SUBMON_SEL = submon_sel;
+assign SUBMON_RESET = (submon_reset_count != 8'd0);
 
 wire twr_sel = machine_av && twr_enable &&
                (MADDRBUS >= 16'h7c00) && (MADDRBUS < 16'h8000);
@@ -108,6 +111,7 @@ always @(posedge CLKSYS) begin
     twr_enable          <= 1'b0;
     bootram_write_enable <= 1'b0;
     submon_sel          <= 2'd0; // Type C monitor
+    submon_reset_count  <= 8'd0;
     mmr[0][0] <= 6'd0; mmr[0][1] <= 6'd0; mmr[0][2] <= 6'd0; mmr[0][3] <= 6'd0;
     mmr[0][4] <= 6'd0; mmr[0][5] <= 6'd0; mmr[0][6] <= 6'd0; mmr[0][7] <= 6'd0;
     mmr[0][8] <= 6'd0; mmr[0][9] <= 6'd0; mmr[0][10] <= 6'd0; mmr[0][11] <= 6'd0;
@@ -125,8 +129,12 @@ always @(posedge CLKSYS) begin
     mmr[3][8] <= 6'd0; mmr[3][9] <= 6'd0; mmr[3][10] <= 6'd0; mmr[3][11] <= 6'd0;
     mmr[3][12] <= 6'd0; mmr[3][13] <= 6'd0; mmr[3][14] <= 6'd0; mmr[3][15] <= 6'd0;
   end
-  else if (mmr_write) begin
-    case (MADDRBUS[7:0])
+  else begin
+    if (submon_reset_count != 8'd0)
+      submon_reset_count <= submon_reset_count - 8'd1;
+
+    if (mmr_write) begin
+      case (MADDRBUS[7:0])
       8'h80, 8'h81, 8'h82, 8'h83,
       8'h84, 8'h85, 8'h86, 8'h87,
       8'h88, 8'h89, 8'h8a, 8'h8b,
@@ -147,14 +155,18 @@ always @(posedge CLKSYS) begin
           3'd2: submon_sel <= 2'd2;
           default: submon_sel <= 2'd0;
         endcase
+        // The real AV resets the sub-system on every write, including a
+        // write that selects the already-active monitor bank.
+        submon_reset_count <= 8'hff;
       end
       default: ;
-    endcase
-  end
+      endcase
+    end
 
-  if (bootram_write)
-    if (bootrom_sel[1]) boot_dos[boot_offset] <= DIN;
-    else                 boot_basic[boot_offset] <= DIN;
+    if (bootram_write)
+      if (bootrom_sel[1]) boot_dos[boot_offset] <= DIN;
+      else                 boot_basic[boot_offset] <= DIN;
+  end
 end
 
 always @* begin

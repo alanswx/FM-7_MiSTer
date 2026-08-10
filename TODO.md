@@ -150,7 +150,6 @@ RAM, bank translation, TWR, boot seeding, boot-RAM writes, and monitor select.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 
-Next, in hardware order: connect the AV sub-ROM's font/VRAM aperture and make
-`$FD13` reset the sub CPU, then implement the AV display modes, keyboard
-encoder, and YM2203 paths behind the same family signal. Research and reference
-addresses are in `docs/FM77AV.md`.
+Next, in hardware order: connect the AV sub-ROM's font/VRAM aperture, then
+implement the AV display modes, keyboard encoder, and YM2203 paths behind the
+same family signal. Research and reference addresses are in `docs/FM77AV.md`.

@@ -45,6 +45,7 @@ wire [7:0] AVIO_dout;
 wire       AVIO_sel;
 wire       AVTWR_sel;
 wire [1:0] AV_SUBMON_SEL;
+wire       AV_SUBMON_RESET;
 wire [7:0] MAINRAM_dout = machine_av ? AVMEM_dout : MRAM_dout;
 wire [7:0] TIMER_out;
 wire [7:0] CLKCTRL_out;
@@ -150,7 +151,7 @@ wire SRWB;
 wire SRWBn;
 wire SBA;
 wire SCRTSWn;
-wire SRESETn = RESETBn;
+wire SRESETn = RESETBn & ~AV_SUBMON_RESET;
 wire SLEDn;
 wire SIRQCLRn;
 wire SVDHALT;
@@ -360,7 +361,8 @@ AVMEM u_AVMEM(
   .IODOUT      ( AVIO_dout    ),
   .IOSEL       ( AVIO_sel     ),
   .TWRSEL      ( AVTWR_sel    ),
-  .SUBMON_SEL  ( AV_SUBMON_SEL )
+  .SUBMON_SEL  ( AV_SUBMON_SEL ),
+  .SUBMON_RESET ( AV_SUBMON_RESET )
 );
 
 // RDQEn, not RDEn, gates the I/O read decoder.

@@ -17,13 +17,14 @@ module avmem_tb;
   wire       iosel;
   wire       twrsel;
   wire [1:0] submon_sel;
+  wire       submon_reset;
 
   AVMEM dut(
     .CLKSYS(clk), .RESETBn(resetn), .machine_av(machine_av),
     .bootrom_sel(bootrom_sel), .MADDRBUS(addr), .DIN(din),
     .RWBn(rwb_n), .WTQEn(wtq_en), .RDQEn(rdq_en),
     .DOUT(dout), .IODOUT(iodout), .IOSEL(iosel), .TWRSEL(twrsel),
-    .SUBMON_SEL(submon_sel)
+    .SUBMON_SEL(submon_sel), .SUBMON_RESET(submon_reset)
   );
 
   task write_bus(input [15:0] a, input [7:0] d);
@@ -94,6 +95,7 @@ module avmem_tb;
     // consumed by SMEM for the secondary CPU's $E000-$FFFF window.
     write_bus(16'hfd13, 8'h01);
     check_value({6'd0, submon_sel}, 8'h01, "sub-monitor A select");
+    check_value({7'd0, submon_reset}, 8'h01, "sub-monitor reset");
     write_bus(16'hfd13, 8'h02);
     check_value({6'd0, submon_sel}, 8'h02, "sub-monitor B select");
     write_bus(16'hfd13, 8'h00);
