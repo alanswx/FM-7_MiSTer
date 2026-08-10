@@ -74,22 +74,31 @@ eight-case regression remains reference-clean.
 ### Re-triage the remaining blanks
 
 The old "17 genuine blanks" list is stale — P4-19 moved 25 titles and
-Penguin-kun Wars fell out of it. Rebuild the list from
-`vsim/sweep/results-P4-19-f1500.tsv` using the exclusion rules in
-`docs/TESTING.md` before chasing anything.
+Penguin-kun Wars fell out of it. The current 350-image sweep has 221 FM-7
+rows: 82 rich renders, 53 partial renders, 64 blank screens, 6 low-rate
+crash/idle candidates, and 16 F-BASIC fallbacks. `bootsector.py` identifies
+63 halt-stub disks; 39 of those are blank by design. Rebuild the actionable
+list from `vsim/sweep/results.tsv` using the exclusion rules in
+`docs/TESTING.md` before chasing anything. The first primary-disk checks are
+Soukoban 2 and Hokuto no Ken (Disk 1); most of the low-rate and fallback rows
+are secondary disks, known-bad dumps, or programs requiring a `RUN` command.
 
 CHAN.POP now has two concrete simulator fixes: `t77_decode.v` was starting two
 bytes early and decoding each T77 pair as a bit-7 level plus a 15-bit duration;
 it also waited for SDRAM after every segment, stretching each level. 77AVEMU
 uses the first byte as a `< $40` level and the second byte as the 8-bit duration,
 with `7f ff` as low silence. The decoder now prefetches the next segment and
-matches the first 24 entries byte-for-byte. A reduced-image run reaches
-`Found` and `Loading GAME IPL`; the full-image title run remains to be captured.
+matches the first 24 entries byte-for-byte. The full 2.77 MB image, run with
+the same `RUN""` autostart that 77AVEMU uses, reaches `Loading GAME IPL` at
+frame 3000. Its tape address is `$03f50a` (9.4%); 77AVEMU reports `GAME IPL`
+at raw pointer 202540, so the core has crossed the same block and is actively
+transferring it. Motor cycling and the extra `$fd02` control write also match
+the reference sequence. The extended title checkpoint is still running.
 
 Remaining validation:
 
-- **CHAN.POP** — rerun the full load/title path with an emulated-time-aligned
-  77AVEMU comparison after the T77 decoder fix.
+- **CHAN.POP** — finish the extended title checkpoint; the decoder and full
+  tape-load comparison have already matched through `Loading GAME IPL`.
 
 ### Ys
 
