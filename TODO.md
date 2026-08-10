@@ -170,9 +170,11 @@ bytes in 320 mode, and feeds the analog palette's 24-bit RGB result at the
 core boundary; `make crtram-test` covers the four B slices.
 Selecting FM77AV now releases both CPUs through the normal reset path so the
 initiator ROM can execute. `make av-boot-test` verifies the reset vector,
-initiator execution, both CPU liveness, and the first raster frame; the checked
-in 77AVEMU demo disk also mounts and reaches the AV FDC command path, but has
-not yet been promoted to a successful title boot.
+initiator execution, both CPU liveness, and the first raster frame. The checked
+in 77AVEMU demo disk now passes the four-drive probe, loads its bootstrap into
+RAM, and reaches the AV PIO sector loader; it has not yet been promoted to a
+successful title boot. The AV boot-RAM read window previously fell through to
+zero-filled RAM and is fixed in `a0d4bd2`.
 
 Next, in hardware order: validate the complete AV raster against 77AVEMU, then
 implement the keyboard encoder and YM2203 paths behind the same family signal.
