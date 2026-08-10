@@ -283,7 +283,16 @@ smem-test: smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v
 		--top-module smem_tb smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v
 	/tmp/fm7-smem-obj/Vsmem_tb
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test
+# Directed check for the AV mode-aware raster address and doubled 320-pixel
+# shift cadence. It exercises the timing/address front end independently of
+# the still-pending 12-plane analog compositor.
+mb60h010-test: mb60h010_tb.sv ../rtl/MB60H010.v ../rtl/clk_en.v ../rtl/clocks.svh
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-mb60-obj \
+		-I../rtl --top-module mb60h010_tb mb60h010_tb.sv ../rtl/clocks.svh \
+		../rtl/MB60H010.v ../rtl/clk_en.v
+	/tmp/fm7-mb60-obj/Vmb60h010_tb
+
+.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test mb60h010-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h

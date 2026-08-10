@@ -156,8 +156,8 @@ raster/sub-CPU VRAM port; `make crtram-test` covers both page paths.
 The main-CPU VRAM aperture now uses `$D430` bit 5 as its bank select;
 `make crtram-test` covers a bank-1 write/read. Mode gating and the 320×200
 address transform are wired through `$FD12` and the existing scroll offset;
-`make avmem-test` covers both masks. The raster still runs the FM-7's fixed
-640-pixel timing.
+`make avmem-test` covers both masks. The raster now uses 40-byte lines and
+doubles each logical pixel, while retaining the FM-7's 640-clock line timing.
 Selecting FM77AV still holds execution in reset until the AV sub-system and
 video paths are present.
 

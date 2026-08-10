@@ -17,6 +17,7 @@ module MB60H010(
   input CLKSYS,
   input [15:0] SADDRBUS,
   input [7:0] SDATA,
+  input AV_MODE_320,
   input SREGLn,
   input SREGHn,
   input SADRSEL,
@@ -25,6 +26,7 @@ module MB60H010(
   output SCLK2, // clock for MB88401 MCU
   output [13:0] SVRADRS, // $0000-$3FFF - 7bits multiplexed on schematics
   output [13:0] VRAM_OFFSET,
+  output SFTSTEP,
   output SVIDEOCLK, // video clock
   output SVSYNCn,
   output SHSYNCn,
@@ -46,8 +48,12 @@ clk_en #(CORE_CLK_16) u_ck_en(.ref_clk(CLKSYS), .clk(_16128KHz));
 
 reg [7:0] SRL;
 reg [7:0] SRH;
-wire [13:0] VOFFSET = { SRH, SRL[7:5], 5'd0 };
+wire [13:0] VOFFSET = { SRH[5:0], SRL[7:5], 5'd0 };
 assign VRAM_OFFSET = VOFFSET;
+// 320x200 keeps the 15.75 kHz line timing but presents each logical pixel
+// twice on the 16 MHz shift clock. PAL uses this to hold each bit for two
+// clocks while the raster address below advances in 40 bytes per line.
+assign SFTSTEP = ~AV_MODE_320 | xx[0];
 
 assign SFTCLK = _16128KHz;
 
@@ -72,12 +78,16 @@ end
 reg [9:0] xx;
 reg [8:0] yy;
 
-wire [6:0] char_x = xx[9:3];
+wire [6:0] char_x = AV_MODE_320 ? {1'b0, xx[9:4]} : xx[9:3];
 
-wire [13:0] SRA = VOFFSET + yy * 80 + char_x;
+wire [13:0] line_base = AV_MODE_320 ? yy * 14'd40 : yy * 14'd80;
+wire [13:0] SRA = VOFFSET + line_base + {7'd0, char_x};
+wire [13:0] SUBRA_640 = SADDRBUS[13:0] + VOFFSET;
+wire [13:0] SUBRA_320 = {SADDRBUS[13],
+                         SADDRBUS[12:0] + VOFFSET[12:0]};
 
 // SVRADRS (VRAM address) mux based on blank (SUB or VIDEO)
-assign SVRADRS = SCASSEL ? SADDRBUS[13:0] + VOFFSET : SRA;
+assign SVRADRS = SCASSEL ? (AV_MODE_320 ? SUBRA_320 : SUBRA_640) : SRA;
 
 assign SHSYNCn = ~(xx >= 10'd800 && xx < 10'd864);
 assign SVSYNCn = ~(yy >= 9'd224 && yy < 9'd233);
@@ -102,7 +112,8 @@ assign SVDHALT =
 //
 // One CLKSYS of delay is a third of a pixel and lets q settle first.
 reg sftlodn_d;
-always @(posedge CLKSYS) sftlodn_d <= |xx[2:0];
+always @(posedge CLKSYS)
+  sftlodn_d <= AV_MODE_320 ? |xx[3:0] : |xx[2:0];
 assign SFTLODn = sftlodn_d;
 
 always @(posedge _16128KHz) begin

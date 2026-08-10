@@ -7,6 +7,8 @@ module PAL(
   input [7:0] SVDATAR,
   input [7:0] SVDATAG,
   input SFTCLK,
+  input AV_MODE_320,
+  input SFTSTEP,
   input SFTLODn,
   input DPAGE1,
   input DPAGE2,
@@ -72,10 +74,12 @@ wire [2:0] color = { qh3, qh2, qh1 };
 
 always @(posedge SFTCLK) begin
 //$display("pal[color] %x",pal[color]);
-  grb <= pal[color];
-  qh1 <= SFT1[7];
-  qh2 <= SFT2[7];
-  qh3 <= SFT3[7];
+  if (~AV_MODE_320 | SFTSTEP) begin
+    grb <= pal[color];
+    qh1 <= SFT1[7];
+    qh2 <= SFT2[7];
+    qh3 <= SFT3[7];
+  end
 end
 
 wire sftlod = ~SFTLODn;
@@ -83,21 +87,20 @@ wire sftlod = ~SFTLODn;
 always @(posedge SFTCLK, posedge sftlod, posedge clr1) begin
   if (clr1) SFT1 <= 8'd0;
   else if (sftlod) SFT1 <= SVDATAB;
-  else SFT1 <= { SFT1[6:0], 1'b0 };
+  else if (~AV_MODE_320 | SFTSTEP) SFT1 <= { SFT1[6:0], 1'b0 };
 end
 
 always @(posedge SFTCLK, posedge sftlod, posedge clr2) begin
   if (clr2) SFT2 <= 8'd0;
   else if (sftlod) SFT2 <= SVDATAR;
-  else SFT2 <= { SFT2[6:0], 1'b0 };
+  else if (~AV_MODE_320 | SFTSTEP) SFT2 <= { SFT2[6:0], 1'b0 };
 end
 
 always @(posedge SFTCLK, posedge sftlod, posedge clr3) begin
   if (clr3) SFT3 <= 8'd0;
   else if (sftlod) SFT3 <= SVDATAG;
-  else SFT3 <= { SFT3[6:0], 1'b0 };
+  else if (~AV_MODE_320 | SFTSTEP) SFT3 <= { SFT3[6:0], 1'b0 };
 end
 
 
 endmodule
-

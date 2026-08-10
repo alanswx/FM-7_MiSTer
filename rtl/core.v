@@ -48,6 +48,7 @@ wire [1:0] AV_SUBMON_SEL;
 wire       AV_SUBMON_RESET;
 wire       AV_MODE_320;
 wire [13:0] AV_VRAM_OFFSET;
+wire       SFTSTEP;
 wire [7:0] AV_VRAM_DOUT;
 wire       AV_VRAM_SEL;
 wire [1:0] AV_VRAM_PLANE;
@@ -788,6 +789,7 @@ MB60H010 u_MB60H010(
   .CLKSYS    ( CLKSYS    ),
   .SADDRBUS  ( SADDRBUS  ),
   .SDATA     ( SDATABUS_out ),
+  .AV_MODE_320 ( AV_MODE_320 ),
   .SREGLn    ( SREGLn    ),
   .SREGHn    ( SREGHn    ),
   .SADRSEL   ( SADRSEL   ),
@@ -796,6 +798,7 @@ MB60H010 u_MB60H010(
   .SCLK2     ( SCLK2     ),
   .SVRADRS   ( SVRADRS   ),
   .VRAM_OFFSET ( AV_VRAM_OFFSET ),
+  .SFTSTEP   ( SFTSTEP   ),
   .SVIDEOCLK ( SVIDEOCLK ),
   .SVSYNCn   ( SVSYNCn   ),
   .SHSYNCn   ( SHSYNCn   ),
@@ -816,6 +819,8 @@ PAL PAL(
   .SVDATAR  ( SVDATAR      ),
   .SVDATAG  ( SVDATAG      ),
   .SFTCLK   ( SFTCLK       ),
+  .AV_MODE_320 ( AV_MODE_320 ),
+  .SFTSTEP  ( SFTSTEP      ),
   .SFTLODn  ( SFTLODn      ),
   .DPAGE1   ( DPAGE1       ),
   .DPAGE2   ( DPAGE2       ),
