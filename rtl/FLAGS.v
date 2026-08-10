@@ -236,21 +236,28 @@ end
 // planes, bits 4-6 mask their display. Both MAME (`data & 0x77`) and CSP
 // (`accessmask = val & 0x07; dispmask = (val & 0x70) >> 4`) agree on that split.
 //
-// This was clocked on `posedge WFD37n` -- the TRAILING edge of the write strobe.
-// A 74LS374 on the schematic latches there and the 6809's data-hold window
-// covers it, but in zero-delay RTL the CPU has already released the bus, so the
-// register captured whatever the bus had decayed to and $fd37 read back $00
-// forever. Games that select which planes are displayed had the selection
-// silently ignored; Thexder writes $30 here and got all three planes drawn.
+// WFD37n is a decode strobe, not a clock -- the last one left in this module
+// after 3f85852 moved the other four. See DERIVED_CLOCKS.md: Quartus routes it
+// as a ripple clock and a LUT-built decode glitches as its inputs arrive
+// skewed. m46 is the worst remaining place for that, because it drives both
+// VPAGE1-3n (which VRAM planes the CPU may touch) and DPAGE1-3 (which planes
+// are displayed, feeding PAL.v's clr1/clr2/clr3) -- a spurious write changes
+// what the machine can draw on and what it shows, mid-boot.
 //
-// And it could not have worked regardless, because nothing decoded a write to
-// $fd37 at all until MDECODE.v was fixed -- see the WFD37n comment there. With a
-// real write strobe, latch on its leading edge where the data is valid. Same
-// family as P0-1/P0-3.
-wire s4 = ~RESETBn;
-always @(negedge WFD37n or posedge s4)
-  if (s4) m46 <= 8'h0;
-  else m46 <= MDATABUS_in;
+// On CLKSYS with the strobe filtered through a 3-stage shift register, the
+// same shape as the MFD, PAL and MB60H010 conversions: a glitch is one or two
+// CLKSYS cycles wide, so requiring successive agreeing samples rejects it,
+// where edge-detecting the raw strobe would still see a glitch as an edge.
+//
+// The leading edge is preserved deliberately -- the P1-4 note above is why this
+// register samples there rather than on release, and that reasoning is
+// unchanged. Only the clock moves.
+reg [2:0] wfd37_sr;
+always @(posedge CLKSYS) begin
+  wfd37_sr <= { wfd37_sr[1:0], WFD37n };
+  if (~RESETBn)                          m46 <= 8'h0;
+  else if (wfd37_sr[2] & ~wfd37_sr[1])   m46 <= MDATABUS_in;
+end
 
 assign BUSY = m44_8;
 assign SUBIRQn = ~m45;
