@@ -175,6 +175,10 @@ reset to zero; `make mb60h010-test` covers the split selection.
 CRTRAM now stores each gun as four 8 KB slices, exposes all twelve raster
 bytes in 320 mode, and feeds the analog palette's 24-bit RGB result at the
 core boundary; `make crtram-test` covers the four B slices.
+`$D40E/$D40F` capture is qualified by the exact sub-CPU address and write
+strobe. The demo reaches the matching CPU checkpoint, but its simulated VRAM
+contents still need a write-path comparison against 77AVEMU before the analog
+gradient can be called complete.
 Selecting FM77AV now releases both CPUs through the normal reset path so the
 initiator ROM can execute. `make av-boot-test` verifies the reset vector,
 initiator execution, both CPU liveness, and the first raster frame. The checked

@@ -243,8 +243,11 @@ wire FD_REn;
 wire RS232_CEn;
 wire FD1Fn;
 wire [7:0] SVDATAB;
+wire [7:0] SVDATAB3;
 wire [7:0] SVDATAR;
+wire [7:0] SVDATAR3;
 wire [7:0] SVDATAG;
+wire [7:0] SVDATAG3;
 wire [7:0] SVDATAB2, SVDATAB1, SVDATAB0;
 wire [7:0] SVDATAR2, SVDATAR1, SVDATAR0;
 wire [7:0] SVDATAG2, SVDATAG1, SVDATAG0;
@@ -848,8 +851,11 @@ CRTRAM u_CRTRAM(
   .SDRAMGn    ( SDRAMGn      ),
   .AV_MODE_320( AV_MODE_320  ),
   .SVDATAB    ( SVDATAB      ),
+  .SVDATAB3   ( SVDATAB3     ),
   .SVDATAR    ( SVDATAR      ),
+  .SVDATAR3   ( SVDATAR3     ),
   .SVDATAG    ( SVDATAG      ),
+  .SVDATAG3   ( SVDATAG3     ),
   .SVDATAB2   ( SVDATAB2     ),
   .SVDATAB1   ( SVDATAB1     ),
   .SVDATAB0   ( SVDATAB0     ),
@@ -885,6 +891,7 @@ MB60H010 u_MB60H010(
   .AV_ACTIVE_PAGE  ( AV_ACTIVE_PAGE  ),
   .SREGLn    ( SREGLn    ),
   .SREGHn    ( SREGHn    ),
+  .SWTQEn    ( SWTQEn    ),
   .SADRSEL   ( SADRSEL   ),
   .SFTCLK    ( SFTCLK    ),
   .SCLK1     ( SCLK1     ),
@@ -913,8 +920,11 @@ PAL PAL(
   .SVDOFFn  ( SVDOFFn      ),
   .SBLANKn  ( SBLANKn      ),
   .SVDATAB  ( SVDATAB      ),
+  .SVDATAB3 ( SVDATAB3     ),
   .SVDATAR  ( SVDATAR      ),
+  .SVDATAR3 ( SVDATAR3     ),
   .SVDATAG  ( SVDATAG      ),
+  .SVDATAG3 ( SVDATAG3     ),
   .SVDATAB2 ( SVDATAB2     ),
   .SVDATAB1 ( SVDATAB1     ),
   .SVDATAB0 ( SVDATAB0     ),

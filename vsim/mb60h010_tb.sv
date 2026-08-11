@@ -9,6 +9,7 @@ module mb60h010_tb;
   reg [15:0] addr = 16'd0;
   reg [7:0] data = 8'd0;
   reg sregh_n = 1'b1, sregl_n = 1'b1, adrsel = 1'b0;
+  reg swtq_n = 1'b1;
   wire [13:0] vram_addr, vram_offset, vram_offset0, vram_offset1;
   wire sftstep;
   wire sftclk, sclk1, sclk2, svideoclk;
@@ -19,6 +20,7 @@ module mb60h010_tb;
     .SRESETn(resetn), .CLKSYS(clk), .SADDRBUS(addr), .SDATA(data),
     .AV_MODE_320(mode_320), .AV_DISPLAY_PAGE(display_page),
     .AV_ACTIVE_PAGE(active_page), .SREGLn(sregl_n), .SREGHn(sregh_n),
+    .SWTQEn(swtq_n),
     .SADRSEL(adrsel), .SFTCLK(sftclk), .SCLK1(sclk1), .SCLK2(sclk2),
     .SVRADRS(vram_addr), .SVRADRS0(), .SVRADRS1(), .VRAM_OFFSET(vram_offset),
     .VRAM_OFFSET0(vram_offset0), .VRAM_OFFSET1(vram_offset1),

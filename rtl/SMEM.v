@@ -46,11 +46,22 @@ assign av_display_page = av_d430_reg[6];
 assign av_active_page = av_d430_reg[5];
 assign av_vram_bank = av_d430_reg[5];
 
+// $D430 is a sub-CPU write latch.  SADDRBUS/SWTQEn are decode outputs rather
+// than a clock, and the address can already be moving to the next cycle at a
+// CLKSYS edge.  Filter the active-low write strobe and capture on its stable
+// leading edge, matching the scroll-register latches in MB60H010.
+wire av_d430_wrn = ~(av_d430_sel && ~SWTQEn);
+reg [2:0] av_d430_wr_sr;
 always @(posedge CLKSYS) begin
-  if (~RESETBn)
+  av_d430_wr_sr <= { av_d430_wr_sr[1:0], av_d430_wrn };
+  if (~RESETBn) begin
     av_d430_reg <= 8'd0;
-  else if (av_d430_sel && ~SWTQEn)
+    av_d430_wr_sr <= 3'b111;
+  end
+  else if ((av_d430_sel && ~SWTQEn) ||
+           (av_d430_wr_sr[2] & ~av_d430_wr_sr[1])) begin
     av_d430_reg <= SDATABUS_in;
+  end
 end
 
 assign SDATABUS_out =

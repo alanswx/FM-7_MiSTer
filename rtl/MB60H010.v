@@ -22,6 +22,7 @@ module MB60H010(
   input AV_ACTIVE_PAGE,
   input SREGLn,
   input SREGHn,
+  input SWTQEn,
   input SADRSEL,
   output SFTCLK, // shift register clock
   output SCLK1,
@@ -77,21 +78,23 @@ assign SFTCLK = _16128KHz;
 // lands two CLKSYS cycles into the strobe rather than exactly on its falling
 // edge; the sub's E is far slower than the 48 MHz CLKSYS, so this is still well
 // inside the access while no longer sampling at the instant the decode settles.
-reg [2:0] sregl_sr, sregh_sr;
+reg [2:0] offset_lo_sr, offset_hi_sr;
+wire offset_lo_wrn = ~((SADDRBUS == 16'hd40f) && ~SWTQEn);
+wire offset_hi_wrn = ~((SADDRBUS == 16'hd40e) && ~SWTQEn);
 always @(posedge CLKSYS) begin
   if (~SRESETn) begin
-    sregl_sr <= 3'b111;
-    sregh_sr <= 3'b111;
+    offset_lo_sr <= 3'b111;
+    offset_hi_sr <= 3'b111;
     SRL[0] <= 8'd0;
     SRL[1] <= 8'd0;
     SRH[0] <= 8'd0;
     SRH[1] <= 8'd0;
   end
   else begin
-    sregl_sr <= { sregl_sr[1:0], SREGLn };
-    sregh_sr <= { sregh_sr[1:0], SREGHn };
-    if (sregl_sr[2] & ~sregl_sr[1]) SRL[AV_ACTIVE_PAGE] <= SDATA;
-    if (sregh_sr[2] & ~sregh_sr[1]) SRH[AV_ACTIVE_PAGE] <= SDATA;
+    offset_lo_sr <= { offset_lo_sr[1:0], offset_lo_wrn };
+    offset_hi_sr <= { offset_hi_sr[1:0], offset_hi_wrn };
+    if (offset_lo_sr[2] & ~offset_lo_sr[1]) SRL[AV_ACTIVE_PAGE] <= SDATA;
+    if (offset_hi_sr[2] & ~offset_hi_sr[1]) SRH[AV_ACTIVE_PAGE] <= SDATA;
   end
 end
 

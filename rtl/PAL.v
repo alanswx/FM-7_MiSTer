@@ -4,8 +4,11 @@ module PAL(
   input SVDOFFn,
   input SBLANKn,
   input [7:0] SVDATAB,
+  input [7:0] SVDATAB3,
   input [7:0] SVDATAR,
+  input [7:0] SVDATAR3,
   input [7:0] SVDATAG,
+  input [7:0] SVDATAG3,
   input [7:0] SVDATAB2,
   input [7:0] SVDATAB1,
   input [7:0] SVDATAB0,
@@ -167,7 +170,7 @@ always @(posedge SFTCLK, posedge sftlod, posedge clr1) begin
     B3SHIFT <= 8'd0; B2SHIFT <= 8'd0; B1SHIFT <= 8'd0; B0SHIFT <= 8'd0;
   end
   else if (sftlod) begin
-    B3SHIFT <= SVDATAB;  B2SHIFT <= SVDATAB2;
+    B3SHIFT <= AV_MODE_320 ? SVDATAB3 : SVDATAB;  B2SHIFT <= SVDATAB2;
     B1SHIFT <= SVDATAB1; B0SHIFT <= SVDATAB0;
   end
   else if (AV_MODE_320 && SFTSTEP) begin
@@ -181,7 +184,7 @@ always @(posedge SFTCLK, posedge sftlod, posedge clr2) begin
     R3SHIFT <= 8'd0; R2SHIFT <= 8'd0; R1SHIFT <= 8'd0; R0SHIFT <= 8'd0;
   end
   else if (sftlod) begin
-    R3SHIFT <= SVDATAR;  R2SHIFT <= SVDATAR2;
+    R3SHIFT <= AV_MODE_320 ? SVDATAR3 : SVDATAR;  R2SHIFT <= SVDATAR2;
     R1SHIFT <= SVDATAR1; R0SHIFT <= SVDATAR0;
   end
   else if (AV_MODE_320 && SFTSTEP) begin
@@ -195,7 +198,7 @@ always @(posedge SFTCLK, posedge sftlod, posedge clr3) begin
     G3SHIFT <= 8'd0; G2SHIFT <= 8'd0; G1SHIFT <= 8'd0; G0SHIFT <= 8'd0;
   end
   else if (sftlod) begin
-    G3SHIFT <= SVDATAG;  G2SHIFT <= SVDATAG2;
+    G3SHIFT <= AV_MODE_320 ? SVDATAG3 : SVDATAG;  G2SHIFT <= SVDATAG2;
     G1SHIFT <= SVDATAG1; G0SHIFT <= SVDATAG0;
   end
   else if (AV_MODE_320 && SFTSTEP) begin

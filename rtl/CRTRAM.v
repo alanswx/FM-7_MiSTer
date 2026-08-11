@@ -118,8 +118,11 @@ module CRTRAM(
   input [7:0] AV_VRAM_DIN,
   output [7:0] AV_VRAM_DOUT,
   output [7:0] SVDATAB,
+  output [7:0] SVDATAB3,
   output [7:0] SVDATAR,
+  output [7:0] SVDATAR3,
   output [7:0] SVDATAG,
+  output [7:0] SVDATAG3,
   output [7:0] SVDATAB2,
   output [7:0] SVDATAB1,
   output [7:0] SVDATAB0,
@@ -174,6 +177,9 @@ assign CRTRAMDATA = ~SDRAMBn ? blue_640 :
 assign SVDATAB = blue_640;
 assign SVDATAR = red_640;
 assign SVDATAG = green_640;
+assign SVDATAB3 = blue3;
+assign SVDATAR3 = red3;
+assign SVDATAG3 = green3;
 assign SVDATAB2 = blue2;
 assign SVDATAB1 = blue1;
 assign SVDATAB0 = blue0;
