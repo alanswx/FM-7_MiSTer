@@ -593,7 +593,9 @@ wire sub_vram_wait = sub_vram_sel & ~SCASSEL;        // ...while the raster owns
 wire SCPUCLK_w = SCPUCLK & ~sub_vram_wait;
 
 SCPU u_SCPU(
-  .RESETBn      ( RESETBn      ),
+  // $FD13 monitor-bank writes reset only the sub-system; this must restart
+  // the CPU so it fetches the newly selected monitor's reset vector.
+  .RESETBn      ( SRESETn      ),
   .SCPUCLK      ( SCPUCLK_w    ),
   .SCLKNMIn     ( SCLKNMIn     ),
   .SUBIRQn      ( SUBIRQn      ),

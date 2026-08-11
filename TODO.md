@@ -212,13 +212,15 @@ segment 0 `$CA00` writes are visible at sub `$CA00` as physical `$1CA00`.
 
 The simulator/reference comparison was rerun from the required `vsim/`
 working directory so all ROMs are actually loaded. The mailbox sequence is
-now confirmed hardware-consistent: the sub monitor consumes `Y=$CA05` and
-then `Y=$CC85`, matching 77AVEMU's `$D3C9` trace. The first later bad state is
-frame 346 of the 2019 AV demo: `$D3C9` returns with `Y=$C000`, the stack target
-is `$8500`, and the sub begins executing zero-filled `$D300`/`$8500` space.
-Main-side MMR activity includes writes through virtual `$E000` to physical
-`$0C000`; this is the next loader/MMR and sub-RAM arbitration boundary to
-compare against 77AVEMU. No game-specific alias is justified by this trace.
+hardware-consistent: the sub monitor consumes `Y=$CA05` and then `Y=$CC85`,
+matching 77AVEMU's `$D3C9` trace. The frame-346 runaway was traced to a generic
+reset-path bug: `$FD13` monitor-bank writes assert the derived sub-reset, but
+`SCPU` was wired to global reset and continued executing the old monitor. It
+then took the newly selected monitor's `$D2B7` NMI vector as RAM and ran into
+zero-filled space. Wiring `SCPU` to `SRESETn` fixes the bank-switch handoff;
+the demo now remains in valid sub ROM/RAM through the frame-1100 checkpoint
+with the original NMI cadence. No game-specific alias or interrupt workaround
+is justified.
 
 Next, in hardware order: validate the complete AV raster and the post-loader
 stage against 77AVEMU, then connect host key events to AV scan codes and add the
