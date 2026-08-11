@@ -33,6 +33,10 @@ reg [7:0] av_d430_reg;
 wire [7:0] monitor_q = !machine_av ? m154_q :
                         (submon_sel == 2'd1) ? av_sub_a_q :
                         (submon_sel == 2'd2) ? av_sub_b_q : m154_q;
+// Type-C monitor ROM contains its own 2 KB character generator.  D430's
+// four-bank character-generator ROM is selected only by monitor A/B; the
+// reference hardware model returns the C font while Type C is active.
+wire [7:0] av_font_data = (submon_sel == 2'd0) ? m153_q : av_font_q;
 
 wire av_d430_sel = machine_av && (SADDRBUS == 16'hd430);
 // $D430 readback is a live status register, not the write latch.  The
@@ -52,7 +56,7 @@ end
 assign SDATABUS_out =
   ~SRAM1CSn ? m141_q :
   ~SRAM2CSn ? m123_q :
-  ~SROMDn   ? (machine_av ? av_font_q : m153_q) :
+  ~SROMDn   ? (machine_av ? av_font_data : m153_q) :
   ~SROMSELn ? monitor_q : 8'h00;
 
 ram #(11,8) m141(

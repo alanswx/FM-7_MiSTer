@@ -59,7 +59,12 @@ module smem_tb;
     @(posedge clk); #1 swtq_n = 1'b1;
     check(d430_out, 8'h7a, "D430 live status");
     font_read(16'hdd30, value);
-    check(value, 8'h08, "AV font bank 1");
+    check(value, 8'h00, "Type-C font ignores CG bank");
+
+    // Monitor A uses the D430-selected character-generator bank.
+    submon_sel = 2'd1;
+    font_read(16'hdd30, value);
+    check(value, 8'h08, "Monitor-A font bank 1");
 
     @(negedge clk); addr = 16'hd430; data_in = 8'h61; swtq_n = 1'b0;
     @(posedge clk); #1 swtq_n = 1'b1;
