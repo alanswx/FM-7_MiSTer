@@ -534,7 +534,7 @@ was made by counting keypresses blind. A capture card on the HDMI output
 (`/dev/video4`) shows the overlay directly:
 
 ```
-ffmpeg -f v4l2 -i /dev/video4 -vf "select=gte(n\\,40)" -frames:v 1 out.png
+ffmpeg -f v4l2 -i /dev/video4 -vf "select=gte(n\,40)" -frames:v 1 out.png
 ```
 
 The `select` matters — the card emits black until it syncs, which reads as
@@ -574,7 +574,7 @@ artifact of unverified bank selection.
 
 One suggestive detail, offered as a lead rather than a result: with `m46`
 converted the machine gets *further* — it reaches the kernel banner where
-without m46 the screen stays blank. Not a fix, and not enough runs to be
+without it the screen stays blank. Not a fix, and not enough runs to be
 significant, but it points the same way as the rest of the `FLAGS` work.
 
 ## What would help from your side
@@ -584,3 +584,47 @@ A verified-bank regression between the build where OS-9 genuinely booted
 can bisect on hardware now that selection is trustworthy, but each point costs a
 15-minute Quartus build, so a sim-side narrowing of which commit changed OS-9's
 behaviour would cut that down a lot.
+
+
+---
+
+# Correction: "OS-9 does not boot at all" was wrong — the probe broke the boot
+
+The section above reports 0 banners in 8 "verified" runs and concludes OS-9 is
+consistently broken on current head. **That conclusion is withdrawn.** OS-9 still
+boots. The verification step I added is what stopped it.
+
+`os9run.sh` opens the OSD, sets Boot ROM, and then runs `ffmpeg` against the
+capture card to photograph the setting before pressing *Reset and close OSD*.
+That capture takes ten to sixty seconds, and it happens **with the OSD open,
+between setting the bank and resetting**. Every "verified" run therefore had a
+long stall inserted at exactly the point the earlier runs did not. Replaying the
+original sequence — batched keys, no capture — on the *same bitstream*
+(`FM-7_c24377a.rbf`, unchanged on disk) gives a full boot: kernel banner, Welcome
+box, `[ OS-9 レベル 1 Version 1.0 ]`, `Time ?` prompt, 5363 bytes, 1 of 3 runs.
+
+So the instrument perturbed what it measured, and did so in one direction only —
+it never produced a false boot, only false failures. Ruled out along the way:
+the MGL is unchanged, and the OS-9 image is byte-identical (`md5 438bf3d26dd4`,
+dated 07-28) to the copy that booted before.
+
+## What actually stands from that round
+
+| | |
+|---|---|
+| The capture card shows the OSD | real, and the first time this side could confirm a setting rather than infer it |
+| The menu shifted | real — `Mount Disk 2` adds a row, so pre-two-drive builds need **4** downs to Boot ROM and current head needs **5**. A hardcoded count silently lands on Aspect ratio. |
+| Bank 2 was genuinely being set | confirmed by eye on both menu layouts |
+| The boot rates | **still unmeasured.** The pre-capture numbers were unverified; the post-capture numbers were perturbed. Neither set should be quoted. |
+
+## What a sound measurement needs
+
+Capture the OSD **after** the reset rather than before it, or photograph the
+setting on a throwaway run and then measure with the capture disabled. Verifying
+and measuring in the same run is what broke this, and it is a trap worth naming:
+on a machine this timing-sensitive, an instrument that inserts tens of seconds
+into the sequence is not a neutral observer.
+
+I have not re-measured either build to a standard I would quote. What is known
+is only that OS-9 boots at least sometimes on `c24377a`, and that nothing has
+been shown to have regressed it.
