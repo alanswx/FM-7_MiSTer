@@ -86,6 +86,9 @@ Soukoban 2 has now been promoted out of this queue: the checked-in D77 reaches
 its title/menu screen at frame 1500 and waits for keyboard input.
 Hokuto no Ken (Disk 1) likewise reaches its title/menu screen at frame 1500
 (`HIT 1-3 KEY`); its earlier partial-render classification was also loader-time.
+Wizard and the Princess (Disk 0) reaches a rendered Japanese prompt at frame
+1500. Disk 1 alone settles in a data-disk loop after its track-52 load, so it is
+not a standalone boot failure.
 
 CHAN.POP now has two concrete simulator fixes: `t77_decode.v` was starting two
 bytes early and decoding each T77 pair as a bit-7 level plus a 15-bit duration;
