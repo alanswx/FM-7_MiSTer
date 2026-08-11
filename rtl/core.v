@@ -94,6 +94,13 @@ wire       AV_SUBRAM_SEL = machine_av &&
                            (SADDRBUS >= 16'hc000) &&
                            (SADDRBUS < 16'hd380);
 wire       AV_SUBRAM_WRITE = AV_SUBRAM_SEL && ~SWTQEn;
+// AVMEM's port B is indexed from physical $1C000: C000-CFFF occupies the
+// first 4 KB and D000-D37F the following 896 bytes. Do not derive this by
+// subtracting $1000 from SADDRBUS[12:0] -- truncation makes C000 wrap to
+// $1000 and reverses the two pages.
+wire [12:0] AV_SUBRAM_ADDR = (SADDRBUS[15:12] == 4'hd) ?
+                             (13'h1000 + {1'b0, SADDRBUS[11:0]}) :
+                             {1'b0, SADDRBUS[11:0]};
 wire       AV_DISPLAY_PAGE;
 wire       AV_ACTIVE_PAGE;
 wire       AV_VRAM_BANK;
@@ -408,7 +415,7 @@ AVMEM u_AVMEM(
   .VRAM_OFFSET ( AV_VRAM_OFFSET ),
   .VRAM_DOUT   ( AV_VRAM_DOUT  ),
   .SHARED_DOUT ( AV_SHARED_DOUT ),
-  .SUBRAM_ADDR ( SADDRBUS[12:0] - 13'h1000 ),
+  .SUBRAM_ADDR ( AV_SUBRAM_ADDR ),
   .SUBRAM_WRITE( AV_SUBRAM_WRITE),
   .SUBRAM_DIN  ( SDATABUS_out  ),
   .SUBRAM_DOUT ( AV_SUBRAM_dout),

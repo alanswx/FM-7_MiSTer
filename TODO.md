@@ -189,9 +189,14 @@ injection remains open. The AV boot-RAM read window previously fell through to
 zero-filled RAM and is fixed in `a0d4bd2`.
 The FM77AV shadow-RAM control at `$FD0F` now switches the F-BASIC window between
 ROM and RAM, and the MMR-mapped physical `$1C000-$1D37F` sub-system RAM is
-dual-ported to the secondary CPU. This lets the demo's `$C000` loader payload
-execute on the sub CPU; the frame-523 replay reaches its shared-mailbox polling
-loop instead of the prior zero-filled-code divergence.
+dual-ported to the secondary CPU. The core-side address calculation now
+preserves the hardware page order (`$C000->$1C000`, `$D000->$1D000`); the old
+13-bit subtract-and-truncate expression silently reversed those pages. The
+directed `$CA00` command test and the real demo replay now show the sub CPU
+consuming the command and executing beyond its poll loop. The remaining
+post-loader divergence is later in the sub payload: at the frame-1100
+checkpoint the sub CPU is looping through cleared `$D000` bytes and the main
+CPU is in its status wait, with only partial raster output.
 The AV memory regression also covers the exact loader command path: main MMR
 segment 0 `$CA00` writes are visible at sub `$CA00` as physical `$1CA00`.
 
