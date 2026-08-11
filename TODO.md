@@ -192,6 +192,8 @@ ROM and RAM, and the MMR-mapped physical `$1C000-$1D37F` sub-system RAM is
 dual-ported to the secondary CPU. This lets the demo's `$C000` loader payload
 execute on the sub CPU; the frame-523 replay reaches its shared-mailbox polling
 loop instead of the prior zero-filled-code divergence.
+The AV memory regression also covers the exact loader command path: main MMR
+segment 0 `$CA00` writes are visible at sub `$CA00` as physical `$1CA00`.
 
 Next, in hardware order: validate the complete AV raster and the post-loader
 stage against 77AVEMU, then connect host key events to AV scan codes and add the

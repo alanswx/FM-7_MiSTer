@@ -205,6 +205,19 @@ module avmem_tb;
     @(posedge clk); #1;
     check_value(subram_dout, 8'h5c, "AV sub-RAM sub read");
 
+    // The demo command mailbox lives in ordinary sub-RAM at $CA00. Select
+    // physical page $1C for the C segment and verify the exact main/sub path.
+    write_bus(16'hfd90, 8'h00);
+    write_bus(16'hfd8c, 8'h1c);
+    write_bus(16'hfd8d, 8'h1d);
+    write_bus(16'hfd93, 8'h80);
+    write_bus(16'hca00, 8'h07);
+    read_bus(16'hca00, value);
+    check_value(value, 8'h07, "MMR CA00 command write");
+    subram_addr = 13'h0a00;
+    @(posedge clk); #1;
+    check_value(subram_dout, 8'h07, "sub CA00 command read");
+
     $display("AVMEM TEST PASS");
     $finish;
   end
