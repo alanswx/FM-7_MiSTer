@@ -200,6 +200,7 @@ V_SRC = \
 	$(RTL)/FDC.v \
 	$(RTL)/FLAGS.v \
 	$(RTL)/KEYBOARD.v \
+	$(RTL)/AVKEYBOARD.v \
 	$(RTL)/KANJI.v \
 	$(RTL)/m139.v \
 	$(RTL)/MB60H010.v \
@@ -278,6 +279,12 @@ crtram-test: crtram_tb.sv ../rtl/CRTRAM.v ../rtl/wd1793_dpram.v
 		--top-module crtram_tb crtram_tb.sv ../rtl/CRTRAM.v ../rtl/wd1793_dpram.v
 	/tmp/fm7-crtram-obj/Vcrtram_tb
 
+# Directed check for the FM77AV keyboard encoder command/status pair.
+avkeyboard-test: avkeyboard_tb.sv ../rtl/AVKEYBOARD.v
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-avkeyboard-obj \
+		--top-module avkeyboard_tb avkeyboard_tb.sv ../rtl/AVKEYBOARD.v
+	/tmp/fm7-avkeyboard-obj/Vavkeyboard_tb
+
 # Directed check for the AV character-generator aperture and $D430 bank.
 smem-test: smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v
 	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-smem-obj \
@@ -311,7 +318,7 @@ avpixel-test: avpixel_tb.sv ../rtl/AVPIXEL.v
 av-boot-test: all av_boot_test.sh
 	bash av_boot_test.sh
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test smem-test mb60h010-test pal-test avpixel-test av-boot-test
+.PHONY: all run test clean clean-shots avmem-test crtram-test avkeyboard-test smem-test mb60h010-test pal-test avpixel-test av-boot-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h

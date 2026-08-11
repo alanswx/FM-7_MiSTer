@@ -14,6 +14,7 @@ module avmem_tb;
   reg        rdq_en = 1'b1;
   reg [13:0] vram_offset = 14'd0;
   reg [7:0]  vram_dout = 8'h00;
+  reg [7:0]  shared_dout = 8'h00;
   wire [7:0] dout;
   wire [7:0] iodout;
   wire       iosel;
@@ -26,6 +27,10 @@ module avmem_tb;
   wire [13:0] vram_addr;
   wire       vram_write;
   wire [7:0] vram_din;
+  wire       shared_sel;
+  wire [9:0] shared_addr;
+  wire       shared_write;
+  wire [7:0] shared_din;
 
   AVMEM dut(
     .CLKSYS(clk), .RESETBn(resetn), .machine_av(machine_av),
@@ -37,7 +42,10 @@ module avmem_tb;
     .SUBMON_SEL(submon_sel), .SUBMON_RESET(submon_reset),
     .AV_MODE_320(av_mode_320),
     .VRAM_SEL(vram_sel), .VRAM_PLANE(vram_plane), .VRAM_ADDR(vram_addr),
-    .VRAM_WRITE(vram_write), .VRAM_DIN(vram_din)
+    .VRAM_WRITE(vram_write), .VRAM_DIN(vram_din),
+    .SHARED_DOUT(shared_dout), .SHARED_SEL(shared_sel),
+    .SHARED_ADDR(shared_addr), .SHARED_WRITE(shared_write),
+    .SHARED_DIN(shared_din)
   );
 
   task write_bus(input [15:0] a, input [7:0] d);
@@ -152,6 +160,19 @@ module avmem_tb;
     check_value({6'd0, submon_sel}, 8'h02, "sub-monitor B select");
     write_bus(16'hfd13, 8'h00);
     check_value({6'd0, submon_sel}, 8'h00, "sub-monitor C select");
+
+    // The AV command mailbox is physically shared at main $FC80-$FCFF and
+    // sub $D380-$D3FF. It is outside the MMR-translated aperture.
+    addr = 16'hfc80;
+    din = 8'ha5;
+    #1;
+    check_value({7'd0, shared_sel}, 8'h01, "AV shared aperture select");
+    check_address({4'd0, shared_addr}, 14'h0380, "AV shared aperture address");
+    check_value(shared_din, 8'ha5, "AV shared write data");
+    check_value({7'd0, shared_write}, 8'h00, "AV shared write idle");
+    shared_dout = 8'h5a;
+    read_bus(16'hfc80, value);
+    check_value(value, 8'h5a, "AV shared readback");
 
     $display("AVMEM TEST PASS");
     $finish;

@@ -42,6 +42,7 @@ wire [7:0] MDATABUS_out;
 wire [7:0] ROMDATA;
 wire [7:0] MRAM_dout;
 wire [7:0] AVMEM_dout;
+wire [7:0] AV_SHARED_DOUT;
 wire [7:0] AVIO_dout;
 wire       AVIO_sel;
 wire       AVTWR_sel;
@@ -58,6 +59,10 @@ wire [1:0] AV_VRAM_PLANE;
 wire [13:0] AV_VRAM_ADDR;
 wire       AV_VRAM_WRITE;
 wire [7:0] AV_VRAM_DIN;
+wire       AV_SHARED_SEL;
+wire [9:0] AV_SHARED_ADDR;
+wire       AV_SHARED_WRITE;
+wire [7:0] AV_SHARED_DIN;
 wire [7:0] MAINRAM_dout = machine_av ? AVMEM_dout : MRAM_dout;
 // The FM77AV boot-RAM window is a real memory source, not part of the
 // legacy FM-7 RAM1HB decode.  AVMEM owns $fe00-$ffdF (and the boot-ROM
@@ -81,6 +86,8 @@ wire [7:0] SDATABUS_in;
 wire [7:0] SDATABUS_out;
 wire [7:0] SMEM_dout;
 wire [7:0] AV_D430_dout;
+wire [7:0] AV_KBD_dout;
+wire       AV_KBD_sel;
 wire       AV_DISPLAY_PAGE;
 wire       AV_ACTIVE_PAGE;
 wire       AV_VRAM_BANK;
@@ -306,6 +313,7 @@ assign MDATABUS_in =
   8'h0;
 
 assign SDATABUS_in =
+  (AV_KBD_sel && SRWB) ? AV_KBD_dout :
   ~(KDATAn & KACKNGn) ? SKDATA :
   (machine_av && (SADDRBUS == 16'hd430) && SRWB) ? AV_D430_dout :
   ~(SDRAMBn & SDRAMGn & SDRAMRn) ? CRTRAMDATA :
@@ -390,6 +398,7 @@ AVMEM u_AVMEM(
   .RDQEn       ( RDQEn        ),
   .VRAM_OFFSET ( AV_VRAM_OFFSET ),
   .VRAM_DOUT   ( AV_VRAM_DOUT  ),
+  .SHARED_DOUT ( AV_SHARED_DOUT ),
   .DOUT        ( AVMEM_dout   ),
   .IODOUT      ( AVIO_dout    ),
   .IOSEL       ( AVIO_sel     ),
@@ -401,7 +410,11 @@ AVMEM u_AVMEM(
   .VRAM_PLANE  ( AV_VRAM_PLANE  ),
   .VRAM_ADDR   ( AV_VRAM_ADDR   ),
   .VRAM_WRITE  ( AV_VRAM_WRITE  ),
-  .VRAM_DIN    ( AV_VRAM_DIN    )
+  .VRAM_DIN    ( AV_VRAM_DIN    ),
+  .SHARED_SEL  ( AV_SHARED_SEL  ),
+  .SHARED_ADDR ( AV_SHARED_ADDR ),
+  .SHARED_WRITE( AV_SHARED_WRITE),
+  .SHARED_DIN  ( AV_SHARED_DIN  )
 );
 
 // RDQEn, not RDEn, gates the I/O read decoder.
@@ -666,6 +679,18 @@ SDECODE u_SDECODE(
   .SDRAMV3n  ( SDRAMV3n  )
 );
 
+AVKEYBOARD u_AVKEYBOARD(
+  .CLKSYS     ( CLKSYS       ),
+  .RESETBn    ( RESETBn      ),
+  .machine_av ( machine_av   ),
+  .SADDRBUS   ( SADDRBUS     ),
+  .SDATA_in   ( SDATABUS_out ),
+  .SWTQEn     ( SWTQEn       ),
+  .SRWB       ( SRWB         ),
+  .DOUT       ( AV_KBD_dout ),
+  .SEL        ( AV_KBD_sel   )
+);
+
 SMEM u_SMEM(
   .CLKSYS       ( CLKSYS       ),
   .SADDRBUS     ( SADDRBUS     ),
@@ -700,7 +725,12 @@ SRAM u_SRAM(
   .WTQEn       ( WTQEn        ),
   .SWTQEn      ( SWTQEn       ),
   .SSMEMn      ( SSMEMn       ),
-  .SUBSELn     ( SUBSELn      )
+  .SUBSELn     ( SUBSELn      ),
+  .AV_SHARED_SEL   ( AV_SHARED_SEL   ),
+  .AV_SHARED_ADDR  ( AV_SHARED_ADDR  ),
+  .AV_SHARED_WRITE ( AV_SHARED_WRITE ),
+  .AV_SHARED_DIN   ( AV_SHARED_DIN   ),
+  .AV_SHARED_DOUT  ( AV_SHARED_DOUT  )
 );
 
 MFD u_MFD(

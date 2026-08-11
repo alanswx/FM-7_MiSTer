@@ -12,7 +12,12 @@ module SRAM(
   input WTQEn,
   input SWTQEn,
   input SSMEMn,
-  input SUBSELn
+  input SUBSELn,
+  input AV_SHARED_SEL,
+  input [9:0] AV_SHARED_ADDR,
+  input AV_SHARED_WRITE,
+  input [7:0] AV_SHARED_DIN,
+  output [7:0] AV_SHARED_DOUT
 );
 
 // Two things were tried here while chasing Thexder's corrupt sub-CPU program
@@ -27,12 +32,13 @@ module SRAM(
 //    SVDHALT path in FLAGS.v rather than via an explicit $fd05 request.
 //
 // So the shared-RAM aperture is not where Thexder loses its bytes. Left as-is.
-wire [9:0] SAB = ~SHALTACn ? {2'b11, MADDRBUS[7:0] } : SADDRBUS[9:0];
-wire [7:0] SDB = ~(SUBSELn | SHALTACn) ? MDATA_in : SDATA_in;
-
-wire ce_n = SUBSELn & SSMEMn;
-wire wr_n = (SSMEMn | SWTQEn) & (SUBSELn | WTQEn);
-wire rd_n = RDQEn & SRDQEn;
+wire legacy_main_sel = ~SHALTACn;
+wire sub_sel = SUBSELn & ~SSMEMn;
+wire [9:0] legacy_main_addr = {2'b11, MADDRBUS[7:0]};
+wire sub_write = sub_sel && ~SWTQEn;
+wire main_write = ((~SUBSELn & ~SSMEMn & ~WTQEn) || AV_SHARED_WRITE);
+wire [7:0] main_q;
+wire [7:0] sub_q;
 
 `ifdef DEBUG_SRAM
 // Is a main-side write into the shared window actually landing where it should?
@@ -57,14 +63,21 @@ end
 final $display("SRAMSUM accepted=%0d misdirected=%0d", sram_ok, sram_bad);
 `endif
 
-ram #(10,8) sram(
-  .clk  ( CLKSYS     ),
-  .addr ( SAB        ),
-  .din  ( SDB        ),
-  .q    ( SRDATA_out ),
-  .wr_n ( wr_n       ),
-  .rd_n ( rd_n       ),
-  .ce_n ( ce_n       )
+// Port A is the sub CPU's $d000-$d3ff view. Port B is shared by the legacy
+// halted-main aperture and the AV main-CPU $fc80-$fcff alias.
+dpram #(8,10) sram(
+  .clock    ( CLKSYS          ),
+  .address_a( SADDRBUS[9:0]   ),
+  .data_a   ( SDATA_in        ),
+  .wren_a   ( sub_write       ),
+  .q_a      ( sub_q           ),
+  .address_b( AV_SHARED_SEL ? AV_SHARED_ADDR : legacy_main_addr ),
+  .data_b   ( AV_SHARED_SEL ? AV_SHARED_DIN : MDATA_in ),
+  .wren_b   ( main_write      ),
+  .q_b      ( main_q          )
 );
+
+assign SRDATA_out = legacy_main_sel ? main_q : sub_q;
+assign AV_SHARED_DOUT = main_q;
 
 endmodule

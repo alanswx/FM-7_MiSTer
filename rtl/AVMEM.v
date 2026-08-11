@@ -17,6 +17,7 @@ module AVMEM(
   input        RDQEn,
   input  [13:0] VRAM_OFFSET,
   input  [7:0] VRAM_DOUT,
+  input  [7:0] SHARED_DOUT,
   output [7:0] DOUT,
   output reg [7:0] IODOUT,
   output       IOSEL,
@@ -28,7 +29,11 @@ module AVMEM(
   output [1:0] VRAM_PLANE,
   output [13:0] VRAM_ADDR,
   output       VRAM_WRITE,
-  output [7:0] VRAM_DIN
+  output [7:0] VRAM_DIN,
+  output       SHARED_SEL,
+  output [9:0] SHARED_ADDR,
+  output       SHARED_WRITE,
+  output [7:0] SHARED_DIN
 );
 
 reg av_mode_320;
@@ -101,10 +106,23 @@ assign VRAM_ADDR  = av_mode_320 ? vram_addr_320 : vram_addr_640;
 assign VRAM_WRITE = av_write && vram_sel;
 assign VRAM_DIN   = DIN;
 
+// The AV has a 128-byte shared command window.  The sub CPU sees it at
+// $d380-$d3ff; the main CPU sees the same bytes at the un-translated $fc80-
+// $fcff aperture (physical $3fc80-$3fcff).  Keep this separate from the
+// ordinary sub-system RAM at physical $1d000-$1d37f.
+wire shared_sel = machine_av &&
+                  (physical_address >= 18'h3fc80) &&
+                  (physical_address < 18'h3fd00);
+assign SHARED_SEL   = shared_sel;
+assign SHARED_ADDR  = 10'h380 + {3'd0, physical_address[6:0]};
+assign SHARED_WRITE = av_write && shared_sel;
+assign SHARED_DIN   = DIN;
+
 // ROM and boot-RAM windows do not write the physical RAM array. The AV F-BASIC
 // ROM is not shadowed by this first backend; boot RAM has its explicit $FD93
 // bit-0 write enable.
 wire ram_write = av_write && !io_sel && !bootram_sel && !vram_sel &&
+                 !shared_sel &&
                  (!initiator_sel || twr_sel) && !fbasic_sel &&
                  (MADDRBUS < 16'hfffe);
 wire [7:0] ram_q;
@@ -217,6 +235,8 @@ always @* begin
   endcase
 end
 
-assign DOUT = bootram_sel ? boot_q : vram_sel ? VRAM_DOUT : ram_q;
+assign DOUT = bootram_sel ? boot_q :
+              vram_sel ? VRAM_DOUT :
+              shared_sel ? SHARED_DOUT : ram_q;
 
 endmodule

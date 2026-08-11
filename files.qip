@@ -9,6 +9,7 @@ set_global_assignment -name VERILOG_FILE rtl/CRTRAM.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/FDC.v
 set_global_assignment -name VERILOG_FILE rtl/FLAGS.v
 set_global_assignment -name VERILOG_FILE rtl/KEYBOARD.v
+set_global_assignment -name VERILOG_FILE rtl/AVKEYBOARD.v
 set_global_assignment -name VERILOG_FILE rtl/KANJI.v
 set_global_assignment -name VERILOG_FILE rtl/m139.v
 set_global_assignment -name VERILOG_FILE rtl/MB60H010.v

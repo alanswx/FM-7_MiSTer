@@ -182,10 +182,14 @@ in 77AVEMU demo disk now passes the four-drive probe, loads its bootstrap into
 RAM, reaches the AV PIO sector loader, and produces visible analog-raster
 output after the post-load delay (frame 1100 checkpoint). The remaining AV
 work is reference-raster comparison and confirming the later demo stages. The
-AV boot-RAM read window previously fell through to zero-filled RAM and is fixed
-in `a0d4bd2`.
+main `$FC80-$FCFF` alias now connects to the sub-CPU `$D380-$D3FF` mailbox,
+which the demo uses for its loader stub. The AV `$D431/$D432` encoder protocol
+is also wired with directed command/status coverage; host key-to-scan-code
+injection remains open. The AV boot-RAM read window previously fell through to
+zero-filled RAM and is fixed in `a0d4bd2`.
 
-Next, in hardware order: validate the complete AV raster against 77AVEMU, then
-implement the keyboard encoder and YM2203 paths behind the same family signal.
+Next, in hardware order: validate the complete AV raster and the post-loader
+stage against 77AVEMU, then connect host key events to AV scan codes and add the
+YM2203 paths behind the same family signal.
 Research and reference addresses are in
 `docs/FM77AV.md`.
