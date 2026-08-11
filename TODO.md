@@ -187,6 +187,12 @@ which the demo uses for its loader stub. The AV `$D431/$D432` encoder protocol
 is also wired with directed command/status coverage; host key-to-scan-code
 injection remains open. The AV boot-RAM read window previously fell through to
 zero-filled RAM and is fixed in `a0d4bd2`.
+The `$D430` read path now matches the reference live-status semantics: blanking,
+VSYNC, idle-ALU, and the monitor-switch/reset latch are reported independently
+of the write-only font/page latch. Focused tests cover the status latch and
+clear-on-read behavior. Replaying the 2019 demo with this correction produces
+the same sparse frame-1000 raster, so it is a hardware-model correction but not
+the remaining loader failure.
 The FM77AV shadow-RAM control at `$FD0F` now switches the F-BASIC window between
 ROM and RAM, and the MMR-mapped physical `$1C000-$1D37F` sub-system RAM is
 dual-ported to the secondary CPU. The core-side address calculation now
@@ -198,7 +204,9 @@ startup code leaves MMR segment 0 at C/D=`$0C/$0D` while copying its
 not see that payload in its fixed physical `$1D000` D page and later executes
 garbage. The next AV task is to reproduce this loader/MMR protocol against
 77AVEMU and determine which hardware transition or ROM stage should select
-the sub-system RAM page; do not add a game-specific alias.
+the sub-system RAM page; the current trace first diverges when the sub monitor
+returns from `$D3C9` to a zero-filled `$D100` target after consuming the
+`$D380` mailbox command. Do not add a game-specific alias.
 The AV memory regression also covers the exact loader command path: main MMR
 segment 0 `$CA00` writes are visible at sub `$CA00` as physical `$1CA00`.
 

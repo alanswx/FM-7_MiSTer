@@ -12,6 +12,9 @@ module SMEM(
   input SROMDn,
   input machine_av,
   input [1:0] submon_sel,
+  input submon_status,
+  input SBLANKn,
+  input SVSYNCn,
   input RESETBn,
   output [7:0] av_d430_out,
   output av_display_page,
@@ -32,7 +35,9 @@ wire [7:0] monitor_q = !machine_av ? m154_q :
                         (submon_sel == 2'd2) ? av_sub_b_q : m154_q;
 
 wire av_d430_sel = machine_av && (SADDRBUS == 16'hd430);
-assign av_d430_out = 8'h6a | {6'd0, av_d430_reg[1:0]};
+// $D430 readback is a live status register, not the write latch.  The
+// unimplemented ALU is idle, so bit 4 remains set until the ALU exists.
+assign av_d430_out = {~SBLANKn, 2'b11, 2'b11, ~SVSYNCn, 1'b1, submon_status};
 assign av_display_page = av_d430_reg[6];
 assign av_active_page = av_d430_reg[5];
 assign av_vram_bank = av_d430_reg[5];

@@ -87,6 +87,7 @@ wire [7:0] SDATABUS_in;
 wire [7:0] SDATABUS_out;
 wire [7:0] SMEM_dout;
 wire [7:0] AV_D430_dout;
+wire       AV_SUBMON_STATUS;
 wire [7:0] AV_KBD_dout;
 wire       AV_KBD_sel;
 wire [7:0] AV_SUBRAM_dout;
@@ -195,6 +196,7 @@ wire SRWBn;
 wire SBA;
 wire SCRTSWn;
 wire SRESETn = RESETBn & ~AV_SUBMON_RESET;
+wire AV_SUBMON_STATUS_CLEAR = machine_av && (SADDRBUS == 16'hd430) && SRWB;
 wire SLEDn;
 wire SIRQCLRn;
 wire SVDHALT;
@@ -425,6 +427,8 @@ AVMEM u_AVMEM(
   .TWRSEL      ( AVTWR_sel    ),
   .SUBMON_SEL  ( AV_SUBMON_SEL ),
   .SUBMON_RESET ( AV_SUBMON_RESET ),
+  .SUBMON_STATUS_CLEAR ( AV_SUBMON_STATUS_CLEAR ),
+  .SUBMON_STATUS ( AV_SUBMON_STATUS ),
   .AV_MODE_320 ( AV_MODE_320 ),
   .VRAM_SEL    ( AV_VRAM_SEL    ),
   .VRAM_PLANE  ( AV_VRAM_PLANE  ),
@@ -724,6 +728,9 @@ SMEM u_SMEM(
   .SROMDn       ( SROMDn       ),
   .machine_av   ( machine_av   ),
   .submon_sel   ( AV_SUBMON_SEL ),
+  .submon_status( AV_SUBMON_STATUS ),
+  .SBLANKn      ( SBLANKn      ),
+  .SVSYNCn      ( SVSYNCn      ),
   .RESETBn      ( SRESETn      ),
   .av_d430_out  ( AV_D430_dout ),
   .av_display_page ( AV_DISPLAY_PAGE ),

@@ -22,6 +22,7 @@ module AVMEM(
   input  [12:0] SUBRAM_ADDR,
   input        SUBRAM_WRITE,
   input  [7:0] SUBRAM_DIN,
+  input        SUBMON_STATUS_CLEAR,
   output [7:0] SUBRAM_DOUT,
   output [7:0] DOUT,
   output reg [7:0] IODOUT,
@@ -29,6 +30,7 @@ module AVMEM(
   output       TWRSEL,
   output [1:0] SUBMON_SEL,
   output       SUBMON_RESET,
+  output       SUBMON_STATUS,
   output       AV_MODE_320,
   output       VRAM_SEL,
   output [1:0] VRAM_PLANE,
@@ -63,8 +65,10 @@ reg       twr_enable;
 reg       bootram_write_enable;
 reg [1:0] submon_sel;
 reg [7:0] submon_reset_count;
+reg       submon_status;
 assign SUBMON_SEL = submon_sel;
 assign SUBMON_RESET = (submon_reset_count != 8'd0);
+assign SUBMON_STATUS = submon_status;
 
 wire twr_sel = machine_av && twr_enable &&
                (MADDRBUS >= 16'h7c00) && (MADDRBUS < 16'h8000);
@@ -179,6 +183,7 @@ always @(posedge CLKSYS) begin
     av_mode_320         <= 1'b0;
     submon_sel          <= 2'd0; // Type C monitor
     submon_reset_count  <= 8'd0;
+    submon_status       <= 1'b0;
     mmr[0][0] <= 6'd0; mmr[0][1] <= 6'd0; mmr[0][2] <= 6'd0; mmr[0][3] <= 6'd0;
     mmr[0][4] <= 6'd0; mmr[0][5] <= 6'd0; mmr[0][6] <= 6'd0; mmr[0][7] <= 6'd0;
     mmr[0][8] <= 6'd0; mmr[0][9] <= 6'd0; mmr[0][10] <= 6'd0; mmr[0][11] <= 6'd0;
@@ -199,6 +204,11 @@ always @(posedge CLKSYS) begin
   else begin
     if (submon_reset_count != 8'd0)
       submon_reset_count <= submon_reset_count - 8'd1;
+
+    // $D430 bit 0 reports that a sub-monitor switch reset occurred.  The
+    // flag is cleared by reading $D430, as in 77AVEMU's subROMSwitch latch.
+    if (SUBMON_STATUS_CLEAR)
+      submon_status <= 1'b0;
 
     if (mmr_write) begin
       case (MADDRBUS[7:0])
@@ -223,6 +233,10 @@ always @(posedge CLKSYS) begin
           3'd2: submon_sel <= 2'd2;
           default: submon_sel <= 2'd0;
         endcase
+        if ((DIN[2:0] == 3'd1 && submon_sel != 2'd1) ||
+            (DIN[2:0] == 3'd2 && submon_sel != 2'd2) ||
+            ((DIN[2:0] != 3'd1 && DIN[2:0] != 3'd2) && submon_sel != 2'd0))
+          submon_status <= 1'b1;
         // The real AV resets the sub-system on every write, including a
         // write that selects the already-active monitor bank.
         submon_reset_count <= 8'hff;

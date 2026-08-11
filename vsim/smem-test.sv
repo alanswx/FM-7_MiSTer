@@ -7,6 +7,8 @@ module smem_tb;
   reg resetn = 1'b0;
   reg machine_av = 1'b1;
   reg [1:0] submon_sel = 2'd0;
+  reg submon_status = 1'b0;
+  reg sblank_n = 1'b1, svsync_n = 1'b1;
   reg sram1_n = 1'b1, sram2_n = 1'b1;
   reg swtq_n = 1'b1, srdq_n = 1'b1;
   reg sromsel_n = 1'b1, sromd_n = 1'b0;
@@ -20,6 +22,7 @@ module smem_tb;
     .SDATABUS_out(data_out), .SRAM1CSn(sram1_n), .SRAM2CSn(sram2_n),
     .SWTQEn(swtq_n), .SRDQEn(srdq_n), .SROMSELn(sromsel_n),
     .SROMDn(sromd_n), .machine_av(machine_av), .submon_sel(submon_sel),
+    .submon_status(submon_status), .SBLANKn(sblank_n), .SVSYNCn(svsync_n),
     .RESETBn(resetn), .av_d430_out(d430_out),
     .av_display_page(display_page), .av_active_page(active_page),
     .av_vram_bank(vram_bank)
@@ -54,7 +57,7 @@ module smem_tb;
     // ordinary low-page strobe range; it selects the four 2 KB font banks.
     @(negedge clk); addr = 16'hd430; data_in = 8'h01; swtq_n = 1'b0;
     @(posedge clk); #1 swtq_n = 1'b1;
-    check(d430_out, 8'h6b, "D430 font-bank status");
+    check(d430_out, 8'h7a, "D430 live status");
     font_read(16'hdd30, value);
     check(value, 8'h08, "AV font bank 1");
 

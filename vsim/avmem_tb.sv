@@ -19,6 +19,7 @@ module avmem_tb;
   reg [12:0] subram_addr = 13'd0;
   reg        subram_write = 1'b0;
   reg [7:0]  subram_din = 8'h00;
+  reg        submon_status_clear = 1'b0;
   wire [7:0] subram_dout;
   wire [7:0] dout;
   wire [7:0] iodout;
@@ -26,6 +27,7 @@ module avmem_tb;
   wire       twrsel;
   wire [1:0] submon_sel;
   wire       submon_reset;
+  wire       submon_status;
   wire       av_mode_320;
   wire       vram_sel;
   wire [1:0] vram_plane;
@@ -46,6 +48,7 @@ module avmem_tb;
     .VRAM_DOUT(vram_dout),
     .DOUT(dout), .IODOUT(iodout), .IOSEL(iosel), .TWRSEL(twrsel),
     .SUBMON_SEL(submon_sel), .SUBMON_RESET(submon_reset),
+    .SUBMON_STATUS_CLEAR(submon_status_clear), .SUBMON_STATUS(submon_status),
     .AV_MODE_320(av_mode_320),
     .VRAM_SEL(vram_sel), .VRAM_PLANE(vram_plane), .VRAM_ADDR(vram_addr),
     .VRAM_WRITE(vram_write), .VRAM_DIN(vram_din),
@@ -164,10 +167,14 @@ module avmem_tb;
     write_bus(16'hfd13, 8'h01);
     check_value({6'd0, submon_sel}, 8'h01, "sub-monitor A select");
     check_value({7'd0, submon_reset}, 8'h01, "sub-monitor reset");
+    check_value({7'd0, submon_status}, 8'h01, "sub-monitor status latch");
     write_bus(16'hfd13, 8'h02);
     check_value({6'd0, submon_sel}, 8'h02, "sub-monitor B select");
     write_bus(16'hfd13, 8'h00);
     check_value({6'd0, submon_sel}, 8'h00, "sub-monitor C select");
+    @(negedge clk); submon_status_clear = 1'b1;
+    @(posedge clk); #1 submon_status_clear = 1'b0;
+    check_value({7'd0, submon_status}, 8'h00, "sub-monitor status clear");
 
     // The AV command mailbox is physically shared at main $FC80-$FCFF and
     // sub $D380-$D3FF. It is outside the MMR-translated aperture.
