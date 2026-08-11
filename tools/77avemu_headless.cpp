@@ -135,9 +135,10 @@ int main(int argc, char **argv)
         std::cerr << "77AVEMU setup failed\n";
         return 1;
     }
-    // Match Mutsu's normal post-reset sub-system state.  Without this the
-    // main CPU remains in the boot monitor's wait loop in a windowless run.
-    vm->state.subSysBusy = true;
+    // The disk boot path clears the reset-time busy latch through the normal
+    // sub-monitor handshake; leave it clear so the headless run follows the
+    // same path as the simulator.
+    vm->state.subSysBusy = false;
 
     unsigned long long mainCount = 0;
     bool tapeStarted = false;

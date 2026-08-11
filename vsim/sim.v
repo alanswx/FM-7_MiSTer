@@ -237,9 +237,9 @@ pcm pcm(
 // FM-7_MiSTer.sv drives only bit 7 of each channel and leaves the rest
 // undriven. Replicating the bit instead keeps screenshots at full scale
 // without changing which pixels are lit.
-assign VGA_R = {8{grb[1]}};
-assign VGA_G = {8{grb[2]}};
-assign VGA_B = {8{grb[0]}};
+assign VGA_R = machine_av ? rgb[23:16] : {8{grb[1]}};
+assign VGA_G = machine_av ? rgb[15:8]  : {8{grb[2]}};
+assign VGA_B = machine_av ? rgb[7:0]   : {8{grb[0]}};
 
 assign VGA_HS   = HSync;
 assign VGA_VS   = VSync;

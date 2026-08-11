@@ -190,9 +190,17 @@ zero-filled RAM and is fixed in `a0d4bd2`.
 The `$D430` read path now matches the reference live-status semantics: blanking,
 VSYNC, idle-ALU, and the monitor-switch/reset latch are reported independently
 of the write-only font/page latch. Focused tests cover the status latch and
-clear-on-read behavior. Replaying the 2019 demo with this correction produces
-the same sparse frame-1000 raster, so it is a hardware-model correction but not
-the remaining loader failure.
+clear-on-read behavior. The top-level sub-bus mux also now gives this AV status
+read priority over the legacy FM-7 keyboard decode; otherwise the keyboard
+alias returned `$00`, leaving the AV monitor in its `$D430` wait loop and the
+main CPU stuck polling `$FD05`. The 77AVEMU headless runner now leaves the
+reset-time busy latch clear so its disk path reaches the same handshake.
+The Verilator video tap now selects the AV 24-bit output, matching the FPGA
+top level, so screenshots are useful for raster comparison. With the status-mux
+fix, the 2019 demo reaches the same post-loader `$328D` main / `$C020` sub idle
+loops as 77AVEMU and clears BUSY at the frame-1100 checkpoint. The raster is
+now visible in the sim; its text/bit layout still needs pixel-level comparison
+against the reference before the AV video path can be called complete.
 The FM77AV shadow-RAM control at `$FD0F` now switches the F-BASIC window between
 ROM and RAM, and the MMR-mapped physical `$1C000-$1D37F` sub-system RAM is
 dual-ported to the secondary CPU. The core-side address calculation now

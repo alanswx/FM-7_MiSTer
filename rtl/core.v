@@ -329,8 +329,10 @@ assign MDATABUS_in =
 
 assign SDATABUS_in =
   (AV_KBD_sel && SRWB) ? AV_KBD_dout :
-  ~(KDATAn & KACKNGn) ? SKDATA :
+  // $D430 is a live status read in AV mode. It must precede the FM-7
+  // keyboard decode, whose low-address aliases otherwise mask this port.
   (machine_av && (SADDRBUS == 16'hd430) && SRWB) ? AV_D430_dout :
+  ~(KDATAn & KACKNGn) ? SKDATA :
   (AV_SUBRAM_SEL && SRWB) ? AV_SUBRAM_dout :
   ~(SDRAMBn & SDRAMGn & SDRAMRn) ? CRTRAMDATA :
 	~(SSMEMn | SRWBn) ? SRDATA_out :
