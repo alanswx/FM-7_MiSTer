@@ -192,11 +192,13 @@ ROM and RAM, and the MMR-mapped physical `$1C000-$1D37F` sub-system RAM is
 dual-ported to the secondary CPU. The core-side address calculation now
 preserves the hardware page order (`$C000->$1C000`, `$D000->$1D000`); the old
 13-bit subtract-and-truncate expression silently reversed those pages. The
-directed `$CA00` command test and the real demo replay now show the sub CPU
-consuming the command and executing beyond its poll loop. The remaining
-post-loader divergence is later in the sub payload: at the frame-1100
-checkpoint the sub CPU is looping through cleared `$D000` bytes and the main
-CPU is in its status wait, with only partial raster output.
+directed `$CA00` command test passes. In the real 2019 AV demo, however, the
+startup code leaves MMR segment 0 at C/D=`$0C/$0D` while copying its
+`$D40A/$CA00` stub to main physical `$0C000`; the sub CPU consequently does
+not see that payload in its fixed physical `$1D000` D page and later executes
+garbage. The next AV task is to reproduce this loader/MMR protocol against
+77AVEMU and determine which hardware transition or ROM stage should select
+the sub-system RAM page; do not add a game-specific alias.
 The AV memory regression also covers the exact loader command path: main MMR
 segment 0 `$CA00` writes are visible at sub `$CA00` as physical `$1CA00`.
 
