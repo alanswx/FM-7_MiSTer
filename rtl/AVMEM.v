@@ -10,6 +10,7 @@ module AVMEM(
   input        RESETBn,
   input        machine_av,
   input  [1:0] bootrom_sel,
+  input        FBASIC_ROM_SEL,
   input [15:0] MADDRBUS,
   input  [7:0] DIN,
   input        RWBn,
@@ -18,6 +19,10 @@ module AVMEM(
   input  [13:0] VRAM_OFFSET,
   input  [7:0] VRAM_DOUT,
   input  [7:0] SHARED_DOUT,
+  input  [12:0] SUBRAM_ADDR,
+  input        SUBRAM_WRITE,
+  input  [7:0] SUBRAM_DIN,
+  output [7:0] SUBRAM_DOUT,
   output [7:0] DOUT,
   output reg [7:0] IODOUT,
   output       IOSEL,
@@ -67,8 +72,7 @@ assign TWRSEL = twr_sel;
 wire initiator_sel = machine_av &&
                      (((MADDRBUS >= 16'h6000) && (MADDRBUS < 16'h8000)) ||
                       (MADDRBUS >= 16'hfffe));
-wire fbasic_sel = machine_av && (MADDRBUS >= 16'h8000) &&
-                  (MADDRBUS < 16'hfc00);
+wire fbasic_sel = FBASIC_ROM_SEL;
 
 wire av_write = machine_av && ~WTQEn;
 wire bootram_write = av_write && bootram_sel && bootram_write_enable;
@@ -121,20 +125,32 @@ assign SHARED_DIN   = DIN;
 // ROM and boot-RAM windows do not write the physical RAM array. The AV F-BASIC
 // ROM is not shadowed by this first backend; boot RAM has its explicit $FD93
 // bit-0 write enable.
+// MMR overrides the normal ROM overlay when it translates the CPU window to
+// physical RAM, while physical ROM and I/O ranges remain protected.
+wire mmr_ram_sel = mmr_enable && (MADDRBUS < 16'hfc00) &&
+                    ((physical_address < 18'h10000) ||
+                     ((physical_address >= 18'h1c000) &&
+                      (physical_address < 18'h1d380)) ||
+                     ((physical_address >= 18'h20000) &&
+                      (physical_address < 18'h36000)));
 wire ram_write = av_write && !io_sel && !bootram_sel && !vram_sel &&
-                 !shared_sel &&
-                 (!initiator_sel || twr_sel) && !fbasic_sel &&
-                 (MADDRBUS < 16'hfffe);
+                 !shared_sel && (MADDRBUS < 16'hfffe) &&
+                 (mmr_ram_sel || ((!initiator_sel || twr_sel) && !fbasic_sel));
 wire [7:0] ram_q;
+// Physical $1C000-$1D37F is ordinary AV sub-system RAM: C000-CFFF is 4 KB
+// and D000-D37F is the adjacent 896-byte page before the shared window.
+wire [17:0] subram_physical_address = 18'h1c000 + {5'd0, SUBRAM_ADDR};
 
-ram #(18,8) av_ram(
-  .clk  ( CLKSYS             ),
-  .addr ( physical_address   ),
-  .din  ( DIN               ),
-  .q    ( ram_q              ),
-  .wr_n ( ~ram_write        ),
-  .rd_n ( ~RDQEn            ),
-  .ce_n ( 1'b0              )
+dpram #(8,18) av_ram(
+  .clock     ( CLKSYS                  ),
+  .address_a ( physical_address        ),
+  .data_a    ( DIN                     ),
+  .wren_a    ( ram_write               ),
+  .q_a       ( ram_q                   ),
+  .address_b ( subram_physical_address ),
+  .data_b    ( SUBRAM_DIN              ),
+  .wren_b    ( SUBRAM_WRITE            ),
+  .q_b       ( SUBRAM_DOUT             )
 );
 
 // The 480-byte loader is copied from initiate.rom[$1800/$1a00] by the real

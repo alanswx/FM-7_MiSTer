@@ -42,6 +42,7 @@ wire [7:0] MDATABUS_out;
 wire [7:0] ROMDATA;
 wire [7:0] MRAM_dout;
 wire [7:0] AVMEM_dout;
+wire       AV_FBASIC_ROM_SEL;
 wire [7:0] AV_SHARED_DOUT;
 wire [7:0] AVIO_dout;
 wire       AVIO_sel;
@@ -88,6 +89,11 @@ wire [7:0] SMEM_dout;
 wire [7:0] AV_D430_dout;
 wire [7:0] AV_KBD_dout;
 wire       AV_KBD_sel;
+wire [7:0] AV_SUBRAM_dout;
+wire       AV_SUBRAM_SEL = machine_av &&
+                           (SADDRBUS >= 16'hc000) &&
+                           (SADDRBUS < 16'hd380);
+wire       AV_SUBRAM_WRITE = AV_SUBRAM_SEL && ~SWTQEn;
 wire       AV_DISPLAY_PAGE;
 wire       AV_ACTIVE_PAGE;
 wire       AV_VRAM_BANK;
@@ -316,6 +322,7 @@ assign SDATABUS_in =
   (AV_KBD_sel && SRWB) ? AV_KBD_dout :
   ~(KDATAn & KACKNGn) ? SKDATA :
   (machine_av && (SADDRBUS == 16'hd430) && SRWB) ? AV_D430_dout :
+  (AV_SUBRAM_SEL && SRWB) ? AV_SUBRAM_dout :
   ~(SDRAMBn & SDRAMGn & SDRAMRn) ? CRTRAMDATA :
 	~(SSMEMn | SRWBn) ? SRDATA_out :
   ~(SROMDn & SROMSELn & SRAM1CSn & SRAM2CSn) ? SMEM_dout :
@@ -364,6 +371,7 @@ ROMS u_ROMS(
   .CLKSYS   ( CLKSYS      ),
   .FCXXn    ( FCXXn       ),
   .RAM1HB2n ( RAM1HB2n    ),
+  .FBASIC_ROM_SEL ( AV_FBASIC_ROM_SEL ),
   .ROMDATA  ( ROMDATA     ),
   .BTRDYn   ( BTRDYn      ),
   .BTROMn   ( BTROMn      ),
@@ -391,6 +399,7 @@ AVMEM u_AVMEM(
   .RESETBn     ( RESETBn      ),
   .machine_av  ( machine_av   ),
   .bootrom_sel ( bootrom_sel  ),
+  .FBASIC_ROM_SEL ( AV_FBASIC_ROM_SEL ),
   .MADDRBUS    ( MADDRBUS     ),
   .DIN         ( MDATABUS_out ),
   .RWBn        ( RWBn         ),
@@ -399,6 +408,10 @@ AVMEM u_AVMEM(
   .VRAM_OFFSET ( AV_VRAM_OFFSET ),
   .VRAM_DOUT   ( AV_VRAM_DOUT  ),
   .SHARED_DOUT ( AV_SHARED_DOUT ),
+  .SUBRAM_ADDR ( SADDRBUS[12:0] - 13'h1000 ),
+  .SUBRAM_WRITE( AV_SUBRAM_WRITE),
+  .SUBRAM_DIN  ( SDATABUS_out  ),
+  .SUBRAM_DOUT ( AV_SUBRAM_dout),
   .DOUT        ( AVMEM_dout   ),
   .IODOUT      ( AVIO_dout    ),
   .IOSEL       ( AVIO_sel     ),
@@ -730,7 +743,8 @@ SRAM u_SRAM(
   .AV_SHARED_ADDR  ( AV_SHARED_ADDR  ),
   .AV_SHARED_WRITE ( AV_SHARED_WRITE ),
   .AV_SHARED_DIN   ( AV_SHARED_DIN   ),
-  .AV_SHARED_DOUT  ( AV_SHARED_DOUT  )
+  .AV_SHARED_DOUT  ( AV_SHARED_DOUT  ),
+  .AV_SUBRAM_SEL   ( AV_SUBRAM_SEL   )
 );
 
 MFD u_MFD(

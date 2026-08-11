@@ -8,6 +8,7 @@ module ROMS (
   input CLKSYS,
   output FCXXn,
   output RAM1HB2n,
+  output FBASIC_ROM_SEL,
   output [7:0] ROMDATA,
   output BTRDYn,
   output BTROMn,
@@ -36,6 +37,8 @@ wire av_initiate_sel = machine_av && !twr_active &&
                        (((MADDRBUS >= 16'h6000) && (MADDRBUS < 16'h8000)) ||
                         (MADDRBUS >= 16'hfffe));
 wire av_fbasic_sel   = machine_av && (MADDRBUS >= 16'h8000) && FCXXn;
+wire av_fbasic_rom_sel = av_fbasic_sel && ff_q;
+assign FBASIC_ROM_SEL = av_fbasic_rom_sel;
 
 // Boot ROM select. M152 is a single 2 KB chip holding FOUR 512-byte banks, and
 // the OSD's four settings are exactly those banks -- see TODO.md P3-6b. MAME
@@ -55,7 +58,7 @@ wire [7:0] m152_q = m152_bank_q;
 
 assign ROMDATA = machine_av ?
                  (av_initiate_sel ? av_initiate_q :
-                  av_fbasic_sel   ? av_fbasic_q   : 8'h00) :
+                  av_fbasic_rom_sel ? av_fbasic_q : 8'h00) :
                  (m151_q | m152_q);
 
 wire m107_q  = ~(MADDRBUS[15] & FCXXn & ff_q);
@@ -70,7 +73,7 @@ assign SUBSELn  = FCXXn ? 1'b1 : m139_q[0];
 assign MIOSn    = FCXXn ? 1'b1 : m139_q[1];
 assign BTROMn   = machine_av ? 1'b1 : (FCXXn ? 1'b1 : m139_q[2]);
 assign RAM1HB1n = FCXXn ? 1'b1 : m139_q[3];
-assign RAM1HB2n = machine_av ? ~(av_initiate_sel | av_fbasic_sel) : m107_q;
+assign RAM1HB2n = machine_av ? ~(av_initiate_sel | av_fbasic_rom_sel) : m107_q;
 
 // The boot-ROM/RAM switch at $fd0f: reading it maps the F-BASIC ROM at
 // $8000-$fbff, writing it maps RAM there. CSP describes exactly that

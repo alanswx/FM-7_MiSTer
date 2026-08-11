@@ -7,6 +7,7 @@ module avmem_tb;
   reg        resetn = 1'b0;
   reg        machine_av = 1'b1;
   reg [1:0]  bootrom_sel = 2'd0;
+  reg        fbasic_rom_sel = 1'b0;
   reg [15:0] addr = 16'd0;
   reg  [7:0] din = 8'd0;
   reg        rwb_n = 1'b0;
@@ -15,6 +16,10 @@ module avmem_tb;
   reg [13:0] vram_offset = 14'd0;
   reg [7:0]  vram_dout = 8'h00;
   reg [7:0]  shared_dout = 8'h00;
+  reg [12:0] subram_addr = 13'd0;
+  reg        subram_write = 1'b0;
+  reg [7:0]  subram_din = 8'h00;
+  wire [7:0] subram_dout;
   wire [7:0] dout;
   wire [7:0] iodout;
   wire       iosel;
@@ -35,6 +40,7 @@ module avmem_tb;
   AVMEM dut(
     .CLKSYS(clk), .RESETBn(resetn), .machine_av(machine_av),
     .bootrom_sel(bootrom_sel), .MADDRBUS(addr), .DIN(din),
+    .FBASIC_ROM_SEL(fbasic_rom_sel),
     .RWBn(rwb_n), .WTQEn(wtq_en), .RDQEn(rdq_en),
     .VRAM_OFFSET(vram_offset),
     .VRAM_DOUT(vram_dout),
@@ -45,7 +51,9 @@ module avmem_tb;
     .VRAM_WRITE(vram_write), .VRAM_DIN(vram_din),
     .SHARED_DOUT(shared_dout), .SHARED_SEL(shared_sel),
     .SHARED_ADDR(shared_addr), .SHARED_WRITE(shared_write),
-    .SHARED_DIN(shared_din)
+    .SHARED_DIN(shared_din),
+    .SUBRAM_ADDR(subram_addr), .SUBRAM_WRITE(subram_write),
+    .SUBRAM_DIN(subram_din), .SUBRAM_DOUT(subram_dout)
   );
 
   task write_bus(input [15:0] a, input [7:0] d);
@@ -173,6 +181,29 @@ module avmem_tb;
     shared_dout = 8'h5a;
     read_bus(16'hfc80, value);
     check_value(value, 8'h5a, "AV shared readback");
+
+    // MMR overrides the normal F-BASIC overlay. A write through $8000 must
+    // land in the selected physical sub-system RAM page.
+    write_bus(16'hfd88, 8'h1d);
+    write_bus(16'hfd93, 8'h80);
+    write_bus(16'h8000, 8'ha7);
+    read_bus(16'h8000, value);
+    check_value(value, 8'ha7, "MMR F-BASIC-window RAM write");
+
+    // Ordinary AV sub-RAM at $C000-$D37F is physical $1C000-$1D37F,
+    // separate from the shared mailbox at $D380-$D3FF.
+    subram_addr = 13'h1000;
+    @(posedge clk); #1;
+    check_value(subram_dout, 8'ha7, "sub-RAM after MMR write");
+    @(negedge clk); subram_addr = 13'h1000; subram_din = 8'h5c; subram_write = 1'b1;
+    @(negedge clk); subram_write = 1'b0;
+    write_bus(16'hfd80, 8'h1d);
+    write_bus(16'hfd93, 8'h80);
+    read_bus(16'h0000, value);
+    check_value(value, 8'h5c, "AV sub-RAM main read");
+    write_bus(16'h0000, 8'h5c);
+    @(posedge clk); #1;
+    check_value(subram_dout, 8'h5c, "AV sub-RAM sub read");
 
     $display("AVMEM TEST PASS");
     $finish;

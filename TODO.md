@@ -187,6 +187,11 @@ which the demo uses for its loader stub. The AV `$D431/$D432` encoder protocol
 is also wired with directed command/status coverage; host key-to-scan-code
 injection remains open. The AV boot-RAM read window previously fell through to
 zero-filled RAM and is fixed in `a0d4bd2`.
+The FM77AV shadow-RAM control at `$FD0F` now switches the F-BASIC window between
+ROM and RAM, and the MMR-mapped physical `$1C000-$1D37F` sub-system RAM is
+dual-ported to the secondary CPU. This lets the demo's `$C000` loader payload
+execute on the sub CPU; the frame-523 replay reaches its shared-mailbox polling
+loop instead of the prior zero-filled-code divergence.
 
 Next, in hardware order: validate the complete AV raster and the post-loader
 stage against 77AVEMU, then connect host key events to AV scan codes and add the

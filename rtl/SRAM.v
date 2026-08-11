@@ -17,7 +17,8 @@ module SRAM(
   input [9:0] AV_SHARED_ADDR,
   input AV_SHARED_WRITE,
   input [7:0] AV_SHARED_DIN,
-  output [7:0] AV_SHARED_DOUT
+  output [7:0] AV_SHARED_DOUT,
+  input AV_SUBRAM_SEL
 );
 
 // Two things were tried here while chasing Thexder's corrupt sub-CPU program
@@ -33,7 +34,7 @@ module SRAM(
 //
 // So the shared-RAM aperture is not where Thexder loses its bytes. Left as-is.
 wire legacy_main_sel = ~SHALTACn;
-wire sub_sel = SUBSELn & ~SSMEMn;
+wire sub_sel = SUBSELn & ~SSMEMn & ~AV_SUBRAM_SEL;
 wire [9:0] legacy_main_addr = {2'b11, MADDRBUS[7:0]};
 wire sub_write = sub_sel && ~SWTQEn;
 wire main_write = ((~SUBSELn & ~SSMEMn & ~WTQEn) || AV_SHARED_WRITE);

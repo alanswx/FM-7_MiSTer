@@ -268,9 +268,9 @@ clean-shots:
 
 # Directed AV memory-map check. It runs independently of the full machine so
 # address-map failures remain easy to localize from the boot smoke test.
-avmem-test: avmem_tb.sv ../rtl/AVMEM.v ../rtl/ram.v
+avmem-test: avmem_tb.sv ../rtl/AVMEM.v ../rtl/wd1793_dpram.v
 	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-avmem-obj \
-		--top-module avmem_tb avmem_tb.sv ../rtl/AVMEM.v ../rtl/ram.v
+		--top-module avmem_tb avmem_tb.sv ../rtl/AVMEM.v ../rtl/wd1793_dpram.v
 	/tmp/fm7-avmem-obj/Vavmem_tb
 
 # Directed check for the shared AV main-CPU / raster VRAM port.
