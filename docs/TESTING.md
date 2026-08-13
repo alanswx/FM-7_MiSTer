@@ -1,6 +1,6 @@
 # Testing
 
-Two levels: an 8-row regression suite that must stay green, and a breadth sweep
+Two levels: a small regression suite that must stay green, and a breadth sweep
 over the whole floppy collection.
 
 ## The regression suite
@@ -11,7 +11,25 @@ cd vsim
 ./run_tests.sh basic           # only tests matching a substring
 BLESS=1 ./run_tests.sh         # accept current behaviour as the new reference
 FRAMES=1200 ./run_tests.sh     # run longer
+ALLDISKS=1 ./run_tests.sh      # include disks that have no reference yet
 ```
+
+### What it covers
+
+Boot (F-BASIC and the three DOS ROMs), the keyboard and shift tables through
+F-BASIC, one disk title, and **one FM77AV title**. The AV row runs CaptainYS's
+2019 demo from `software/FM77AV/`; by the shot frame that demo has programmed
+all 4096 palette entries, filled all twelve 320-mode bit planes through the main
+CPU's MMR aperture, driven `$D430`/`$D410` from the main CPU while the sub CPU
+is halted, and started drawing text through the MB61VH010 ALU. Until it was
+added the suite had **no AV coverage at all**, which is how a broken `$D430`
+page select and a missing drawing ALU both survived unnoticed.
+
+The suite is a gate, not a sweep. It runs disk titles that already have a
+blessed screenshot; a `software/` tree holding a few hundred images would
+otherwise turn a five-minute gate into a six-hour one. `ALLDISKS=1` runs
+everything found, which is what you want when adding titles — and for a whole
+collection use the breadth sweep below, which parallelises.
 
 It compares **both halves** against `shots-ref/` and exits non-zero on any
 difference:
@@ -27,7 +45,8 @@ moves the screen without touching the rates.
 Counters are keyed on the **requested** frame count, so `FRAMES=1200` against a
 620-frame reference compares nothing rather than reporting eight bogus failures.
 A test with no reference reports `new` and does not fail the run, so dropping a
-new `.d77` into `../software` does not break the suite.
+new `.d77` into `../software` does not break the suite — but see `ALLDISKS`
+above: by default a disk with no reference is not run at all.
 
 ### Blessing
 
@@ -122,3 +141,70 @@ cd vsim && make && ./obj_dir/Vemu ... > after.log
 Identical output means the change is not responsible — but see the
 measurement traps in `docs/REFERENCE.md` first: identical output is also what a
 patch that never reached the binary looks like.
+
+## Listening to the sound
+
+Nothing in the suite checks audio, and for the life of the project nothing ever
+had: the simulator only clocked `audio.Clock()` when a window was open, so every
+headless run produced silence by construction. Both PSG bugs — the `$fd0d`/
+`$fd0e` handshake being backwards, and a 28-bit mix expression truncated to 16 —
+survived because of that gap.
+
+```sh
+cd vsim
+make sound-test                                    # directed: does a register write make sound?
+./obj_dir/Vemu --headless --bootrom 0 \
+    --disk '../software/D77/Thexder (Game Arts).d77' \
+    --stop-at-frame 900 --wav /tmp/thexder.wav
+```
+
+The run summary also prints a census that answers "is anything reaching the
+DAC" without opening the file:
+
+```
+audio  : PSG max 10238 (nonzero 233965093)  core_audio max 10238  AUDIO_L max 10238
+PSG bus: $fd0d writes 4096  $fd0e writes 2048  cen ticks 18130034  {bdir,bc1} seen 00 10 11
+PSG channels: dac_a max 4095  dac_b max 4095  dac_c max 2048
+```
+
+**A PSG max of 0 with non-zero `$fd0e` writes is the signature of a broken bus
+handshake** — the software is programming the chip and nothing is landing. That
+is exactly what a whole run of Thexder looked like before the fix.
+
+## Differential VRAM comparison against 77AVEMU (FM77AV)
+
+A screenshot says the picture is wrong. It does not say whether the raster reads
+VRAM wrongly or whether the wrong bytes are in VRAM, and those two have nothing
+in common as bugs. Dump both machines' video memory and diff it.
+
+```sh
+# Reference. Build Mutsu first (tools/README-77AVEMU.md), then:
+FM77AV_VRAM_DUMP=/tmp/ref-vram.bin /tmp/fm7-77avemu-build/fm77av_headless \
+    /tmp/fm77av-roms path/to/image.d77 20000000 /tmp/ref.png
+
+# This core, at a chosen frame.
+cd vsim
+FM7_VRAM_DUMP=/tmp/ours-vram.bin ./obj_dir/Vemu --headless --machine fm77av \
+    --disk path/to/image.d77 --stop-at-frame 2050 --av-dump-frame 2000
+```
+
+Both files are 98304 bytes in the same layout: **bank 0 then bank 1, each blue,
+red, green, each gun two 8 KB halves**. Diff them slice by slice — 12 slices of
+8 KB. Identical slice *contents* sitting in different banks is a page-select
+bug, not a raster bug.
+
+The ROM directory for the reference is `refs/fm77av.zip` unzipped with
+upper-case names (`FBASIC30.ROM`, `INITIATE.ROM`, `SUBSYS_A/B/C.ROM`,
+`SUBSYSCG.ROM`, `KANJI.ROM`).
+
+**Align on what is on screen, not on a frame number.** This core reaches the
+2019 demo's fully-typed title around frame 2000; the reference reaches it in
+20 M instructions. Diffing at mismatched points shows the untyped text as a
+whole-plane difference.
+
+`--trace-av-video [file]` adds the AV video write log: main-CPU aperture writes
+(`AVVRAM`), sub-CPU VRAM writes (`SUBVRAM`), drawing-ALU read-modify-writes
+(`ALUW`, with the bytes read and written), main-CPU MMR writes into the sub I/O
+page (`MMRSUBIO`, with the sub-halt state) and the sub CPU's own `$D410-$D42B` /
+`$D430` writes (`SUBDRAW`). It is off by default because it fires on nearly
+every bus cycle of an AV run.

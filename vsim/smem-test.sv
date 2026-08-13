@@ -18,6 +18,10 @@ module smem_tb;
   wire vram_bank;
 
   SMEM dut(
+    // The $D430 latch sits on the sub-system register bus, which core.v
+    // multiplexes between the sub CPU and the main CPU's MMR view of the sub
+    // I/O page.  Drive it from the same stimulus the sub CPU would.
+    .SREGADDR(addr), .SREGDIN(data_in), .SREGWEn(swtq_n), .alu_busy(1'b0),
     .CLKSYS(clk), .SADDRBUS(addr), .SDATABUS_in(data_in),
     .SDATABUS_out(data_out), .SRAM1CSn(sram1_n), .SRAM2CSn(sram2_n),
     .SWTQEn(swtq_n), .SRDQEn(srdq_n), .SROMSELn(sromsel_n),

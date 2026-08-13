@@ -72,7 +72,16 @@ Quirks:
 - Reading the MMR register area *through* bank `$3F` returns `$FF` — CSP
   `read_segment_3f`, `mainmem_mmr.cpp:119-127` (blocks `$xD80-$xD97`).
 - CSP gates main-CPU access to the `$1xxxx` sub aperture on the sub CPU being halted;
-  otherwise reads return `$FF` (`mainmem_readseq.cpp`, `read_direct_access`).
+  otherwise reads return `$FF` (`mainmem_readseq.cpp`, `read_direct_access`). 77AVEMU
+  is the same rule stated the other way round: a main-CPU access to `$10000-$1FFFF`
+  is discarded while the sub CPU is *running* (`fm77avmemory.cpp:804-809`).
+- **The sub I/O page at `$1D400-$1D4FF` is not decoration.** The 2019 AV demo halts
+  the sub CPU and then drives `$D430` and `$D410` from the main CPU: at the point it
+  fills the second bit-plane pair it writes `$1D430 = $64` (display page 1, access
+  page 1) and later `$1D410 = $80` to arm the drawing ALU. A core that maps only the
+  `$10000-$1BFFF` VRAM part of the aperture loses the page select, so every gradient
+  byte lands on the page-0 planes and the screen is vertical colour bars instead of
+  a 4096-colour ramp. Five such writes in the whole demo, all with the sub halted.
 - `$FD90`/`$FD92` have no read handler (write-only); reads fall through.
 
 ## Boot / initiator ROM
@@ -173,6 +182,15 @@ masks the ALU (77AVEMU verified this on real hardware, `fm77avcrtc.cpp:410`).
 
 Timing: no reference has measured it. CSP models busy only for LINE, at 16 bytes/µs
 (`mb61vh010.cpp:632-638`); software polls `$D430` b4 for completion.
+
+The two triggers are not equally important. The 2019 AV demo writes `$D42B` **zero**
+times in its whole run — it uses only the access-intercept path, 622 register writes
+of which 287 are `$D410` toggling between `$80` (enable, PSET) and `$00`. So a core
+that implements the Bresenham line drawer but not the byte read-modify-write has
+implemented the half no software in hand exercises. The two paths also differ in the
+mask: the access path writes the eight pixels selected by `~$D412`, while the line
+path (`PutDot`) ignores `$D412` entirely and writes the single pixel it is on, gated
+by the rotating `$D422/$D423` stipple.
 
 ## Sub-system changes
 

@@ -4,7 +4,9 @@
 // refs/77AVEMU (refs/ is ignored).  build_77avemu_headless.sh compiles it
 // against a locally-built 77AVEMU tree.
 
+#include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -173,6 +175,25 @@ int main(int argc, char **argv)
                       << " tape_ptr=" << vm->dataRecorder.state.primary.ptr.dataPtr
                       << "\n";
         }
+    }
+
+    // Optional VRAM dump for differential triage against the Verilator core.
+    // Emits bank 0 then bank 1, each 0xC000 bytes: blue, red, green in order.
+    if (const char *vramOut = std::getenv("FM77AV_VRAM_DUMP"))
+    {
+        FILE *fp = fopen(vramOut, "wb");
+        if (nullptr == fp)
+        {
+            std::cerr << "vram dump failed: " << vramOut << "\n";
+            return 1;
+        }
+        for (int bank = 0; bank < 2; ++bank)
+        {
+            const uint8_t *p = vm->physMem.GetVRAMBank(bank);
+            fwrite(p, 1, vm->physMem.GetVRAMBankSize(bank), fp);
+        }
+        fclose(fp);
+        std::cerr << "vram dump: " << vramOut << "\n";
     }
 
     if (!screenshot.empty())

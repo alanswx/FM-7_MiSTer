@@ -40,7 +40,11 @@ module AVMEM(
   output       SHARED_SEL,
   output [9:0] SHARED_ADDR,
   output       SHARED_WRITE,
-  output [7:0] SHARED_DIN
+  output [7:0] SHARED_DIN,
+  output       SUBIO_SEL,
+  output [7:0] SUBIO_ADDR,
+  output       SUBIO_WRITE,
+  output [7:0] SUBIO_DIN
 );
 
 reg av_mode_320;
@@ -126,6 +130,22 @@ assign SHARED_ADDR  = 10'h380 + {3'd0, physical_address[6:0]};
 assign SHARED_WRITE = av_write && shared_sel;
 assign SHARED_DIN   = DIN;
 
+// The sub-system I/O page is physical $1D400-$1D4FF, i.e. sub $D400-$D4FF.
+// MMR puts it in reach of the main CPU, and the 2019 AV demo uses that:
+// it halts the sub CPU and then writes $D430 (the VRAM access/display page)
+// and $D410 (the drawing ALU command) itself.  Without this the demo's
+// second bit-plane pair is never selected and every gradient byte lands on
+// top of the first, which is a screen of vertical bars instead of a
+// 4096-colour ramp.  77AVEMU routes the same window
+// (`fm77avmemory.h:76-77` and `fm77avmemory.cpp:804-825`).
+wire subio_sel = machine_av &&
+                 (physical_address >= 18'h1d400) &&
+                 (physical_address < 18'h1d500);
+assign SUBIO_SEL   = subio_sel;
+assign SUBIO_ADDR  = physical_address[7:0];
+assign SUBIO_WRITE = av_write && subio_sel;
+assign SUBIO_DIN   = DIN;
+
 // ROM and boot-RAM windows do not write the physical RAM array. The AV F-BASIC
 // ROM is not shadowed by this first backend; boot RAM has its explicit $FD93
 // bit-0 write enable.
@@ -138,23 +158,74 @@ wire mmr_ram_sel = mmr_enable && (MADDRBUS < 16'hfc00) &&
                      ((physical_address >= 18'h20000) &&
                       (physical_address < 18'h36000)));
 wire ram_write = av_write && !io_sel && !bootram_sel && !vram_sel &&
-                 !shared_sel && (MADDRBUS < 16'hfffe) &&
+                 !shared_sel && !subio_sel && (MADDRBUS < 16'hfffe) &&
                  (mmr_ram_sel || ((!initiator_sel || twr_sel) && !fbasic_sel));
-wire [7:0] ram_q;
+// The 256 KB physical space is not 256 KB of RAM. Backing all of it with one
+// `dpram #(8,18)` cost 2,097,152 block-memory bits -- a third of the whole
+// design's memory, on a device the design already overflows -- and most of it
+// was never readable or writable:
+//
+//   $00000-$0FFFF  RAM page 0                              -- kept, block A
+//   $10000-$1BFFF  the three VRAM planes                   -- CRTRAM owns these
+//   $1C000-$1D37F  sub-system RAM                          -- kept, block B
+//   $1D380-$1D3FF  shared window          -- SRAM.v owns it
+//   $1D400-$1D4FF  sub I/O                -- registers, not memory
+//   $1D800-$1FFFF  font and monitor ROM   -- SMEM.v owns these
+//   $20000-$2FFFF  RAM page 1                              -- kept, block C
+//   $30000-$3FFFF  the FM-7 machine (RAM low, ROM high)    -- kept, block C
+//
+// Dropping the two holes takes it to 200 KB. `ram_write` above already encodes
+// the same map, so nothing that could be written loses its storage; the reads
+// that fall in a hole are answered by the owning module through DOUT's mux.
+//
 // Physical $1C000-$1D37F is ordinary AV sub-system RAM: C000-CFFF is 4 KB
-// and D000-D37F is the adjacent 896-byte page before the shared window.
-wire [17:0] subram_physical_address = 18'h1c000 + {5'd0, SUBRAM_ADDR};
+// and D000-D37F is the adjacent 896-byte page before the shared window. It is
+// the only region the sub CPU reaches directly, so block B is the dual-ported
+// one and blocks A and C need a single port each.
+wire blk_a_sel = (physical_address[17:16] == 2'b00);      // $00000-$0FFFF
+wire blk_b_sel = (physical_address[17:13] == 5'b01110);   // $1C000-$1DFFF
+wire blk_c_sel = physical_address[17];                    // $20000-$3FFFF
 
-dpram #(8,18) av_ram(
-  .clock     ( CLKSYS                  ),
-  .address_a ( physical_address        ),
-  .data_a    ( DIN                     ),
-  .wren_a    ( ram_write               ),
-  .q_a       ( ram_q                   ),
-  .address_b ( subram_physical_address ),
-  .data_b    ( SUBRAM_DIN              ),
-  .wren_b    ( SUBRAM_WRITE            ),
-  .q_b       ( SUBRAM_DOUT             )
+wire [7:0] blk_a_q, blk_b_q, blk_c_q;
+
+// q is registered, so the read mux has to follow the select the address had
+// when the RAM latched it, not the one the bus has moved on to.
+reg [1:0] ram_sel_d;
+always @(posedge CLKSYS)
+  ram_sel_d <= blk_a_sel ? 2'd0 : blk_b_sel ? 2'd1 : blk_c_sel ? 2'd2 : 2'd3;
+
+wire [7:0] ram_q = (ram_sel_d == 2'd0) ? blk_a_q :
+                   (ram_sel_d == 2'd1) ? blk_b_q :
+                   (ram_sel_d == 2'd2) ? blk_c_q : 8'hff;
+
+dpram #(8,16) av_ram_lo(                                  // $00000-$0FFFF
+  .clock     ( CLKSYS                    ),
+  .address_a ( physical_address[15:0]    ),
+  .data_a    ( DIN                       ),
+  .wren_a    ( ram_write && blk_a_sel    ),
+  .q_a       ( blk_a_q                   ),
+  .address_b ( 16'd0 ), .data_b ( 8'd0 ), .wren_b ( 1'b0 ), .q_b ()
+);
+
+dpram #(8,13) av_ram_sub(                                 // $1C000-$1DFFF
+  .clock     ( CLKSYS                    ),
+  .address_a ( physical_address[12:0]    ),
+  .data_a    ( DIN                       ),
+  .wren_a    ( ram_write && blk_b_sel    ),
+  .q_a       ( blk_b_q                   ),
+  .address_b ( SUBRAM_ADDR               ),
+  .data_b    ( SUBRAM_DIN                ),
+  .wren_b    ( SUBRAM_WRITE              ),
+  .q_b       ( SUBRAM_DOUT               )
+);
+
+dpram #(8,17) av_ram_hi(                                  // $20000-$3FFFF
+  .clock     ( CLKSYS                    ),
+  .address_a ( physical_address[16:0]    ),
+  .data_a    ( DIN                       ),
+  .wren_a    ( ram_write && blk_c_sel    ),
+  .q_a       ( blk_c_q                   ),
+  .address_b ( 17'd0 ), .data_b ( 8'd0 ), .wren_b ( 1'b0 ), .q_b ()
 );
 
 // The 480-byte loader is copied from initiate.rom[$1800/$1a00] by the real

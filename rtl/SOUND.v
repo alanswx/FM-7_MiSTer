@@ -48,7 +48,6 @@ always @(posedge CLKSYS) begin
   else if (wfd0d_stb) { bdir, bci } <= MDATABUS_in[1:0];
 end
 
-wire data_in_oe = ~(~bci | bdir);
 
 //----------------------------------------------------------------------------
 // Joysticks
@@ -79,18 +78,53 @@ reg wfd0e_d;
 always @(posedge CLKSYS) wfd0e_d <= WFD0En;
 wire wfd0e_stb = ~WFD0En & wfd0e_d;   // falling edge = a write to $fd0e
 
+// $fd0e LATCHES A BYTE; the following $fd0d write is what acts on it. The
+// whole audio path was silent because this was implemented the other way
+// round -- `data_i` was wired straight to the live CPU bus, so by the time the
+// command arrived the byte was long gone. An entire run of Thexder issued 1024
+// register writes and all three channel DACs stayed at zero.
+//
+// The order is not a guess. Thexder's own writes, logged off the bus, are:
+//
+//     $fd0e <- 08     put 8 on the data latch
+//     $fd0d <- 03     command 3: latch it as the register address
+//     $fd0d <- 00
+//     $fd0e <- 1f     data
+//     $fd0d <- 02     command 2: write $1f to register 8 (channel A amplitude)
+//
+// which is exactly CSP's model -- `sound.cpp:308-348`, where set_opn_cmd() runs
+// on the $FD0D write and consumes `opn_data`, the byte stored by set_psg() on
+// the previous $FD0E write. IO_MAP.md used to give a poke sequence in the
+// opposite order; that sequence was checked against this core back when this
+// code was the other way round, so it proved only self-consistency.
+//
+// Holding the byte also fixes the sampling. {bdir,bc1} persists until the next
+// $fd0d write, far longer than the chip's 1.2 MHz enable period, so it now sees
+// a stable command and a stable byte together.
+reg [7:0] psg_data;
+always @(posedge CLKSYS) begin
+  if (reset) psg_data <= 8'd0;
+  else if (wfd0e_stb) psg_data <= MDATABUS_in;
+end
+
+
+
 always @(posedge CLKSYS) begin
   if (reset) begin
     psg_addr   <= 4'd0;
     psg_port_b <= 8'd0;
   end
-  else if (wfd0e_stb) begin
-    if ({bdir, bci} == 2'b11)
-      psg_addr <= MDATABUS_in[3:0];
-    else if ({bdir, bci} == 2'b10 && psg_addr == 4'd15)
-      psg_port_b <= MDATABUS_in;
+  else if (wfd0d_stb) begin
+    if (MDATABUS_in[1:0] == 2'b11)
+      psg_addr <= psg_data[3:0];
+    else if (MDATABUS_in[1:0] == 2'b10 && psg_addr == 4'd15)
+      psg_port_b <= psg_data;
   end
 end
+
+// Direction as the PSG core sees it, so the byte it samples and the command
+// it samples are gated by the same window.
+wire data_in_oe = ~(~bci | bdir);
 
 wire joy0_sel = (psg_port_b[7:4] == 4'h2);
 wire joy1_sel = (psg_port_b[7:4] == 4'h5);
@@ -113,9 +147,10 @@ wire reset_n_i = RESETBn;
 // the tone counters at the right rate; undriven (effectively 0) makes every
 // pitch an octave sharp. Worth confirming by ear against a reference recording.
 wire sel_n_i = 1'b1;
-wire bc_i = bci;
+wire bc_i   = bci;
 wire bdir_i = bdir;
-wire [7:0] data_i = ~data_in_oe ? MDATABUS_in : 8'd0;
+// The latched $fd0e byte, not the live bus -- see the psg_data comment above.
+wire [7:0] data_i = ~data_in_oe ? psg_data : 8'd0;
 wire [7:0] data_r_o;
 
 // Register 14 is port A, i.e. the joystick, and never the PSG's own register.
@@ -149,11 +184,15 @@ ym2149_audio u_ym2149_audio(
   .bdir_i       ( bdir_i       ),
   .data_i       ( data_i       ),
   .data_r_o     ( data_r_o     ),
-  .ch_a_o       ( ch_a_o       ),
-  .ch_b_o       ( ch_b_o       ),
-  .ch_c_o       ( ch_c_o       ),
+  // The per-channel and raw-PCM taps are not used -- only the mixed output is.
+  // Naming them here created implicit ONE-BIT nets for multi-bit outputs, which
+  // both Quartus (10236) and Verilator (IMPLICIT) warn about; leave them
+  // unconnected so the width mismatch cannot come back as a silent truncation.
+  .ch_a_o       (              ),
+  .ch_b_o       (              ),
+  .ch_c_o       (              ),
   .mix_audio_o  ( mix_audio_o  ),
-  .pcm14s_o     ( pcm14s_o     )
+  .pcm14s_o     (              )
 );
 
 endmodule

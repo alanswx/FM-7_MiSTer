@@ -166,10 +166,28 @@ PSG data bus, write and read.
   `{1, 1, ~buttonB, ~buttonA, ~right, ~left, ~down, ~up}`, `$ff` when nothing
   is selected.
 
-Verified from F-BASIC with stick 1 held up+A (`$fd0d` = 64781, `$fd0e` = 64782):
+**Write order: the byte goes to `$fd0e` first, and the following `$fd0d`
+command consumes it.** `$fd0e` is a latch; `$fd0d` is what acts. CSP models
+exactly this — `set_psg()` stores the byte, `set_opn_cmd()` (`sound.cpp:308-348`)
+runs on the `$FD0D` write and uses the stored `opn_data`. Thexder's own bus
+traffic is the same, 1024 times over:
 
 ```
-poke64781,3:poke64782,15:poke64781,2:poke64782,32:poke64781,3:poke64782,14:poke64781,1:?peek(64782)
+$fd0e <- 08     put 8 on the data latch
+$fd0d <- 03     command 3: latch it as the register address (channel A amplitude)
+$fd0d <- 00
+$fd0e <- 1f     data
+$fd0d <- 02     command 2: write $1f to register 8
+```
+
+(Superseded claim: this section used to give the poke sequence in the opposite
+order, `poke64781,3:poke64782,15:...`, described as verified from F-BASIC against
+a real stick. `SOUND.v` was backwards in the same way at the time, so the check
+only ever proved the two agreed with each other. The corrected sequence, stick 1
+held up+A, `$fd0d` = 64781 and `$fd0e` = 64782:)
+
+```
+poke64782,15:poke64781,3:poke64781,0:poke64782,32:poke64781,2:poke64781,0:poke64782,14:poke64781,3:poke64781,1:?peek(64782)
  238
 ```
 

@@ -48,7 +48,6 @@ reg [7:0] SFT3;
 reg [7:0] B3SHIFT, B2SHIFT, B1SHIFT, B0SHIFT;
 reg [7:0] R3SHIFT, R2SHIFT, R1SHIFT, R0SHIFT;
 reg [7:0] G3SHIFT, G2SHIFT, G1SHIFT, G0SHIFT;
-reg [11:0] analog[0:4095];
 reg [11:0] analog_reset_idx = 12'd0;
 reg [11:0] analog_index = 12'd0;
 reg [11:0] analog_code_reg = 12'd0;
@@ -59,7 +58,6 @@ always @(posedge CLKSYS) begin
   if (~RESETBn) begin
     pal[rst_idx] <= rst_idx;
     rst_idx <= rst_idx + 3'b1;
-    analog[analog_reset_idx] <= analog_reset_idx;
     analog_reset_idx <= analog_reset_idx + 12'd1;
   end
   if (~PLTREGn && ~SFTCLKn && (~machine_av || MADDRBUS[3])) begin
@@ -68,19 +66,47 @@ always @(posedge CLKSYS) begin
 
   // FM77AV's analog palette shares the $FD30-$FD3F decode with the FM-7
   // digital palette.  The low half is the 12-bit indexed palette; the high
-  // half remains the eight-entry digital palette at $FD38-$FD3F.
-  if (machine_av && ~PLTREGn && ~WTQEn && ~MADDRBUS[3] &&
-      (MADDRBUS[2:0] <= 3'd4)) begin
+  // half remains the eight-entry digital palette at $FD38-$FD3F.  Only the
+  // index registers are kept here -- the entries themselves live in the three
+  // PAL_RAM blocks below.
+  if (machine_av && ~PLTREGn && ~WTQEn && ~MADDRBUS[3]) begin
     case (MADDRBUS[2:0])
       3'd0: analog_index[11:8] <= MDATA[3:0];
       3'd1: analog_index[7:0]  <= MDATA;
-      3'd2: analog[analog_index][3:0]  <= MDATA[3:0];
-      3'd3: analog[analog_index][7:4]  <= MDATA[3:0];
-      3'd4: analog[analog_index][11:8] <= MDATA[3:0];
       default: ;
     endcase
   end
 end
+
+// ---------------------------------------------------------------------------
+// Analog palette storage
+//
+// This was `reg [11:0] analog[0:4095]` read combinationally. That cost 21,025
+// combinational ALUTs and 49,334 registers -- 40% of the design's logic and
+// 65% of its registers -- and no block RAM at all, because an asynchronous
+// read blocks RAM inference and Quartus builds 49,152 flops plus a 4096:1
+// multiplexer instead. The design then missed the DE10-Nano by 140% on ALMs.
+// Two changes make it a real M10K:
+//
+//   * One memory per gun. Each $FD32/$FD33/$FD34 write is then a full 4-bit
+//     write; the old per-nibble writes into a shared 12-bit word were a
+//     second inference blocker.
+//   * A registered read, addressed by the *combinational* next code rather
+//     than by analog_code_reg. The output register updates on the same SFTCLK
+//     edge that analog_code_reg latches that code, so the pixel path keeps
+//     exactly the latency it had -- this is not a pipeline stage.
+// ---------------------------------------------------------------------------
+wire        analog_rst   = ~RESETBn;
+wire        analog_wr    = machine_av && ~PLTREGn && ~WTQEn && ~MADDRBUS[3];
+wire [11:0] analog_waddr = analog_rst ? analog_reset_idx : analog_index;
+wire        analog_we_b  = analog_rst | (analog_wr && (MADDRBUS[2:0] == 3'd2));
+wire        analog_we_r  = analog_rst | (analog_wr && (MADDRBUS[2:0] == 3'd3));
+wire        analog_we_g  = analog_rst | (analog_wr && (MADDRBUS[2:0] == 3'd4));
+// Reset fills the identity ramp entry[i] = i, i.e. B = i[3:0], R = i[7:4],
+// G = i[11:8] -- CSP's power-on palette (display.cpp:226-228), not black.
+wire  [3:0] analog_wd_b  = analog_rst ? analog_reset_idx[3:0]   : MDATA[3:0];
+wire  [3:0] analog_wd_r  = analog_rst ? analog_reset_idx[7:4]   : MDATA[3:0];
+wire  [3:0] analog_wd_g  = analog_rst ? analog_reset_idx[11:8]  : MDATA[3:0];
 
 function [7:0] expand4;
   input [3:0] nibble;
@@ -91,11 +117,36 @@ function [7:0] expand4;
   end
 endfunction
 
-wire [11:0] analog_pixel = analog[ANALOG_CODE];
+// The code the SFTCLK block is about to latch into analog_code_reg. Addressing
+// the RAM with this rather than with analog_code_reg is what keeps the
+// registered read latency-neutral; the read enable mirrors that block's own
+// enable exactly, so the entry never advances when the code does not.
+wire [11:0] analog_code_next = {
+  G3SHIFT[7], G2SHIFT[7], G1SHIFT[7], G0SHIFT[7],
+  R3SHIFT[7], R2SHIFT[7], R1SHIFT[7], R0SHIFT[7],
+  B3SHIFT[7], B2SHIFT[7], B1SHIFT[7], B0SHIFT[7]
+};
+wire        analog_rd_en = analog_rst | (AV_MODE_320 & SFTSTEP);
+wire [11:0] analog_raddr = analog_rst ? 12'd0 : analog_code_next;
+wire  [3:0] analog_q_b, analog_q_r, analog_q_g;
+
+PAL_RAM pal_blue(
+  .WCLK(CLKSYS), .WADDR(analog_waddr), .WDATA(analog_wd_b), .WE(analog_we_b),
+  .RCLK(SFTCLK),  .RADDR(analog_raddr), .RE(analog_rd_en),   .Q(analog_q_b)
+);
+PAL_RAM pal_red(
+  .WCLK(CLKSYS), .WADDR(analog_waddr), .WDATA(analog_wd_r), .WE(analog_we_r),
+  .RCLK(SFTCLK),  .RADDR(analog_raddr), .RE(analog_rd_en),   .Q(analog_q_r)
+);
+PAL_RAM pal_green(
+  .WCLK(CLKSYS), .WADDR(analog_waddr), .WDATA(analog_wd_g), .WE(analog_we_g),
+  .RCLK(SFTCLK),  .RADDR(analog_raddr), .RE(analog_rd_en),   .Q(analog_q_g)
+);
+
 assign ANALOG_CODE = analog_code_reg;
-assign ANALOG_RGB = { expand4(analog_pixel[7:4]),
-                      expand4(analog_pixel[11:8]),
-                      expand4(analog_pixel[3:0]) };
+assign ANALOG_RGB = { expand4(analog_q_r),
+                      expand4(analog_q_g),
+                      expand4(analog_q_b) };
 
 // RDQEn is a decode strobe, not a clock -- see DERIVED_CLOCKS.md. A LUT-built
 // decode glitches as its inputs arrive skewed, so this read-back register could
@@ -207,5 +258,27 @@ always @(posedge SFTCLK, posedge sftlod, posedge clr3) begin
   end
 end
 
+
+endmodule
+
+// One gun of the FM77AV analog palette: 4096 x 4 bits, written by the main CPU
+// on CLKSYS and read by the raster on SFTCLK. Two always blocks on two clocks
+// is the template Quartus infers a true dual-port M10K from; read-during-write
+// to the same entry is a don't-care here, it is one pixel of one frame.
+module PAL_RAM(
+  input            WCLK,
+  input     [11:0] WADDR,
+  input      [3:0] WDATA,
+  input            WE,
+  input            RCLK,
+  input     [11:0] RADDR,
+  input            RE,
+  output reg [3:0] Q
+);
+
+reg [3:0] mem [0:4095];
+
+always @(posedge WCLK) if (WE) mem[WADDR] <= WDATA;
+always @(posedge RCLK) if (RE) Q <= mem[RADDR];
 
 endmodule

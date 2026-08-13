@@ -24,7 +24,14 @@ module AVCRTRAM_COLOR(
   input AV_VRAM_WRITE,
   input [1:0] COLOR_SEL,
   input [7:0] AV_VRAM_DIN,
+  input DRAW_PORT_EN,
+  input DRAW_INHIBIT_SUB,
+  input [1:0] DRAW_BLOCK,
+  input [12:0] DRAW_ADDR,
+  input DRAW_WRITE,
+  input [7:0] DRAW_DIN,
   output [7:0] CPU_Q,
+  output [7:0] DRAW_Q,
   output [7:0] Q640,
   output [7:0] Q3,
   output [7:0] Q2,
@@ -52,31 +59,41 @@ wire [12:0] addr2 = AV_MODE_320 ? raster_offset1 : video_offset;
 wire [12:0] addr3 = AV_MODE_320 ? raster_offset1 : video_offset;
 
 wire cpu_write = AV_VRAM_WRITE && AV_VRAM_SEL && (AV_VRAM_PLANE == COLOR_SEL);
-wire sub_write = ~SVWEn && ~SDRAMn;
+// While the AV drawing ALU is enabled it swallows the sub CPU's data byte and
+// substitutes its own read-modify-write, so the plain store must not land.
+wire sub_write = ~SVWEn && ~SDRAMn && ~DRAW_INHIBIT_SUB;
+// The drawing ALU borrows the main-CPU aperture port because it is the only
+// one that reaches all three guns at a single address.  It holds the port for
+// two clocks per byte, so a main-CPU aperture access landing in exactly those
+// two clocks of its own bus cycle is displaced; both CPUs' cycles are tens of
+// CLKSYS clocks long, so the access still completes on the surrounding clocks.
+wire [1:0] port_block = DRAW_PORT_EN ? DRAW_BLOCK : cpu_block;
+wire [12:0] port_addr = DRAW_PORT_EN ? DRAW_ADDR : cpu_offset;
+wire port_write = DRAW_PORT_EN ? DRAW_WRITE : cpu_write;
 
 dpram #(8,13) ram0(
   .clock(CLKSYS), .address_a(addr0), .data_a(SDATABUS),
   .wren_a(sub_write && (video_block == 2'd0)), .q_a(qa0),
-  .address_b(cpu_offset), .data_b(AV_VRAM_DIN),
-  .wren_b(cpu_write && (cpu_block == 2'd0)), .q_b(qb0)
+  .address_b(port_addr), .data_b(DRAW_PORT_EN ? DRAW_DIN : AV_VRAM_DIN),
+  .wren_b(port_write && (port_block == 2'd0)), .q_b(qb0)
 );
 dpram #(8,13) ram1(
   .clock(CLKSYS), .address_a(addr1), .data_a(SDATABUS),
   .wren_a(sub_write && (video_block == 2'd1)), .q_a(qa1),
-  .address_b(cpu_offset), .data_b(AV_VRAM_DIN),
-  .wren_b(cpu_write && (cpu_block == 2'd1)), .q_b(qb1)
+  .address_b(port_addr), .data_b(DRAW_PORT_EN ? DRAW_DIN : AV_VRAM_DIN),
+  .wren_b(port_write && (port_block == 2'd1)), .q_b(qb1)
 );
 dpram #(8,13) ram2(
   .clock(CLKSYS), .address_a(addr2), .data_a(SDATABUS),
   .wren_a(sub_write && (video_block == 2'd2)), .q_a(qa2),
-  .address_b(cpu_offset), .data_b(AV_VRAM_DIN),
-  .wren_b(cpu_write && (cpu_block == 2'd2)), .q_b(qb2)
+  .address_b(port_addr), .data_b(DRAW_PORT_EN ? DRAW_DIN : AV_VRAM_DIN),
+  .wren_b(port_write && (port_block == 2'd2)), .q_b(qb2)
 );
 dpram #(8,13) ram3(
   .clock(CLKSYS), .address_a(addr3), .data_a(SDATABUS),
   .wren_a(sub_write && (video_block == 2'd3)), .q_a(qa3),
-  .address_b(cpu_offset), .data_b(AV_VRAM_DIN),
-  .wren_b(cpu_write && (cpu_block == 2'd3)), .q_b(qb3)
+  .address_b(port_addr), .data_b(DRAW_PORT_EN ? DRAW_DIN : AV_VRAM_DIN),
+  .wren_b(port_write && (port_block == 2'd3)), .q_b(qb3)
 );
 
 assign Q640 = (video_block == 2'd0) ? qa0 :
@@ -89,6 +106,9 @@ assign Q0 = qa3;
 assign CPU_Q = (cpu_block == 2'd0) ? qb0 :
                (cpu_block == 2'd1) ? qb1 :
                (cpu_block == 2'd2) ? qb2 : qb3;
+assign DRAW_Q = (port_block == 2'd0) ? qb0 :
+                (port_block == 2'd1) ? qb1 :
+                (port_block == 2'd2) ? qb2 : qb3;
 
 endmodule
 
@@ -116,6 +136,19 @@ module CRTRAM(
   input [13:0] AV_VRAM_ADDR,
   input AV_VRAM_WRITE,
   input [7:0] AV_VRAM_DIN,
+  input DRAW_PORT_EN,
+  input DRAW_INHIBIT_SUB,
+  input [1:0] DRAW_BLOCK,
+  input [12:0] DRAW_ADDR,
+  input DRAW_WRITE_B,
+  input DRAW_WRITE_R,
+  input DRAW_WRITE_G,
+  input [7:0] DRAW_DIN_B,
+  input [7:0] DRAW_DIN_R,
+  input [7:0] DRAW_DIN_G,
+  output [7:0] DRAW_Q_B,
+  output [7:0] DRAW_Q_R,
+  output [7:0] DRAW_Q_G,
   output [7:0] AV_VRAM_DOUT,
   output [7:0] SVDATAB,
   output [7:0] SVDATAB3,
@@ -147,7 +180,10 @@ AVCRTRAM_COLOR blue(
   .AV_ACTIVE_PAGE(AV_ACTIVE_PAGE), .AV_MODE_320(AV_MODE_320),
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
-  .COLOR_SEL(2'd0), .AV_VRAM_DIN(AV_VRAM_DIN), .CPU_Q(blue_cpu),
+  .COLOR_SEL(2'd0), .AV_VRAM_DIN(AV_VRAM_DIN),
+  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT_SUB(DRAW_INHIBIT_SUB),
+  .DRAW_BLOCK(DRAW_BLOCK), .DRAW_ADDR(DRAW_ADDR),
+  .DRAW_WRITE(DRAW_WRITE_B), .DRAW_DIN(DRAW_DIN_B), .CPU_Q(blue_cpu), .DRAW_Q(DRAW_Q_B),
   .Q640(blue_640), .Q3(blue3), .Q2(blue2), .Q1(blue1), .Q0(blue0)
 );
 AVCRTRAM_COLOR red(
@@ -157,7 +193,10 @@ AVCRTRAM_COLOR red(
   .AV_ACTIVE_PAGE(AV_ACTIVE_PAGE), .AV_MODE_320(AV_MODE_320),
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
-  .COLOR_SEL(2'd1), .AV_VRAM_DIN(AV_VRAM_DIN), .CPU_Q(red_cpu),
+  .COLOR_SEL(2'd1), .AV_VRAM_DIN(AV_VRAM_DIN),
+  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT_SUB(DRAW_INHIBIT_SUB),
+  .DRAW_BLOCK(DRAW_BLOCK), .DRAW_ADDR(DRAW_ADDR),
+  .DRAW_WRITE(DRAW_WRITE_R), .DRAW_DIN(DRAW_DIN_R), .CPU_Q(red_cpu), .DRAW_Q(DRAW_Q_R),
   .Q640(red_640), .Q3(red3), .Q2(red2), .Q1(red1), .Q0(red0)
 );
 AVCRTRAM_COLOR green(
@@ -167,7 +206,10 @@ AVCRTRAM_COLOR green(
   .AV_ACTIVE_PAGE(AV_ACTIVE_PAGE), .AV_MODE_320(AV_MODE_320),
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
-  .COLOR_SEL(2'd2), .AV_VRAM_DIN(AV_VRAM_DIN), .CPU_Q(green_cpu),
+  .COLOR_SEL(2'd2), .AV_VRAM_DIN(AV_VRAM_DIN),
+  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT_SUB(DRAW_INHIBIT_SUB),
+  .DRAW_BLOCK(DRAW_BLOCK), .DRAW_ADDR(DRAW_ADDR),
+  .DRAW_WRITE(DRAW_WRITE_G), .DRAW_DIN(DRAW_DIN_G), .CPU_Q(green_cpu), .DRAW_Q(DRAW_Q_G),
   .Q640(green_640), .Q3(green3), .Q2(green2), .Q1(green1), .Q0(green0)
 );
 

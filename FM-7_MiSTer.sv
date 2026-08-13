@@ -431,7 +431,17 @@ wire buzzer;
 wire [7:0] relay_snd;
 
 wire [15:0] cin_audio = { 1'b0, cin & motor & status[9], 13'b0 };
-wire [15:0] core_audio =  { 1'b0, audio_out, 13'b0 };
+// audio_out is 14 bits, so `{ 1'b0, audio_out, 13'b0 }` is a 28-bit expression
+// assigned to a 16-bit wire: Verilog keeps the LOW 16, which is audio_out[2:0]
+// shifted up to bits 15:13. Only the bottom three bits of the PSG mix reached
+// the DAC, at full scale -- the fastest-changing bits amplified to maximum,
+// i.e. noise rather than the tune, swamping the buzzer and tape audio that sit
+// at bit 13. Measured on Thexder: PSG mix peaked at 10238 and core_audio came
+// out as a constant-amplitude 57344 = 7 << 13.
+//
+// {2'b00, audio_out} keeps all 14 bits. The four sources still cannot overflow:
+// 8192 + 16383 + 8192 + 32640 = 65407.
+wire [15:0] core_audio =  { 2'b00, audio_out };
 wire [15:0] buz_audio = { 1'b0, buzzer, 13'b0 };
 wire [15:0] relay_audio = { 1'b0, (status[9] ? relay_snd : 8'd0), 7'b0 };
 

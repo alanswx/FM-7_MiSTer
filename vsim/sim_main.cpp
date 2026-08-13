@@ -16,6 +16,7 @@
 
 #include <verilated.h>
 #include "Vemu.h"
+#include "Vemu___024root.h"
 #if VM_TRACE_VCD
 #include <verilated_vcd_c.h>
 #endif
@@ -103,6 +104,74 @@ static bool opt_tape_audio = false;  // status[9]
 static bool  trace_io  = false;
 static bool  trace_io_unknown_only = false;
 static FILE* trace_io_file = nullptr;
+static bool last_vram_write = false;
+static bool last_sub_vram_write = false;
+static bool last_sub_draw_write = false;
+static bool last_alu_write = false;
+static bool last_subio_write = false;
+static int  av_dump_frame = 870;
+static bool trace_av_video = false;
+static unsigned au_out_max = 0, au_core_max = 0, au_l_max = 0;
+static long au_out_nz = 0, au_core_nz = 0;
+static unsigned au_out_seen = 0;
+static long psg_d_strobes = 0, psg_e_strobes = 0, psg_cen_ticks = 0;
+static unsigned psg_bc_seen = 0;
+static unsigned dac_a_max=0, dac_b_max=0, dac_c_max=0;
+static int psg_log_left = 0;
+
+// --wav: capture AUDIO_L/R to a real RIFF/WAVE file. The sim only clocked audio
+// in windowed mode, so a headless run produced nothing to listen to and the
+// whole sound path went unverified for the life of the project. 48 MHz / 44100
+// is not an integer, so accumulate the remainder rather than dropping it.
+static FILE*    wav_file = nullptr;
+static long     wav_frames = 0;
+static long     wav_acc = 0;
+static const long WAV_RATE = 44100;
+
+static void wav_open(const char* path) {
+	wav_file = fopen(path, "wb");
+	if (!wav_file) { printf("Error: cannot open %s\n", path); return; }
+	unsigned char hdr[44] = {0};
+	memcpy(hdr, "RIFF", 4); memcpy(hdr + 8, "WAVEfmt ", 8);
+	hdr[16] = 16; hdr[20] = 1; hdr[22] = 2;                   // PCM, stereo
+	hdr[24] = (unsigned char)(WAV_RATE & 0xff);
+	hdr[25] = (unsigned char)((WAV_RATE >> 8) & 0xff);
+	hdr[28] = (unsigned char)((WAV_RATE * 4) & 0xff);         // byte rate
+	hdr[29] = (unsigned char)(((WAV_RATE * 4) >> 8) & 0xff);
+	hdr[30] = (unsigned char)(((WAV_RATE * 4) >> 16) & 0xff);
+	hdr[32] = 4; hdr[34] = 16;                                // block align, bits
+	memcpy(hdr + 36, "data", 4);
+	fwrite(hdr, 1, 44, wav_file);
+}
+
+static void wav_sample(unsigned l, unsigned r) {
+	if (!wav_file) return;
+	wav_acc += WAV_RATE;
+	if (wav_acc < CLK_SYS_HZ) return;
+	wav_acc -= CLK_SYS_HZ;
+	// The core's audio is unsigned over the 14-bit range with silence at 0, so
+	// centre on half of that -- subtracting 32768/2 would leave the whole file
+	// below zero, which is a DC step rather than a centred waveform.
+	const short sl = (short)((int)l - 8192);
+	const short sr = (short)((int)r - 8192);
+	fwrite(&sl, 2, 1, wav_file); fwrite(&sr, 2, 1, wav_file);
+	wav_frames++;
+}
+
+static void wav_close(void) {
+	if (!wav_file) return;
+	const long data = wav_frames * 4, riff = data + 36;
+	unsigned char v[4];
+	v[0]=(unsigned char)(riff&0xff); v[1]=(unsigned char)((riff>>8)&0xff);
+	v[2]=(unsigned char)((riff>>16)&0xff); v[3]=(unsigned char)((riff>>24)&0xff);
+	fseek(wav_file, 4, SEEK_SET); fwrite(v, 1, 4, wav_file);
+	v[0]=(unsigned char)(data&0xff); v[1]=(unsigned char)((data>>8)&0xff);
+	v[2]=(unsigned char)((data>>16)&0xff); v[3]=(unsigned char)((data>>24)&0xff);
+	fseek(wav_file, 40, SEEK_SET); fwrite(v, 1, 4, wav_file);
+	fclose(wav_file); wav_file = nullptr;
+	printf("audio written    : %ld frames at %ld Hz\n", wav_frames, WAV_RATE);
+}
+static FILE* trace_av_file = nullptr;
 static bool  pc_profile = false;
 static bool  pc_profile_sub = false;
 
@@ -524,6 +593,44 @@ static void save_screenshot(int frame) {
 	fflush(stdout);
 }
 
+// FM77AV VRAM dump, in the same 12-plane layout as the 77AVEMU reference
+// driver's FM77AV_VRAM_DUMP: bank 0 then bank 1, each blue/red/green, each gun
+// two 8 KB halves.  Diffing the two files plane by plane is what distinguishes
+// "the raster draws it wrong" from "the wrong bytes are stored", and the second
+// is what the FM77AV colour-bar bug turned out to be.  See docs/TESTING.md.
+static void dump_av_vram(int frame) {
+	const char *vramOut = getenv("FM7_VRAM_DUMP");
+	if (!opt_machine_av || !vramOut) return;
+	const auto *r = top->rootp;
+	const VlUnpacked<CData/*7:0*/, 8192> *ram[3][4] = {
+		{&r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__blue__DOT__ram0__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__blue__DOT__ram1__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__blue__DOT__ram2__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__blue__DOT__ram3__DOT__ram},
+		{&r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__red__DOT__ram0__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__red__DOT__ram1__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__red__DOT__ram2__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__red__DOT__ram3__DOT__ram},
+		{&r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__green__DOT__ram0__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__green__DOT__ram1__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__green__DOT__ram2__DOT__ram,
+		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__green__DOT__ram3__DOT__ram}
+	};
+	FILE *fp = fopen(vramOut, "wb");
+	if (!fp) {
+		fprintf(stderr, "vram dump failed: %s\n", vramOut);
+		return;
+	}
+	for (int bank = 0; bank < 2; ++bank)
+		for (int c = 0; c < 3; ++c)
+			for (int half = 0; half < 2; ++half) {
+				const int blk = bank * 2 + half;
+				for (int i = 0; i < 8192; ++i) fputc((*ram[c][blk])[i], fp);
+			}
+	fclose(fp);
+	fprintf(stderr, "vram dump: %s at frame %d\n", vramOut, frame);
+}
+
 //----------------------------------------------------------------------------
 // Colour helper
 //
@@ -694,6 +801,7 @@ static int parse_args(int argc, char** argv) {
 		else if (a == "--dump-shadow")     { const char* v = next(); if (v) dump_shadow_path = v; }
 		else if (a == "--dump-shadow-sub") { const char* v = next(); if (v) dump_shadow_sub_path = v; }
 		else if (a == "--vcd")         { const char* v = next(); if (v) vcd_path = v; }
+		else if (a == "--av-dump-frame") { const char* v = next(); if (v) av_dump_frame = atoi(v); }
 		else if (a == "--trace-from")  { const char* v = next(); if (v) trace_from = atoi(v); }
 		else if (a == "--trace-until") { const char* v = next(); if (v) trace_until = atoi(v); }
 		else if (a == "--trace-max")   { const char* v = next(); if (v) trace_max = atol(v); }
@@ -707,6 +815,15 @@ static int parse_args(int argc, char** argv) {
 					trace_cpu_file = fopen(path, "w");
 					if (!trace_cpu_file) printf("Error: cannot open %s\n", path);
 				}
+			}
+		}
+		else if (a == "--wav") { const char* v = next(); if (v) wav_open(v); }
+		else if (a == "--trace-av-video") {
+			trace_av_video = true;
+			if (i + 1 < argc && argv[i + 1][0] != '-') {
+				const char* path = argv[++i];
+				trace_av_file = fopen(path, "w");
+				if (!trace_av_file) printf("Error: cannot open %s\n", path);
 			}
 		}
 		else if (a == "--trace-io" || a == "--trace-io-unknown") {
@@ -857,6 +974,14 @@ static void print_run_stats() {
 	       (stat_d40a_rd == 0 && stat_d40a_wr == 0)
 	           ? "   <- sub never touched the BUSY flag" : "");
 	printf("I/O cycles ($fdxx): %ld\n", stat_io_cycles);
+	printf("audio             : PSG max %u (nonzero %ld)  core_audio max %u (nonzero %ld)  AUDIO_L max %u\n",
+	       au_out_max, au_out_nz, au_core_max, au_core_nz, au_l_max);
+	printf("PSG bus           : $fd0d writes %ld  $fd0e writes %ld  cen ticks %ld  {bdir,bc1} seen %s%s%s%s\n",
+	       psg_d_strobes, psg_e_strobes, psg_cen_ticks,
+	       (psg_bc_seen&1)?"00 ":"", (psg_bc_seen&2)?"01 ":"",
+	       (psg_bc_seen&4)?"10 ":"", (psg_bc_seen&8)?"11 ":"");
+	printf("PSG channels      : dac_a max %u  dac_b max %u  dac_c max %u\n",
+	       dac_a_max, dac_b_max, dac_c_max);
 	printf("keyboard          : %ld strobes, codes seen $%02x%s\n",
 	       stat_kstrobes, kdata_seen,
 	       kdata_seen ? "" : "   (no key ever reached the latch)");
@@ -1140,6 +1265,45 @@ static void sim_cycle() {
 			        video.count_frame, p, top->dbg_io_data, m_cur_pc);
 		}
 	}
+	// Main-CPU MMR access to the sub-system I/O page ($1D400-$1D4FF), and the
+	// sub CPU's own writes to the drawing ALU / $D430.
+	const bool subio_write = top->dbg_av_write &&
+		top->dbg_av_phys >= 0x1d400 && top->dbg_av_phys < 0x1d500;
+	const bool sub_draw_write = top->dbg_s_e && !top->dbg_s_rw &&
+		((top->dbg_s_addr >= 0xd410 && top->dbg_s_addr <= 0xd42b) ||
+		 top->dbg_s_addr == 0xd430);
+	// FM77AV video-path trace.  Off by default: these fire on nearly every bus
+	// cycle of an AV run and would bury the ordinary trace output.
+	if (trace_av_video && video.count_frame >= trace_from &&
+	    (trace_until < 0 || video.count_frame <= trace_until)) {
+		FILE* o = trace_av_file ? trace_av_file : (trace_io_file ? trace_io_file : stdout);
+		if (top->dbg_vram_write && !last_vram_write)
+			fprintf(o, "%8d AVVRAM W bank=%d plane=%d addr=$%04x data=$%02x pc=$%04x\n",
+			        video.count_frame, top->dbg_vram_bank, top->dbg_vram_plane,
+			        top->dbg_vram_addr, top->dbg_vram_din, m_cur_pc);
+		if (top->dbg_sub_vram_write && !last_sub_vram_write)
+			fprintf(o, "%8d SUBVRAM W page=%d addr=$%04x raster=$%04x data=$%02x pc=$%04x\n",
+			        video.count_frame, top->dbg_sub_vram_page,
+			        top->dbg_sub_vram_addr, top->dbg_sub_vram_raster_addr,
+			        top->dbg_sub_vram_data, top->dbg_s_pc);
+		if (top->dbg_alu_write && !last_alu_write)
+			fprintf(o, "%8d ALUW blk=%d addr=$%04x q=%02x/%02x/%02x d=%02x/%02x/%02x pc=$%04x\n",
+			        video.count_frame, top->dbg_alu_block, top->dbg_alu_addr,
+			        top->dbg_alu_q_b, top->dbg_alu_q_r, top->dbg_alu_q_g,
+			        top->dbg_alu_d_b, top->dbg_alu_d_r, top->dbg_alu_d_g, top->dbg_s_pc);
+		if (subio_write && !last_subio_write)
+			fprintf(o, "%8d MMRSUBIO W phys=$%05x data=$%02x halt=%d pc=$%04x\n",
+			        video.count_frame, top->dbg_av_phys, top->dbg_m_dout,
+			        top->dbg_sub_halt, m_cur_pc);
+		if (sub_draw_write && !last_sub_draw_write)
+			fprintf(o, "%8d SUBDRAW W addr=$%04x data=$%02x pc=$%04x\n",
+			        video.count_frame, top->dbg_s_addr, top->dbg_s_dout, top->dbg_s_pc);
+	}
+	last_vram_write     = top->dbg_vram_write;
+	last_sub_vram_write = top->dbg_sub_vram_write;
+	last_alu_write      = top->dbg_alu_write;
+	last_subio_write    = subio_write;
+	last_sub_draw_write = sub_draw_write;
 	last_io_wr = top->dbg_io_wr;
 	last_io_rd = top->dbg_io_rd;
 
@@ -1149,8 +1313,40 @@ static void sim_cycle() {
 		                  ((uint32_t)top->VGA_G << 8) |
 		                  ((uint32_t)top->VGA_R);
 		video.Clock(top->VGA_HB, top->VGA_VB, top->VGA_HS, top->VGA_VS, colour);
+		static bool av_dumped = false;
+		if (!av_dumped && video.count_frame >= av_dump_frame) {
+			dump_av_vram(video.count_frame);
+			av_dumped = true;
+		}
 	}
 
+	{   // PSG bus census
+		static uint8_t d_last = 1, e_last = 1;
+		if (!top->dbg_wfd0dn && d_last) {
+			psg_d_strobes++;
+			if (psg_log_left > 0) { printf("PSGSEQ $fd0d <- %02x\n", top->dbg_m_dout); psg_log_left--; }
+		}
+		if (!top->dbg_wfd0en && e_last) {
+			psg_e_strobes++;
+			if (psg_log_left > 0) { printf("PSGSEQ $fd0e <- %02x\n", top->dbg_m_dout); psg_log_left--; }
+		}
+		d_last = top->dbg_wfd0dn; e_last = top->dbg_wfd0en;
+		if (top->dbg_psg_cen) psg_cen_ticks++;
+		psg_bc_seen |= (1u << top->dbg_psg_bc);
+		if ((unsigned)top->dbg_dac_a > dac_a_max) dac_a_max = top->dbg_dac_a;
+		if ((unsigned)top->dbg_dac_b > dac_b_max) dac_b_max = top->dbg_dac_b;
+		if ((unsigned)top->dbg_dac_c > dac_c_max) dac_c_max = top->dbg_dac_c;
+	}
+	{   // audio-path census: is the PSG producing signal, and does it survive?
+		const unsigned ao = top->dbg_audio_out, ca = top->dbg_core_audio;
+		if (ao > au_out_max)  au_out_max  = ao;
+		if (ca > au_core_max) au_core_max = ca;
+		if ((unsigned)top->AUDIO_L > au_l_max) au_l_max = top->AUDIO_L;
+		if (ao) au_out_nz++;
+		if (ca) au_core_nz++;
+		au_out_seen |= ao;
+	}
+	wav_sample(top->AUDIO_L, top->AUDIO_R);
 	if (!headless) audio.Clock(top->AUDIO_L, top->AUDIO_R);
 
 	// --- falling edge ------------------------------------------------
@@ -1373,6 +1569,7 @@ int main(int argc, char** argv, char** env) {
 			if (stop_at_frame < 0 && video.count_frame > 100000) break;  // safety
 		}
 		printf("Finished at frame %d\n", video.count_frame);
+		wav_close();          // headless returns below, before the windowed cleanup
 		print_run_stats();
 		for (int f : screenshot_frames)
 			if (!screenshots_taken.count(f))
@@ -1418,6 +1615,7 @@ int main(int argc, char** argv, char** env) {
 	}
 
 	audio.CleanUp();
+	wav_close();
 	video.CleanUp();
 #endif
 

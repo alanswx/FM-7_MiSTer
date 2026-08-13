@@ -67,6 +67,9 @@ video chain, which is exactly what the core depends on.
 | `--trace-io [file]` | Every `$fdxx` read/write with the port, the data and the PC. |
 | `--trace-mem <lo>-<hi>` | Every main-CPU bus cycle in a hex address range, with the memory-map chip selects. |
 | `--dump-shadow <file>` | The 64K of bytes the CPU has actually seen on its bus. |
+| `--wav <file>` | Capture `AUDIO_L`/`AUDIO_R` to a 16-bit stereo RIFF/WAVE at 44100 Hz. Works headless — `audio.Clock()` is otherwise skipped without a window, which is why the sound path went unverified for so long. |
+| `--trace-av-video [file]` | FM77AV video writes: main aperture, sub VRAM, drawing ALU, MMR sub-I/O, `$D4xx`. Off by default; it is per-bus-cycle noisy. |
+| `--av-dump-frame <n>` + `FM7_VRAM_DUMP=<file>` | Write the 12 FM77AV VRAM planes at frame *n*, in the 77AVEMU reference layout. See `docs/TESTING.md`. |
 
 **There is no joystick option** because the core has no joystick input —
 `core.v` takes `ps2_key` and nothing else. Keyboard only.

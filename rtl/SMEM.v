@@ -8,6 +8,11 @@ module SMEM(
   input SRAM2CSn,
   input SWTQEn,
   input SRDQEn,
+  // Sub-system register write bus: the sub CPU normally, the main CPU's MMR
+  // view of physical $1D400-$1D4FF while the sub CPU is halted.
+  input [15:0] SREGADDR,
+  input  [7:0] SREGDIN,
+  input        SREGWEn,
   input SROMSELn,
   input SROMDn,
   input machine_av,
@@ -15,6 +20,7 @@ module SMEM(
   input submon_status,
   input SBLANKn,
   input SVSYNCn,
+  input alu_busy,
   input RESETBn,
   output [7:0] av_d430_out,
   output av_display_page,
@@ -38,19 +44,21 @@ wire [7:0] monitor_q = !machine_av ? m154_q :
 // reference hardware model returns the C font while Type C is active.
 wire [7:0] av_font_data = (submon_sel == 2'd0) ? m153_q : av_font_q;
 
-wire av_d430_sel = machine_av && (SADDRBUS == 16'hd430);
-// $D430 readback is a live status register, not the write latch.  The
-// unimplemented ALU is idle, so bit 4 remains set until the ALU exists.
-assign av_d430_out = {~SBLANKn, 2'b11, 2'b11, ~SVSYNCn, 1'b1, submon_status};
+wire av_d430_sel = machine_av && (SREGADDR == 16'hd430);
+// $D430 readback is a live status register, not the write latch.  Bit 4 is
+// "ALU idle": AVHDRAW's byte read-modify-write finishes inside one sub-CPU
+// bus cycle, so only a hardware line draw is ever seen busy here.
+assign av_d430_out = {~SBLANKn, 2'b11, ~alu_busy, 1'b1, ~SVSYNCn, 1'b1, submon_status};
 assign av_display_page = av_d430_reg[6];
 assign av_active_page = av_d430_reg[5];
 assign av_vram_bank = av_d430_reg[5];
 
-// $D430 is a sub-CPU write latch.  SADDRBUS/SWTQEn are decode outputs rather
-// than a clock, and the address can already be moving to the next cycle at a
-// CLKSYS edge.  Filter the active-low write strobe and capture on its stable
-// leading edge, matching the scroll-register latches in MB60H010.
-wire av_d430_wrn = ~(av_d430_sel && ~SWTQEn);
+// $D430 is a write latch on the sub-system register bus.  SREGADDR/SREGWEn are
+// decode outputs rather than a clock, and the address can already be moving to
+// the next cycle at a CLKSYS edge.  Filter the active-low write strobe and
+// capture on its stable leading edge, matching the scroll-register latches in
+// MB60H010.
+wire av_d430_wrn = ~(av_d430_sel && ~SREGWEn);
 reg [2:0] av_d430_wr_sr;
 always @(posedge CLKSYS) begin
   av_d430_wr_sr <= { av_d430_wr_sr[1:0], av_d430_wrn };
@@ -58,9 +66,9 @@ always @(posedge CLKSYS) begin
     av_d430_reg <= 8'd0;
     av_d430_wr_sr <= 3'b111;
   end
-  else if ((av_d430_sel && ~SWTQEn) ||
+  else if ((av_d430_sel && ~SREGWEn) ||
            (av_d430_wr_sr[2] & ~av_d430_wr_sr[1])) begin
-    av_d430_reg <= SDATABUS_in;
+    av_d430_reg <= SREGDIN;
   end
 end
 

@@ -31,9 +31,16 @@ Leave it async unless there is new evidence.
 Hardware-side update (2026-08-08): `alanswx/fdc-d77-support` reported that
 `1735adb` fixes an intermittent power-on clock-mux glitch in `CLKCTRL.v` by
 giving `switch` a defined startup value and sampling `SW2` on `CLKSYS`. It is
-integrated locally. The full simulation regression still passes; the reference
-counters moved by the expected startup timing shift, and only the fixed-frame
-Thexder title-reveal screenshot changed, so the references were re-blessed.
+integrated locally.
+
+(Superseded claim: *"the full simulation regression still passes; the reference
+counters moved by the expected startup timing shift... so the references were
+re-blessed"* — none of that held. No bless was ever committed; `shots-ref/` is
+still the one written at `e19cde7`. The counter move was **not** a timing shift,
+it was `ca75bfe` breaking the main-to-sub shared-RAM mailbox, which booted the
+FM-7 to a blank screen. See the SRAM entry below. With that fixed the suite
+reproduces `e19cde7`'s references exactly, counters and screenshots, so the
+references were correct the whole time and needed no bless.)
 
 ---
 
@@ -234,8 +241,67 @@ the demo now remains in valid sub ROM/RAM through the frame-1100 checkpoint
 with the original NMI cadence. No game-specific alias or interrupt workaround
 is justified.
 
-Next, in hardware order: validate the complete AV raster and the post-loader
-stage against 77AVEMU, then connect host key events to AV scan codes and add the
-YM2203 paths behind the same family signal.
+`ca75bfe` converted `SRAM.v`'s shared-RAM window from a single-port `ram` to a
+`dpram` and, in the rewrite, qualified each side's write with the **other**
+side's select. The main CPU writes that window while the sub CPU is halted, so
+the sub is never addressing `$d000-$d3ff` at that moment and every main-side
+write was discarded: the mailbox was dead and the FM-7 booted to a blank screen
+with both CPUs at normal instruction rates. Restoring the two enable
+expressions reproduces `e19cde7`'s references exactly. The regression suite had
+been reporting this for fifteen commits as `SCREEN+CNT` and it was written off
+as timing drift — `docs/REFERENCE.md` trap 18.
+
+## FPGA fit
+
+The core did not fit the DE10-Nano's 5CSEBA6U23I7 and was over on **both**
+axes: 58,848 / 41,910 ALMs (140%) and 6,240,854 / 5,662,720 block-memory bits
+(110%, Quartus error 170048 -- more than 553 M10K). Three fixes, all of them
+recovering resource the design was spending on nothing:
+
+- `PAL.v` held the 4096-entry analog palette as `reg [11:0] analog[0:4095]`
+  read **combinationally**. An asynchronous read blocks RAM inference, so
+  Quartus built 49,152 flip-flops plus a 4096:1 multiplexer: 21,025 ALUTs and
+  49,334 registers, 40% of the design's logic and 65% of its registers, for a
+  table. It is now three 4096x4 dual-clock RAMs, one per gun, addressed by the
+  combinational *next* code so the registered read costs no latency.
+- `ENABLE_SIGNALTAP` was left ON by an IDE session, naming a `.stp` that is not
+  in the tree: 188,416 memory bits and ~1,000 ALUTs/registers of JTAG fabric.
+- `AVMEM`'s 256 KB physical array was mostly holes -- VRAM lives in `CRTRAM`,
+  the shared window in `SRAM.v`, font and monitor ROM in `SMEM.v`. Split into
+  three blocks totalling 200 KB along the map `ram_write` already encoded.
+
+Build it with `tools/quartus-build.sh` -- **not** `quartus_sh --flow compile`,
+which deadlocks forever at 0% CPU under x86 emulation on Apple Silicon because
+`NUM_PARALLEL_PROCESSORS ALL` spawns helpers that crash there. The give-away is
+a log whose mtime stops advancing. The script passes `--parallel=1` per stage.
+
+Still available if more room is needed: `MRAM` (64 KB) is never live at the
+same time as the AV array, and `kanji.rom` (128 KB) is the classic candidate
+for SDRAM rather than block RAM.
+
+The suite now has an FM77AV row (`av-demo`, CaptainYS's 2019 demo from
+`software/FM77AV/`). It had none before, which is why a broken `$D430` page
+select and a missing drawing ALU both survived. Its disk scan also no longer
+runs every image in `software/` — with a few hundred there the gate became a
+six-hour sweep; use `ALLDISKS=1` or `vsim/sweep/sweep.sh`.
+
+The AV raster is now validated against 77AVEMU by dumping both machines' VRAM
+and diffing the twelve 8 KB planes (`docs/TESTING.md`). At the 2019 demo's
+title screen every plane matches byte-for-byte except the text lines this core
+has not finished typing yet, so the 320-mode plane layout, the scroll
+transform, the pixel-code combiner and the analog palette are all confirmed.
+Two things were missing and are now implemented: the MB61VH010 drawing ALU's
+byte read-modify-write path (`rtl/AVHDRAW.v`, `make avhdraw-test`), and the
+main CPU's MMR window onto the sub-system I/O page at physical `$1D400-$1D4FF`.
+Only the VRAM half of that aperture existed, so the demo's page-select write
+was dropped and the whole gradient collapsed onto the page-0 planes.
+
+Open AV work: the main-CPU MMR path into the sub aperture is implemented for
+**writes** only — no software in hand reads `$1D4xx`, and the reference gates
+the whole aperture on the sub CPU being halted while this core gates only the
+new sub-I/O half (the VRAM half stays ungated, as before). The drawing ALU's
+line trigger (`$D42B`) is implemented but no title in hand writes it, so it is
+unexercised. Then connect host key events to AV scan codes and add the YM2203
+paths behind the same family signal.
 Research and reference addresses are in
 `docs/FM77AV.md`.

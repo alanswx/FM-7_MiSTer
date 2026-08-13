@@ -251,6 +251,19 @@ wire [7:0] SVDATAG3;
 wire [7:0] SVDATAB2, SVDATAB1, SVDATAB0;
 wire [7:0] SVDATAR2, SVDATAR1, SVDATAR0;
 wire [7:0] SVDATAG2, SVDATAG1, SVDATAG0;
+wire       AV_DRAW_PORT_EN;
+wire [1:0] AV_DRAW_BLOCK;
+wire [12:0] AV_DRAW_ADDR;
+wire       AV_DRAW_WRITE_B, AV_DRAW_WRITE_R, AV_DRAW_WRITE_G;
+wire [7:0] AV_DRAW_DIN_B, AV_DRAW_DIN_R, AV_DRAW_DIN_G;
+wire [7:0] AV_DRAW_Q_B, AV_DRAW_Q_R, AV_DRAW_Q_G;
+wire       AV_DRAW_INHIBIT;
+wire       AV_DRAW_BUSY;
+wire [7:0] AV_DRAW_dout;
+wire       AV_SUBIO_SEL;
+wire [7:0] AV_SUBIO_ADDR;
+wire       AV_SUBIO_WRITE;
+wire [7:0] AV_SUBIO_DIN;
 wire SADRSEL;
 wire SFTCLK;
 wire [13:0] SVRADRS;
@@ -335,6 +348,10 @@ assign SDATABUS_in =
   // $D430 is a live status read in AV mode. It must precede the FM-7
   // keyboard decode, whose low-address aliases otherwise mask this port.
   (machine_av && (SADDRBUS == 16'hd430) && SRWB) ? AV_D430_dout :
+  // $D410-$D41B are the drawing ALU's readable registers ($D413 is the
+  // compare result).  Same reason as $D430: they must precede the FM-7
+  // keyboard decode, whose low-address aliases would otherwise take them.
+  (machine_av && (SADDRBUS[15:4] == 12'hd41) && SRWB) ? AV_DRAW_dout :
   ~(KDATAn & KACKNGn) ? SKDATA :
   (AV_SUBRAM_SEL && SRWB) ? AV_SUBRAM_dout :
   ~(SDRAMBn & SDRAMGn & SDRAMRn) ? CRTRAMDATA :
@@ -443,8 +460,27 @@ AVMEM u_AVMEM(
   .SHARED_SEL  ( AV_SHARED_SEL  ),
   .SHARED_ADDR ( AV_SHARED_ADDR ),
   .SHARED_WRITE( AV_SHARED_WRITE),
-  .SHARED_DIN  ( AV_SHARED_DIN  )
+  .SHARED_DIN  ( AV_SHARED_DIN  ),
+  .SUBIO_SEL   ( AV_SUBIO_SEL   ),
+  .SUBIO_ADDR  ( AV_SUBIO_ADDR  ),
+  .SUBIO_WRITE ( AV_SUBIO_WRITE ),
+  .SUBIO_DIN   ( AV_SUBIO_DIN   )
 );
+
+// Sub-system register write bus.
+//
+// Normally this is the sub CPU's own address/data/write strobe.  While the
+// sub CPU is halted the main CPU can drive the same registers through its
+// MMR view of physical $1D400-$1D4FF, which is how the 2019 AV demo selects
+// the VRAM page ($D430) and the drawing ALU command ($D410) -- 77AVEMU only
+// discards a main-CPU access to sub space while the sub CPU is *running*
+// (`fm77avmemory.cpp:804-809`).  The mux is qualified by the write itself,
+// not merely by the address decode, so an unrelated main-CPU cycle whose
+// physical address happens to land in the page cannot mask a sub-CPU write.
+wire        AV_SUBIO_MMR = AV_SUBIO_WRITE & ~SHALTn;
+wire [15:0] SREGADDR = AV_SUBIO_MMR ? {8'hd4, AV_SUBIO_ADDR} : SADDRBUS;
+wire  [7:0] SREGDIN  = AV_SUBIO_MMR ? AV_SUBIO_DIN : SDATABUS_out;
+wire        SREGWEn  = AV_SUBIO_MMR ? 1'b0 : SWTQEn;
 
 // RDQEn, not RDEn, gates the I/O read decoder.
 //
@@ -731,6 +767,9 @@ SMEM u_SMEM(
   .SRAM2CSn     ( SRAM2CSn     ),
   .SWTQEn       ( SWTQEn       ),
   .SRDQEn       ( SRDQEn       ),
+  .SREGADDR     ( SREGADDR     ),
+  .SREGDIN      ( SREGDIN      ),
+  .SREGWEn      ( SREGWEn      ),
   .SROMSELn     ( SROMSELn     ),
   .SROMDn       ( SROMDn       ),
   .machine_av   ( machine_av   ),
@@ -738,6 +777,7 @@ SMEM u_SMEM(
   .submon_status( AV_SUBMON_STATUS ),
   .SBLANKn      ( SBLANKn      ),
   .SVSYNCn      ( SVSYNCn      ),
+  .alu_busy     ( AV_DRAW_BUSY ),
   .RESETBn      ( SRESETn      ),
   .av_d430_out  ( AV_D430_dout ),
   .av_display_page ( AV_DISPLAY_PAGE ),
@@ -825,6 +865,38 @@ RS232 RS232(
   .dout      ( RS232_dout )
 );
 
+AVHDRAW u_AVHDRAW(
+  .CLKSYS        ( CLKSYS ),
+  .RESETBn       ( RESETBn ),
+  .MACHINE_AV    ( machine_av ),
+  .SADDRBUS      ( SREGADDR ),
+  .SDATA         ( SREGDIN ),
+  .SWTQEn        ( SREGWEn ),
+  .SEB           ( SEB ),
+  .SCASSEL       ( SCASSEL ),
+  .SUB_VRAM_SEL  ( sub_vram_sel ),
+  .SVRADRS       ( SVRADRS ),
+  .AV_MODE_320   ( AV_MODE_320 ),
+  .AV_ACTIVE_PAGE( AV_ACTIVE_PAGE ),
+  .AV_VRAM_OFFSET( AV_VRAM_OFFSET ),
+  .VPAGE_MASK    ( {VPAGE3n, VPAGE2n, VPAGE1n} ),
+  .DRAW_Q_B      ( AV_DRAW_Q_B ),
+  .DRAW_Q_R      ( AV_DRAW_Q_R ),
+  .DRAW_Q_G      ( AV_DRAW_Q_G ),
+  .DRAW_PORT_EN  ( AV_DRAW_PORT_EN ),
+  .DRAW_BLOCK    ( AV_DRAW_BLOCK ),
+  .DRAW_ADDR     ( AV_DRAW_ADDR ),
+  .DRAW_WRITE_B  ( AV_DRAW_WRITE_B ),
+  .DRAW_WRITE_R  ( AV_DRAW_WRITE_R ),
+  .DRAW_WRITE_G  ( AV_DRAW_WRITE_G ),
+  .DRAW_DIN_B    ( AV_DRAW_DIN_B ),
+  .DRAW_DIN_R    ( AV_DRAW_DIN_R ),
+  .DRAW_DIN_G    ( AV_DRAW_DIN_G ),
+  .DRAW_INHIBIT_SUB ( AV_DRAW_INHIBIT ),
+  .DRAW_BUSY     ( AV_DRAW_BUSY ),
+  .DRAW_DOUT     ( AV_DRAW_dout )
+);
+
 CRTRAM u_CRTRAM(
   .CLKSYS     ( CLKSYS       ),
   .SDATABUS   ( SDATABUS_out ),
@@ -845,6 +917,19 @@ CRTRAM u_CRTRAM(
   .AV_VRAM_ADDR   ( AV_VRAM_ADDR   ),
   .AV_VRAM_WRITE  ( AV_VRAM_WRITE  ),
   .AV_VRAM_DIN    ( AV_VRAM_DIN    ),
+  .DRAW_PORT_EN   ( AV_DRAW_PORT_EN ),
+  .DRAW_INHIBIT_SUB ( AV_DRAW_INHIBIT ),
+  .DRAW_BLOCK     ( AV_DRAW_BLOCK ),
+  .DRAW_ADDR      ( AV_DRAW_ADDR ),
+  .DRAW_WRITE_B   ( AV_DRAW_WRITE_B ),
+  .DRAW_WRITE_R   ( AV_DRAW_WRITE_R ),
+  .DRAW_WRITE_G   ( AV_DRAW_WRITE_G ),
+  .DRAW_DIN_B     ( AV_DRAW_DIN_B ),
+  .DRAW_DIN_R     ( AV_DRAW_DIN_R ),
+  .DRAW_DIN_G     ( AV_DRAW_DIN_G ),
+  .DRAW_Q_B       ( AV_DRAW_Q_B ),
+  .DRAW_Q_R       ( AV_DRAW_Q_R ),
+  .DRAW_Q_G       ( AV_DRAW_Q_G ),
   .AV_VRAM_DOUT   ( AV_VRAM_DOUT   ),
   .SDRAMBn    ( SDRAMBn      ),
   .SDRAMRn    ( SDRAMRn      ),

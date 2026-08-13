@@ -33,11 +33,21 @@ module SRAM(
 //    SVDHALT path in FLAGS.v rather than via an explicit $fd05 request.
 //
 // So the shared-RAM aperture is not where Thexder loses its bytes. Left as-is.
+// SSMEMn is the sub CPU's own $d000-$d3ff decode and SUBSELn is the main CPU's
+// $fcxx decode. They are independent, and each side's write is qualified by its
+// own select and its own write strobe -- exactly as the single-port version's
+// `wr_n = (SSMEMn | SWTQEn) & (SUBSELn | WTQEn)` did.
+//
+// Requiring the *other* side's select as well kills the mailbox: the main CPU
+// writes this window while the sub is halted, so the sub is not addressing
+// $d000-$d3ff at that moment and the write is discarded. F-BASIC then never
+// hands the sub a draw command and the FM-7 boots to a blank screen with both
+// CPUs running at their normal rates.
 wire legacy_main_sel = ~SHALTACn;
-wire sub_sel = SUBSELn & ~SSMEMn & ~AV_SUBRAM_SEL;
+wire sub_sel = ~SSMEMn & ~AV_SUBRAM_SEL;
 wire [9:0] legacy_main_addr = {2'b11, MADDRBUS[7:0]};
 wire sub_write = sub_sel && ~SWTQEn;
-wire main_write = ((~SUBSELn & ~SSMEMn & ~WTQEn) || AV_SHARED_WRITE);
+wire main_write = (~SUBSELn & ~WTQEn) || AV_SHARED_WRITE;
 wire [7:0] main_q;
 wire [7:0] sub_q;
 

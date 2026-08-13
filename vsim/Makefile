@@ -194,6 +194,7 @@ V_SRC = \
 	$(RTL)/clk_en.v \
 	$(RTL)/CLKCTRL.v \
 	$(RTL)/AVMEM.v \
+	$(RTL)/AVHDRAW.v \
 	$(RTL)/AVPIXEL.v \
 	$(RTL)/core.v \
 	$(RTL)/CRTRAM.v \
@@ -279,6 +280,22 @@ crtram-test: crtram_tb.sv ../rtl/CRTRAM.v ../rtl/wd1793_dpram.v
 		--top-module crtram_tb crtram_tb.sv ../rtl/CRTRAM.v ../rtl/wd1793_dpram.v
 	/tmp/fm7-crtram-obj/Vcrtram_tb
 
+# Directed check that a PSG register write reaches the chip and makes sound.
+# A full-machine run is a ten-minute experiment; this is seconds, which is the
+# only way to iterate the $fd0d/$fd0e bus handshake.
+sound-test: sound_tb.sv ../rtl/SOUND.v ../rtl/ym2149_audio.v ../rtl/clk_en.v ../rtl/clocks.svh
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-sound-obj -I../rtl \
+		--top-module sound_tb sound_tb.sv ../rtl/clocks.svh ../rtl/SOUND.v \
+		../rtl/ym2149_audio.v ../rtl/clk_en.v
+	/tmp/fm7-sound-obj/Vsound_tb
+
+# Directed check for the FM77AV MB61VH010 drawing ALU.  The byte
+# read-modify-write path is the one the 2019 AV demo actually uses.
+avhdraw-test: avhdraw_tb.sv ../rtl/AVHDRAW.v
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-avhdraw-obj \
+		--top-module avhdraw_tb avhdraw_tb.sv ../rtl/AVHDRAW.v
+	/tmp/fm7-avhdraw-obj/Vavhdraw_tb
+
 # Directed check for the FM77AV keyboard encoder command/status pair.
 avkeyboard-test: avkeyboard_tb.sv ../rtl/AVKEYBOARD.v
 	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-avkeyboard-obj \
@@ -318,7 +335,7 @@ avpixel-test: avpixel_tb.sv ../rtl/AVPIXEL.v
 av-boot-test: all av_boot_test.sh
 	bash av_boot_test.sh
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test avkeyboard-test smem-test mb60h010-test pal-test avpixel-test av-boot-test
+.PHONY: all run test clean clean-shots avmem-test crtram-test avkeyboard-test smem-test mb60h010-test pal-test avpixel-test avhdraw-test sound-test av-boot-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h

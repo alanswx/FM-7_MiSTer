@@ -120,12 +120,56 @@ TESTS=(
 # The scan itself is what to watch. `make DEBUG_FDC=1` makes rtl/wd1793.sv print
 # one line per sector it puts in the table, which is how the parse was checked
 # against a reference decode of the same file (TODO.md P4-1).
+#
+# Two guards, both added when a ~570-image collection landed in software/ and
+# turned this gate into a six-hour sweep:
+#
+#  * `software/FM77AV/` is skipped -- the AV demo above already runs it, in AV
+#    mode, and running it again with --bootrom 0 tests nothing.
+#  * By default only disks that already have a blessed screenshot in $REF are
+#    run, so the gate stays a gate. `ALLDISKS=1` runs every image found, which
+#    is what you want when adding titles; for a whole collection use
+#    `vsim/sweep/sweep.sh`, which is built for that and parallelises.
+#  * A test name is the disk's BASENAME, and the reference set is keyed on it,
+#    so two images with the same file name in different directories would run
+#    as one test name and compare against one reference -- the second silently
+#    overwriting the first's screenshot. Collections do contain such pairs
+#    (`Thexder [b].d77` arrived a second time under software/D77/). Keep the
+#    first and say which ones were dropped; do not drop them silently.
 DISKDIR=${DISKDIR:-../software}
+ALLDISKS=${ALLDISKS:-0}
+disk_seen=""
+disk_dupes=()
 if [ -d "$DISKDIR" ]; then
   while IFS= read -r d; do
+    case "$d" in */FM77AV/*) continue ;; esac
     base=$(basename "$d"); base=${base%.*}
+    case "$disk_seen" in *"|$base|"*) disk_dupes+=("$d"); continue ;; esac
+    disk_seen="$disk_seen|$base|"
+    if [ "$ALLDISKS" != 1 ] && [ ! -f "$REF/disk-$base.png" ]; then continue; fi
     TESTS+=("disk-$base|--bootrom 0 --disk '$d'")
   done < <(find "$DISKDIR" -maxdepth 3 -iname '*.d77' | sort)
+fi
+if [ ${#disk_dupes[@]} -gt 0 ]; then
+  echo "note: skipped ${#disk_dupes[@]} disk(s) whose basename was already taken:"
+  for d in "${disk_dupes[@]}"; do echo "      $d"; done
+fi
+
+# FM77AV coverage. The suite had none until the AV video path was finished, and
+# that is precisely why a broken $D430 page select and a missing drawing ALU
+# both survived: nothing in CI ever rendered an AV frame. CaptainYS's 2019 demo
+# is the sharpest single check available -- by the shot frame it has programmed
+# all 4096 palette entries, filled all twelve 320-mode bit planes through the
+# main CPU's MMR aperture, driven $D430/$D410 from the main CPU while the sub
+# CPU is halted, and started drawing text through the drawing ALU. A blank or
+# vertically-barred screenshot means one of those is broken.
+#
+# The image lives under the gitignored refs/ tree, so this test is present only
+# for people who have the reference emulator checked out, exactly like the disk
+# and tape groups above. Its absence is silent, not a failure.
+AVDISK=${AVDISK:-../software/FM77AV/2019_FM77AVDEMO_CaptainYS_V2.D77}
+if [ -f "$AVDISK" ]; then
+  TESTS+=("av-demo|--machine fm77av --disk '$AVDISK'")
 fi
 
 # One entry per tape image found. Types LOAD"" + RETURN, which is what F-BASIC

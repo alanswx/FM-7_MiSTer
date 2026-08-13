@@ -162,7 +162,47 @@ module emu
 	output        dbg_tape_eot,
 	output [24:0] dbg_tape_size,
 
-	output        dbg_resetbn
+	output        dbg_resetbn,
+
+	// Temporary AV main-CPU VRAM write tap.
+	output        dbg_vram_write,
+	output [13:0] dbg_vram_addr,
+	output  [1:0] dbg_vram_plane,
+	output        dbg_vram_bank,
+	output  [7:0] dbg_vram_din,
+	output        dbg_sub_vram_write,
+	output [15:0] dbg_sub_vram_addr,
+	output  [7:0] dbg_sub_vram_data,
+	output        dbg_sub_vram_page,
+	output [13:0] dbg_sub_vram_raster_addr,
+
+	// Temporary AV drawing-ALU tap.
+	output        dbg_alu_write,
+	output  [1:0] dbg_alu_block,
+	output [12:0] dbg_alu_addr,
+	output  [7:0] dbg_alu_q_b,
+	output  [7:0] dbg_alu_q_r,
+	output  [7:0] dbg_alu_q_g,
+	output  [7:0] dbg_alu_d_b,
+	output  [7:0] dbg_alu_d_r,
+	output  [7:0] dbg_alu_d_g,
+
+	// Temporary AV MMR physical-address tap.
+	output [17:0] dbg_av_phys,
+	output        dbg_av_write,
+	output        dbg_sub_halt,
+
+	// Temporary audio-path tap.
+	output [13:0] dbg_audio_out,
+	output [15:0] dbg_core_audio,
+	output        dbg_wfd0dn,
+	output        dbg_wfd0en,
+	output  [1:0] dbg_psg_bc,
+	output  [3:0] dbg_psg_addr,
+	output        dbg_psg_cen,
+	output [11:0] dbg_dac_a,
+	output [11:0] dbg_dac_b,
+	output [11:0] dbg_dac_c
 );
 
 //////////////////////////////////////////////////////////////////
@@ -276,7 +316,17 @@ assign VGA_VB = VBlank & ~((v_count == 9'd261) && (h_count >= 10'd640));
 //////////////////////////////////////////////////////////////////
 
 wire [15:0] cin_audio   = { 1'b0, cin & motor & tape_audio, 13'b0 };
-wire [15:0] core_audio  = { 1'b0, audio_out, 13'b0 };
+// audio_out is 14 bits, so `{ 1'b0, audio_out, 13'b0 }` is a 28-bit expression
+// assigned to a 16-bit wire: Verilog keeps the LOW 16, which is audio_out[2:0]
+// shifted up to bits 15:13. Only the bottom three bits of the PSG mix reached
+// the DAC, at full scale -- the fastest-changing bits amplified to maximum,
+// i.e. noise rather than the tune, swamping the buzzer and tape audio that sit
+// at bit 13. Measured on Thexder: PSG mix peaked at 10238 and core_audio came
+// out as a constant-amplitude 57344 = 7 << 13.
+//
+// {2'b00, audio_out} keeps all 14 bits. The four sources still cannot overflow:
+// 8192 + 16383 + 8192 + 32640 = 65407.
+wire [15:0] core_audio  = { 2'b00, audio_out };
 wire [15:0] buz_audio   = { 1'b0, buzzer, 13'b0 };
 wire [15:0] relay_audio = { 1'b0, (tape_audio ? relay_snd : 8'd0), 7'b0 };
 
@@ -441,5 +491,38 @@ assign dbg_tape_size  = tape_size;
 assign dbg_tape_rd    = need_more_byte;
 
 assign dbg_resetbn = u_core.RESETBn;
+assign dbg_vram_write = u_core.AV_VRAM_WRITE;
+assign dbg_vram_addr  = u_core.AV_VRAM_ADDR;
+assign dbg_vram_plane = u_core.AV_VRAM_PLANE;
+assign dbg_vram_bank  = u_core.AV_VRAM_BANK;
+assign dbg_vram_din   = u_core.AV_VRAM_DIN;
+assign dbg_sub_vram_write = ~u_core.SVWEn &&
+                            ~(u_core.SDRAMBn & u_core.SDRAMRn & u_core.SDRAMGn);
+assign dbg_sub_vram_addr = u_core.SADDRBUS;
+assign dbg_sub_vram_data = u_core.SDATABUS_out;
+assign dbg_sub_vram_page = u_core.AV_ACTIVE_PAGE;
+assign dbg_sub_vram_raster_addr = u_core.SVRADRS;
+assign dbg_alu_write = u_core.AV_DRAW_WRITE_B | u_core.AV_DRAW_WRITE_R | u_core.AV_DRAW_WRITE_G;
+assign dbg_alu_block = u_core.AV_DRAW_BLOCK;
+assign dbg_alu_addr  = u_core.AV_DRAW_ADDR;
+assign dbg_alu_q_b   = u_core.AV_DRAW_Q_B;
+assign dbg_alu_q_r   = u_core.AV_DRAW_Q_R;
+assign dbg_alu_q_g   = u_core.AV_DRAW_Q_G;
+assign dbg_alu_d_b   = u_core.AV_DRAW_DIN_B;
+assign dbg_alu_d_r   = u_core.AV_DRAW_DIN_R;
+assign dbg_alu_d_g   = u_core.AV_DRAW_DIN_G;
+assign dbg_av_phys   = u_core.u_AVMEM.physical_address;
+assign dbg_av_write  = u_core.u_AVMEM.av_write;
+assign dbg_sub_halt  = ~u_core.SHALTn;
+assign dbg_audio_out  = audio_out;
+assign dbg_core_audio = core_audio;
+assign dbg_wfd0dn = u_core.WFD0Dn;
+assign dbg_wfd0en = u_core.WFD0En;
+assign dbg_psg_bc = {u_core.u_SOUND.bdir, u_core.u_SOUND.bci};
+assign dbg_psg_addr = u_core.u_SOUND.psg_addr;
+assign dbg_psg_cen = u_core.u_SOUND.EN_CLK_1_2;
+assign dbg_dac_a = u_core.u_SOUND.u_ym2149_audio.dac_a_r;
+assign dbg_dac_b = u_core.u_SOUND.u_ym2149_audio.dac_b_r;
+assign dbg_dac_c = u_core.u_SOUND.u_ym2149_audio.dac_c_r;
 
 endmodule

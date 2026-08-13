@@ -371,6 +371,31 @@ confident wrong answer at least once:
     and exit successfully in seconds — a mis-set path looks like a clean fast run, not an error.
     Check the image count in the sweep's own output before trusting the results file.
 
+18. **"The counters moved by the expected timing shift" is a diagnosis, and it needs the same
+    evidence as any other.** `ca75bfe` converted `SRAM.v`'s shared-RAM window from a single-port
+    `ram` to a `dpram` and, in the rewrite, qualified each side's write with the *other* side's
+    select: `main_write` gained a `& ~SSMEMn` term, so a main-CPU write only landed if the sub
+    CPU happened to be addressing `$d000-$d3ff` at that instant. It never is — the main CPU
+    writes that window while the sub is halted. The mailbox went dead, F-BASIC could no longer
+    hand the sub a draw command, and the FM-7 booted to a **blank screen with both CPUs at
+    completely normal instruction rates** (main 5558/frame, sub 8709/frame). The suite reported
+    this for 15 commits as `SCREEN+CNT`, and it was written off in `TODO.md` as a startup timing
+    shift from an unrelated `CLKCTRL.v` fix. Look at the actual PNG: a blank 640x200 shot is
+    ~3790 bytes and every failing test was 3814. Restoring the two enable expressions reproduces
+    `e19cde7`'s references *exactly*, counters and screenshots — which is the proof that the
+    references were never stale.
+19. **"The screen is wrong" is not a video-path finding until you have the reference picture.**
+    The FM77AV demo's vertical colour bars were read as a raster/plane-combiner fault and cost a
+    whole drawing-ALU implementation aimed at the wrong half of the chip. What settled it in one
+    step was building `tools/build_77avemu_headless.sh` and dumping **both** VRAMs
+    (`FM77AV_VRAM_DUMP` on the reference, `FM7_VRAM_DUMP` on the sim, same 12-plane layout) and
+    diffing them plane by plane: the plane *contents* were byte-identical, they were simply in
+    the wrong bank. Compare the stored bytes before theorising about the thing that draws them.
+20. **A demo compared at "the same frame" may not be at the same point in the demo.** This core
+    reaches the fully-typed FM77AV title around frame 2000; the reference reaches it in 20 M
+    instructions. Comparing frame 870 against that reference shows five missing lines of text
+    that are not a bug. Align on what is on screen, not on the counter.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
