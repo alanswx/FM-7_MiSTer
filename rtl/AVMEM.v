@@ -44,7 +44,11 @@ module AVMEM(
   output       SUBIO_SEL,
   output [7:0] SUBIO_ADDR,
   output       SUBIO_WRITE,
-  output [7:0] SUBIO_DIN
+  output [7:0] SUBIO_DIN,
+  output        FM7PAGE_SEL,
+  output [15:0] FM7PAGE_ADDR,
+  output        FM7PAGE_WRITE,
+  input   [7:0] FM7PAGE_DOUT
 );
 
 reg av_mode_320;
@@ -182,21 +186,35 @@ wire ram_write = av_write && !io_sel && !bootram_sel && !vram_sel &&
 // and D000-D37F is the adjacent 896-byte page before the shared window. It is
 // the only region the sub CPU reaches directly, so block B is the dual-ported
 // one and blocks A and C need a single port each.
+// Physical $30000-$3FFFF is "the FM-7 machine", and this core already has that
+// machine's 64 KB as MRAM -- which sits completely idle in AV mode, because
+// MAINRAM_dout selects AVMEM_dout there. Backing the page twice cost 64 M10K
+// on a device the design overflows by 137, so AV mode borrows MRAM for it and
+// av_ram_hi covers only RAM page 1. FM-7 mode is untouched: it reaches MRAM
+// the way it always did.
 wire blk_a_sel = (physical_address[17:16] == 2'b00);      // $00000-$0FFFF
 wire blk_b_sel = (physical_address[17:13] == 5'b01110);   // $1C000-$1DFFF
-wire blk_c_sel = physical_address[17];                    // $20000-$3FFFF
+wire blk_c_sel = (physical_address[17:16] == 2'b10);      // $20000-$2FFFF
+wire blk_d_sel = (physical_address[17:16] == 2'b11);      // $30000-$3FFFF -> MRAM
+assign FM7PAGE_SEL   = machine_av && blk_d_sel;
+assign FM7PAGE_ADDR  = physical_address[15:0];
+assign FM7PAGE_WRITE = ram_write && blk_d_sel;
 
 wire [7:0] blk_a_q, blk_b_q, blk_c_q;
 
 // q is registered, so the read mux has to follow the select the address had
 // when the RAM latched it, not the one the bus has moved on to.
-reg [1:0] ram_sel_d;
+reg [2:0] ram_sel_d;
 always @(posedge CLKSYS)
-  ram_sel_d <= blk_a_sel ? 2'd0 : blk_b_sel ? 2'd1 : blk_c_sel ? 2'd2 : 2'd3;
+  ram_sel_d <= blk_a_sel ? 3'd0 : blk_b_sel ? 3'd1 :
+               blk_c_sel ? 3'd2 : blk_d_sel ? 3'd3 : 3'd4;
 
-wire [7:0] ram_q = (ram_sel_d == 2'd0) ? blk_a_q :
-                   (ram_sel_d == 2'd1) ? blk_b_q :
-                   (ram_sel_d == 2'd2) ? blk_c_q : 8'hff;
+// MRAM's own output is registered on the same clock, so it lines up with the
+// three local blocks and needs no extra delay here.
+wire [7:0] ram_q = (ram_sel_d == 3'd0) ? blk_a_q :
+                   (ram_sel_d == 3'd1) ? blk_b_q :
+                   (ram_sel_d == 3'd2) ? blk_c_q :
+                   (ram_sel_d == 3'd3) ? FM7PAGE_DOUT : 8'hff;
 
 dpram #(8,16) av_ram_lo(                                  // $00000-$0FFFF
   .clock     ( CLKSYS                    ),
@@ -219,13 +237,13 @@ dpram #(8,13) av_ram_sub(                                 // $1C000-$1DFFF
   .q_b       ( SUBRAM_DOUT               )
 );
 
-dpram #(8,17) av_ram_hi(                                  // $20000-$3FFFF
+dpram #(8,16) av_ram_hi(                                  // $20000-$2FFFF
   .clock     ( CLKSYS                    ),
-  .address_a ( physical_address[16:0]    ),
+  .address_a ( physical_address[15:0]    ),
   .data_a    ( DIN                       ),
   .wren_a    ( ram_write && blk_c_sel    ),
   .q_a       ( blk_c_q                   ),
-  .address_b ( 17'd0 ), .data_b ( 8'd0 ), .wren_b ( 1'b0 ), .q_b ()
+  .address_b ( 16'd0 ), .data_b ( 8'd0 ), .wren_b ( 1'b0 ), .q_b ()
 );
 
 // The 480-byte loader is copied from initiate.rom[$1800/$1a00] by the real

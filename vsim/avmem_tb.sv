@@ -39,6 +39,10 @@ module avmem_tb;
   wire       shared_write;
   wire [7:0] shared_din;
 
+  wire        fm7page_sel;
+  wire [15:0] fm7page_addr;
+  wire        fm7page_write;
+
   AVMEM dut(
     .CLKSYS(clk), .RESETBn(resetn), .machine_av(machine_av),
     .bootrom_sel(bootrom_sel), .MADDRBUS(addr), .DIN(din),
@@ -56,8 +60,20 @@ module avmem_tb;
     .SHARED_ADDR(shared_addr), .SHARED_WRITE(shared_write),
     .SHARED_DIN(shared_din),
     .SUBRAM_ADDR(subram_addr), .SUBRAM_WRITE(subram_write),
-    .SUBRAM_DIN(subram_din), .SUBRAM_DOUT(subram_dout)
+    .SUBRAM_DIN(subram_din), .SUBRAM_DOUT(subram_dout),
+    .FM7PAGE_SEL(fm7page_sel), .FM7PAGE_ADDR(fm7page_addr),
+    .FM7PAGE_WRITE(fm7page_write), .FM7PAGE_DOUT(fm7page_dout)
   );
+
+  // Physical $30000-$3FFFF is the FM-7 machine, which the core serves from
+  // MRAM rather than backing twice. Stand that array in here so this bench
+  // still exercises the identity map and the MMR translations that land on it.
+  reg [7:0] fm7page_mem [0:65535];
+  reg [7:0] fm7page_dout;
+  always @(posedge clk) begin
+    if (fm7page_write) fm7page_mem[fm7page_addr] <= din;
+    fm7page_dout <= fm7page_mem[fm7page_addr];
+  end
 
   task write_bus(input [15:0] a, input [7:0] d);
     begin

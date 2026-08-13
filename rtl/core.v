@@ -264,6 +264,9 @@ wire       AV_SUBIO_SEL;
 wire [7:0] AV_SUBIO_ADDR;
 wire       AV_SUBIO_WRITE;
 wire [7:0] AV_SUBIO_DIN;
+wire        AV_FM7PAGE_SEL;
+wire [15:0] AV_FM7PAGE_ADDR;
+wire        AV_FM7PAGE_WRITE;
 wire SADRSEL;
 wire SFTCLK;
 wire [13:0] SVRADRS;
@@ -414,12 +417,19 @@ ROMS u_ROMS(
   .twr_active ( AVTWR_sel )
 );
 
+// MRAM is the FM-7 machine's 64 KB. In AV mode that same machine lives at
+// physical $30000-$3FFFF, so AVMEM borrows this array for that page instead
+// of backing it a second time -- 64 M10K on a device the design overflows.
+// FM-7 mode is untouched.
+wire [15:0] MRAM_addr = AV_FM7PAGE_SEL ? AV_FM7PAGE_ADDR : MADDRBUS;
+wire        MRAM_rwbn = AV_FM7PAGE_SEL ? AV_FM7PAGE_WRITE : RWBn;
+
 MRAM u_MRAM(
   .RAM1HB1n ( RAM1HB1n     ),
   .RAM1HB2n ( RAM1HB2n     ),
-  .RWBn     ( RWBn         ),
+  .RWBn     ( MRAM_rwbn    ),
   .CLKSYS   ( CLKSYS       ),
-  .MADDRBUS ( MADDRBUS     ),
+  .MADDRBUS ( MRAM_addr    ),
   .DIN      ( MDATABUS_out ),
   .RDQEn    ( RDQEn        ),
   .DOUT     ( MRAM_dout    )
@@ -464,7 +474,11 @@ AVMEM u_AVMEM(
   .SUBIO_SEL   ( AV_SUBIO_SEL   ),
   .SUBIO_ADDR  ( AV_SUBIO_ADDR  ),
   .SUBIO_WRITE ( AV_SUBIO_WRITE ),
-  .SUBIO_DIN   ( AV_SUBIO_DIN   )
+  .SUBIO_DIN   ( AV_SUBIO_DIN   ),
+  .FM7PAGE_SEL   ( AV_FM7PAGE_SEL   ),
+  .FM7PAGE_ADDR  ( AV_FM7PAGE_ADDR  ),
+  .FM7PAGE_WRITE ( AV_FM7PAGE_WRITE ),
+  .FM7PAGE_DOUT  ( MRAM_dout        )
 );
 
 // Sub-system register write bus.
@@ -1029,7 +1043,7 @@ PAL PAL(
   .DPAGE3   ( DPAGE3       ),
   .MDATA    ( MDATABUS_out ),
   .PALDATA  ( PALDATA      ),
-  .MADDRBUS ( MADDRBUS     ),
+  .MADDRBUS ( MRAM_addr    ),
   .PLTREGn  ( PLTREGn      ),
   .RDQEn    ( RDQEn        ),
   .WTQEn    ( WTQEn        ),
