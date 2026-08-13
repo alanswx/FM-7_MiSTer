@@ -275,29 +275,31 @@ which deadlocks forever at 0% CPU under x86 emulation on Apple Silicon because
 `NUM_PARALLEL_PROCESSORS ALL` spawns helpers that crash there. The give-away is
 a log whose mtime stops advancing. The script passes `--parallel=1` per stage.
 
-Where it stands: **ALMs 24k of 42k (57%), block memory 690 M10K of 553.**
+**It fits.** ALMs 22,745 of 41,910 (54%), 508 M10K of 553 (92%), fitter
+successful. What it took, in order of size:
 
-The bit total is misleading and cost a wrong estimate once already: 5,642,883 of
-5,662,720 bits reads as 100%, but M10K *count* is what Error 170048 checks, and
-a byte-wide memory uses 8 of each block's 10 bits. Price a change in blocks,
-from the map report's RAM summary, never in bits.
+| blocks | change |
+|---|---|
+| 128 | `kanji.rom` to SDRAM. The only ROM that could move: every other one is fetched by a CPU every bus cycle or by the raster every character cell, where SDRAM latency is a wrong instruction or a wrong pixel. This one is read through a slow I/O window and the protocol prefetches for free -- the CPU writes the glyph address a whole bus cycle before it reads the byte. Arrives as `releases/boot.rom` on ioctl index 0, uploaded by the framework at core start, so it needs no user action. |
+| 64 | `MRAM` serves the AV's `$30000-$3FFFF` page instead of `AVMEM` backing it twice |
+| 64 | `AVMEM`'s 256 KB array split to the regions that are actually RAM |
+| ~21 | the analog palette became block RAM instead of 49,152 flip-flops (this one was the ALM fix; it *cost* 6 blocks and saved 21k ALUTs) |
+| 19 | SignalTap removed |
 
-`$30000-$3FFFF` is the FM-7 machine and `MRAM` already holds that 64 KB, idle in
-AV mode because `MAINRAM_dout` picks `AVMEM_dout` there. AV mode now borrows it
-rather than backing the page twice: **-64 blocks**, leaving ~73 over.
+`make kanji-test` is the only thing covering the SDRAM path -- no title in the
+suite reads the kanji window -- and it caught two bugs that would otherwise have
+shipped: `ioctl_index[15:6] == 0` matches indices 0-63 and would have routed
+*tape* bytes to the kanji base, and the sim's `sdram` instantiation writes
+`.we ( tape_download & ioctl_wr )` with the operands reversed from the FPGA
+top's, so a substitution silently missed it and kanji was never written at all.
 
-Nothing else is free. The rest costs a feature or a delivery change, which is a
-decision rather than an optimisation:
+Historical note on measurement, kept because it cost two wrong estimates:
 
-| blocks | candidate | cost |
-|---|---|---|
-| 128 | `kanji.rom` to SDRAM/DDR3 | needs a runtime ROM-download path; this core embeds every ROM with `$readmemh` and has none |
-| 32 | `fbasic300` / `av_fbasic30` are never both live | sharing needs that same runtime load |
-| 16 | AV sub-monitors A and B | drops `$FD13` monitor switching |
+block-memory BITS are not the budget. 5,642,883 of 5,662,720 read as 100% while
+the design needed 690 M10K of 553, because a byte-wide memory uses 8 of each
+block's 10 bits. Error 170048 counts blocks. Price a change from the map
+report's RAM summary, never in bits.
 
-Checked and NOT available: the two `2048x56` D77 sector tables (24 blocks) pack
-at 93% and the 1992-entry bound is real; `CRTRAM`'s 96 blocks are the AV's whole
-96 KB of VRAM.
 
 The suite now has an FM77AV row (`av-demo`, CaptainYS's 2019 demo from
 `software/FM77AV/`). It had none before, which is why a broken `$D430` page

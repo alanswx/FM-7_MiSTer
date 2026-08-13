@@ -413,7 +413,7 @@ wire sdram_ready;
 
 // Hold the HPS off while the SDRAM controller is busy, so every byte of the
 // t77 actually lands. Same expression vsim/sim.v uses.
-wire ioctl_wait = tape_download & ~sdram_ready;
+wire ioctl_wait = (tape_download | kanji_download) & ~sdram_ready;
 wire rewind = (old_ioctl_download & ~tape_download) | status[8];
 
 // Size of the mounted tape, latched from the ioctl download, so t77_decode
@@ -463,6 +463,11 @@ core u_core(
   .SVIDEOCLK   ( SVIDEOCLK     ),
   .ce_pix      ( ce_pix        ),
   .audio_out   ( audio_out     ),
+  .KANJI_ADDR  ( kanji_addr    ),
+  .KANJI_RD    ( kanji_rd      ),
+  .KANJI_GNT   ( kanji_gnt     ),
+  .KANJI_READY ( kanji_ready   ),
+  .KANJI_DATA  ( sdram_data    ),
   .buzzer      ( buzzer        ),
   // tape
   .cin         ( cin           ),
@@ -498,16 +503,54 @@ t77_decode u_t77_decode(
 );
 
 
+// The kanji ROM (128 KB) lives in SDRAM rather than block RAM -- see the
+// header of rtl/KANJI.v. It arrives as boot.rom on ioctl index 0, which the
+// MiSTer framework uploads automatically at core start, so it just works.
+// Based well clear of any tape image.
+localparam [24:0] KANJI_BASE = 25'h0400000;
+// boot.rom is ioctl index 0. Test the low byte, not [15:6]: the tape is
+// index 1 and [15:6]==0 matches everything from 0 to 63, which would send
+// tape bytes to the kanji base as well.
+wire        kanji_download = ioctl_download && (ioctl_index[7:0] == 8'd0);
+wire [16:0] kanji_addr;
+wire        kanji_rd, kanji_gnt, kanji_ready;
+
+wire [24:0] sdc_addr;
+wire  [7:0] sdc_din;
+wire        sdc_we, sdc_rd;
+
+SDRAM_MUX u_sdram_mux(
+  .CLKSYS      ( CLKSYS ),
+  .DL_WR       ( ioctl_wr & (tape_download | kanji_download) ),
+  .DL_ADDR     ( kanji_download ? (KANJI_BASE + {8'd0, ioctl_addr[16:0]})
+                                 : ioctl_addr ),
+  .DL_DATA     ( ioctl_dout ),
+  .TAPE_ADDR   ( sdram_addr ),
+  .TAPE_RD     ( need_more_byte ),
+  .TAPE_READY  ( ),
+  .KANJI_ADDR  ( KANJI_BASE + {8'd0, kanji_addr} ),
+  .KANJI_RD    ( kanji_rd ),
+  .KANJI_GNT   ( kanji_gnt ),
+  .KANJI_READY ( kanji_ready ),
+  .SD_ADDR     ( sdc_addr ),
+  .SD_DIN      ( sdc_din ),
+  .SD_WE       ( sdc_we ),
+  .SD_RD       ( sdc_rd ),
+  .SD_READY    ( sdram_ready ),
+  .SD_DOUT     ( sdram_data ),
+  .SD_DOUT_OUT ( )
+);
+
 sdram u_sdram(
   .*,
   .init  ( ~locked                                  ),
   .clk   ( CLKSYS                                   ),
   .wtbt  ( 2'b00                                    ),
-  .addr  ( tape_download ? ioctl_addr : sdram_addr   ),
+  .addr  ( sdc_addr ),
   .dout  ( sdram_data                               ),
-  .din   ( ioctl_dout                               ),
-  .we    ( ioctl_wr & tape_download                 ),
-  .rd    ( need_more_byte                           ),
+  .din   ( {8'd0, sdc_din} ),
+  .we    ( sdc_we ),
+  .rd    ( sdc_rd ),
   .ready ( sdram_ready                              )
 );
 

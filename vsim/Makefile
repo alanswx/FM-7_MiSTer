@@ -195,6 +195,7 @@ V_SRC = \
 	$(RTL)/CLKCTRL.v \
 	$(RTL)/AVMEM.v \
 	$(RTL)/AVHDRAW.v \
+	$(RTL)/SDRAM_MUX.v \
 	$(RTL)/AVPIXEL.v \
 	$(RTL)/core.v \
 	$(RTL)/CRTRAM.v \
@@ -280,6 +281,13 @@ crtram-test: crtram_tb.sv ../rtl/CRTRAM.v ../rtl/wd1793_dpram.v
 		--top-module crtram_tb crtram_tb.sv ../rtl/CRTRAM.v ../rtl/wd1793_dpram.v
 	/tmp/fm7-crtram-obj/Vcrtram_tb
 
+# Kanji ROM readback: the 128 KB image moved from block RAM to SDRAM, so this
+# checks the boot.rom download, the base address and the arbiter all line up.
+# Nothing else does -- no title in the suite reads the kanji window.
+kanji-test: all
+	./obj_dir/Vemu --headless --bootrom 0 --stop-at-frame 30 --kanji-check 20 \
+		| grep "KANJI CHECK" | tee /dev/stderr | grep -q " 0 mismatched"
+
 # Directed check that a PSG register write reaches the chip and makes sound.
 # A full-machine run is a ten-minute experiment; this is seconds, which is the
 # only way to iterate the $fd0d/$fd0e bus handshake.
@@ -335,7 +343,7 @@ avpixel-test: avpixel_tb.sv ../rtl/AVPIXEL.v
 av-boot-test: all av_boot_test.sh
 	bash av_boot_test.sh
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test avkeyboard-test smem-test mb60h010-test pal-test avpixel-test avhdraw-test sound-test av-boot-test
+.PHONY: all run test clean clean-shots avmem-test crtram-test avkeyboard-test smem-test mb60h010-test pal-test avpixel-test avhdraw-test sound-test kanji-test av-boot-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h

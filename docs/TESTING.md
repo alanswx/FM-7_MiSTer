@@ -142,6 +142,31 @@ Identical output means the change is not responsible — but see the
 measurement traps in `docs/REFERENCE.md` first: identical output is also what a
 patch that never reached the binary looks like.
 
+## The kanji ROM lives in SDRAM
+
+At 128 KB it was 128 M10K, 23% of the device, and it is the only ROM that could
+move: everything else is fetched by a CPU every bus cycle or by the raster every
+character cell. It arrives as `releases/boot.rom` on **ioctl index 0**, which the
+MiSTer framework uploads at core start, so it needs no user action.
+
+Nothing in the regression suite reads the kanji window, so `make kanji-test` is
+the only thing covering it -- the download, the SDRAM base address, the arbiter
+and `KANJI.v`'s prefetch:
+
+```sh
+cd vsim && make kanji-test          # samples glyph words, compares with the file
+```
+
+It has already earned its place twice. `ioctl_index[15:6] == 0` (copied from
+another core) matches indices 0-63, which includes the **tape** at index 1 and
+would have written tape bytes to the kanji base; and `vsim/sim.v` instantiates
+the SDRAM controller with `.we ( tape_download & ioctl_wr )` where the FPGA top
+has the operands reversed, so an edit missed it and kanji was never written at
+all. Both look like nothing without a readback.
+
+The simulator loads `../releases/boot.rom` by default; `--boot-rom <file>`
+overrides it.
+
 ## Listening to the sound
 
 Nothing in the suite checks audio, and for the life of the project nothing ever

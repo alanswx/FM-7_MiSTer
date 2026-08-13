@@ -18,6 +18,12 @@ module core(
   output motor,
   output SVIDEOCLK,
   output [13:0] audio_out,
+  // Kanji ROM SDRAM channel -- the image is too big for block RAM.
+  output [16:0] KANJI_ADDR,
+  output        KANJI_RD,
+  input         KANJI_GNT,
+  input         KANJI_READY,
+  input  [15:0] KANJI_DATA,
   output buzzer,
   input [1:0] bootrom_sel,
   input machine_av,
@@ -551,7 +557,12 @@ KANJI u_KANJI(
   .WFD21n       ( WFD21n       ),
   .RFD22n       ( RFD22n       ),
   .RFD23n       ( RFD23n       ),
-  .MDATABUS_out ( KANJI_dout   )
+  .MDATABUS_out ( KANJI_dout   ),
+  .KANJI_ADDR   ( KANJI_ADDR   ),
+  .KANJI_RD     ( KANJI_RD     ),
+  .KANJI_GNT    ( KANJI_GNT    ),
+  .KANJI_READY  ( KANJI_READY  ),
+  .KANJI_DATA   ( KANJI_DATA   )
 );
 
 MCPU u_MCPU(

@@ -352,7 +352,7 @@ wire tape_download = ioctl_download && (ioctl_index == 8'd1);
 // EDGE. Without back-pressure SimBus holds ioctl_wr high for the whole
 // transfer, the controller sees one write, and only the first byte lands.
 // Throttling on sdram_ready is what makes ioctl_wr re-strobe per byte.
-assign ioctl_wait = tape_download & ~sdram_ready;
+assign ioctl_wait = (tape_download | kanji_download) & ~sdram_ready;
 
 reg old_ioctl_download;
 always @(posedge clk_sys)
@@ -366,15 +366,53 @@ reg [24:0] tape_size = 25'd0;
 always @(posedge clk_sys)
   if (tape_download && ioctl_wr) tape_size <= ioctl_addr + 25'd1;
 
+// The kanji ROM (128 KB) lives in SDRAM rather than block RAM -- see the
+// header of rtl/KANJI.v. It arrives as boot.rom on ioctl index 0, which the
+// MiSTer framework uploads automatically at core start, so it just works.
+// Based well clear of any tape image.
+localparam [24:0] KANJI_BASE = 25'h0400000;
+// boot.rom is ioctl index 0. Test the low byte, not [15:6]: the tape is
+// index 1 and [15:6]==0 matches everything from 0 to 63, which would send
+// tape bytes to the kanji base as well.
+wire        kanji_download = ioctl_download && (ioctl_index[7:0] == 8'd0);
+wire [16:0] kanji_addr;
+wire        kanji_rd, kanji_gnt, kanji_ready;
+
+wire [24:0] sdc_addr;
+wire  [7:0] sdc_din;
+wire        sdc_we, sdc_rd;
+
+SDRAM_MUX u_sdram_mux(
+  .CLKSYS      ( CLKSYS ),
+  .DL_WR       ( ioctl_wr & (tape_download | kanji_download) ),
+  .DL_ADDR     ( kanji_download ? (KANJI_BASE + {8'd0, ioctl_addr[16:0]})
+                                 : ioctl_addr ),
+  .DL_DATA     ( ioctl_dout ),
+  .TAPE_ADDR   ( sdram_addr ),
+  .TAPE_RD     ( need_more_byte ),
+  .TAPE_READY  ( ),
+  .KANJI_ADDR  ( KANJI_BASE + {8'd0, kanji_addr} ),
+  .KANJI_RD    ( kanji_rd ),
+  .KANJI_GNT   ( kanji_gnt ),
+  .KANJI_READY ( kanji_ready ),
+  .SD_ADDR     ( sdc_addr ),
+  .SD_DIN      ( sdc_din ),
+  .SD_WE       ( sdc_we ),
+  .SD_RD       ( sdc_rd ),
+  .SD_READY    ( sdram_ready ),
+  .SD_DOUT     ( sdram_data ),
+  .SD_DOUT_OUT ( )
+);
+
 sdram u_sdram(
   .init  ( 1'b0                                          ),
   .clk   ( CLKSYS                                        ),
   .wtbt  ( 2'b00                                         ),
-  .addr  ( tape_download ? ioctl_addr : sdram_addr       ),
+  .addr  ( sdc_addr ),
   .dout  ( sdram_data                                    ),
-  .din   ( { 8'd0, ioctl_dout }                          ),
-  .we    ( tape_download & ioctl_wr                      ),
-  .rd    ( need_more_byte                                ),
+  .din   ( { 8'd0, sdc_din } ),
+  .we    ( sdc_we ),
+  .rd    ( sdc_rd ),
   .ready ( sdram_ready                                   )
 );
 

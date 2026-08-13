@@ -279,6 +279,7 @@ static void print_tail(const char* label, std::vector<Retired>& v, size_t pos, b
 //----------------------------------------------------------------------------
 
 static std::string tape_path;
+static std::string boot_rom_path;
 static std::string disk_path;   // --disk <file.d77>, drive 0
 static std::string disk_path1;  // --disk1 <file.d77>, drive 1
 static bool        tape_rewind_pulse = false;
@@ -598,6 +599,38 @@ static void save_screenshot(int frame) {
 // two 8 KB halves.  Diffing the two files plane by plane is what distinguishes
 // "the raster draws it wrong" from "the wrong bytes are stored", and the second
 // is what the FM77AV colour-bar bug turned out to be.  See docs/TESTING.md.
+// --kanji-check: read glyph words back through the $fd20-$fd23 window and
+// compare against the boot.rom file. The image moved from block RAM to SDRAM,
+// so this is the only thing that proves the download, the base address, the
+// arbiter and the prefetch all line up -- no title in the test set reads kanji.
+static int  kanji_check_frame = -1;
+static bool kanji_checked = false;
+static void kanji_check(void) {
+	const char *path = boot_rom_path.empty() ? "../releases/boot.rom" : boot_rom_path.c_str();
+	FILE *f = fopen(path, "rb");
+	if (!f) { printf("KANJI CHECK: no %s\n", path); return; }
+	static unsigned char img[131072];
+	size_t n = fread(img, 1, sizeof(img), f);
+	fclose(f);
+	const auto *r = top->rootp;
+	int bad = 0, checked = 0;
+	for (unsigned g = 0; g < 65536; g += 4099) {          // a scattered sample
+		const unsigned byte0 = (g << 1) & 0x1ffff;
+		if (byte0 + 1 >= n) continue;
+		const unsigned base = 0x0400000;
+		const unsigned w = r->emu__DOT__u_sdram__DOT__mem[(base + byte0) >> 1];
+		const unsigned lo = w & 0xff, hi = (w >> 8) & 0xff;
+		checked++;
+		if (lo != img[byte0] || hi != img[byte0 + 1]) {
+			if (bad < 4)
+				printf("KANJI CHECK FAIL glyph %04x: sdram %02x/%02x file %02x/%02x\n",
+				       g, lo, hi, img[byte0], img[byte0 + 1]);
+			bad++;
+		}
+	}
+	printf("KANJI CHECK: %d words sampled, %d mismatched\n", checked, bad);
+}
+
 static void dump_av_vram(int frame) {
 	const char *vramOut = getenv("FM7_VRAM_DUMP");
 	if (!opt_machine_av || !vramOut) return;
@@ -746,6 +779,8 @@ static int parse_args(int argc, char** argv) {
 
 		if (a == "-h" || a == "--help") { print_usage(argv[0]); return 1; }
 		else if (a == "--headless" || a == "--no-gui") headless = true;
+		else if (a == "--kanji-check") { const char* v = next(); if (v) kanji_check_frame = atoi(v); }
+		else if (a == "--boot-rom")   { const char* v = next(); if (v) boot_rom_path = v; }
 		else if (a == "--tape")       { const char* v = next(); if (v) tape_path = v; }
 		else if (a == "--disk")       { const char* v = next(); if (v) disk_path = v; }
 		else if (a == "--disk1")      { const char* v = next(); if (v) disk_path1 = v; }
@@ -1314,6 +1349,9 @@ static void sim_cycle() {
 		                  ((uint32_t)top->VGA_R);
 		video.Clock(top->VGA_HB, top->VGA_VB, top->VGA_HS, top->VGA_VS, colour);
 		static bool av_dumped = false;
+		if (!kanji_checked && kanji_check_frame >= 0 && video.count_frame >= kanji_check_frame) {
+			kanji_check(); kanji_checked = true;
+		}
 		if (!av_dumped && video.count_frame >= av_dump_frame) {
 			dump_av_vram(video.count_frame);
 			av_dumped = true;
@@ -1529,6 +1567,22 @@ int main(int argc, char** argv, char** env) {
 	if (!disk_path1.empty()) {
 		printf("Mounting disk on drive 1: %s\n", disk_path1.c_str());
 		blk.MountDisk(disk_path1, 1);
+	}
+
+	// boot.rom on ioctl index 0 is what the MiSTer framework uploads at core
+	// start, and it carries the kanji ROM -- which lives in SDRAM rather than
+	// block RAM. Load it here too, or the $fd20-$fd23 window reads back
+	// whatever the behavioural SDRAM model was left holding.
+	{
+		std::string boot = boot_rom_path.empty() ? "../releases/boot.rom" : boot_rom_path;
+		FILE* f = fopen(boot.c_str(), "rb");
+		if (f) {
+			fclose(f);
+			printf("Loading boot.rom over ioctl index 0: %s\n", boot.c_str());
+			bus.QueueDownload(boot, 0, true);
+		} else if (!boot_rom_path.empty()) {
+			printf("Error: cannot open boot.rom %s\n", boot.c_str());
+		}
 	}
 
 	if (!tape_path.empty()) {
