@@ -275,9 +275,29 @@ which deadlocks forever at 0% CPU under x86 emulation on Apple Silicon because
 `NUM_PARALLEL_PROCESSORS ALL` spawns helpers that crash there. The give-away is
 a log whose mtime stops advancing. The script passes `--parallel=1` per stage.
 
-Still available if more room is needed: `MRAM` (64 KB) is never live at the
-same time as the AV array, and `kanji.rom` (128 KB) is the classic candidate
-for SDRAM rather than block RAM.
+Where it stands: **ALMs 24k of 42k (57%), block memory 690 M10K of 553.**
+
+The bit total is misleading and cost a wrong estimate once already: 5,642,883 of
+5,662,720 bits reads as 100%, but M10K *count* is what Error 170048 checks, and
+a byte-wide memory uses 8 of each block's 10 bits. Price a change in blocks,
+from the map report's RAM summary, never in bits.
+
+`$30000-$3FFFF` is the FM-7 machine and `MRAM` already holds that 64 KB, idle in
+AV mode because `MAINRAM_dout` picks `AVMEM_dout` there. AV mode now borrows it
+rather than backing the page twice: **-64 blocks**, leaving ~73 over.
+
+Nothing else is free. The rest costs a feature or a delivery change, which is a
+decision rather than an optimisation:
+
+| blocks | candidate | cost |
+|---|---|---|
+| 128 | `kanji.rom` to SDRAM/DDR3 | needs a runtime ROM-download path; this core embeds every ROM with `$readmemh` and has none |
+| 32 | `fbasic300` / `av_fbasic30` are never both live | sharing needs that same runtime load |
+| 16 | AV sub-monitors A and B | drops `$FD13` monitor switching |
+
+Checked and NOT available: the two `2048x56` D77 sector tables (24 blocks) pack
+at 93% and the 1992-entry bound is real; `CRTRAM`'s 96 blocks are the AV's whole
+96 KB of VRAM.
 
 The suite now has an FM77AV row (`av-demo`, CaptainYS's 2019 demo from
 `software/FM77AV/`). It had none before, which is why a broken `$D430` page
