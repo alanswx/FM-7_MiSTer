@@ -91,3 +91,8 @@ Three, and they do not agree. In order of authority for the FM-7:
 
 Where they disagree, `docs/IO_MAP.md` records which one this core follows and
 why.
+
+**`releases/boot.rom` ships with the core.** It is the 128 KB kanji ROM,
+which lives in SDRAM rather than block RAM and is uploaded by the MiSTer
+framework on ioctl index 0 at core start. Without it the `$fd20-$fd23`
+kanji window reads garbage; everything else still boots.

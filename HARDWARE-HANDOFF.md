@@ -6,6 +6,113 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+## Status at `a44c8b7` — FM77AV video, FM-7 sound, and it fits again
+
+**Builds and fits: 22,745/41,910 ALMs (54%), 508/553 RAM blocks (92%), fitter
+successful.** Nothing below has run on hardware. Simulation says all nine
+regression tests match `shots-ref/` on screenshots and counters, but the
+glitch-domain classes are exactly what it cannot settle.
+
+### Build it
+
+On this Linux x86 box the normal flow is fine:
+
+```sh
+quartus_sh --flow compile FM-7_MiSTer
+```
+
+`tools/quartus-build.sh` exists only for the Apple Silicon side, where
+`NUM_PARALLEL_PROCESSORS ALL` spawns helpers that crash under x86 emulation and
+the parent then deadlocks forever at 0% CPU with a log whose mtime stops
+advancing. Ignore it here.
+
+**Two things that will bite:**
+
+- **`releases/boot.rom` must ship next to the core.** It is the 128 KB kanji
+  ROM, which no longer fits in block RAM and now lives in SDRAM, uploaded by the
+  framework on ioctl index 0 at core start. Without it the `$fd20-$fd23` window
+  reads garbage. Everything else still boots.
+- **Quartus appends files to the `.qsf`.** It added `rtl/SDRAM_MUX.v` during a
+  compile here. `files.qip` is the canonical list — delete the line again, as
+  the warning at the top of the `.qsf` says.
+
+### Sound: open item 3 above is answered, and it was worse than "unverified"
+
+`SOUND.v` was not merely unconfirmed — **the PSG never received a single
+register write**, and nothing in the audio path had ever been measured. Two
+independent bugs:
+
+- The `$fd0d`/`$fd0e` handshake was backwards, and the chip's `data_i` came
+  straight off the live CPU bus. `$fd0e` latches a byte and the following
+  `$fd0d` command consumes it — CSP's model, and what Thexder's own bus traffic
+  does 1024 times. A 900-frame run left all three channel DACs at zero.
+- `core_audio` was a 28-bit expression assigned to a 16-bit wire, leaving
+  `audio_out[2:0]` shifted to bits 15:13 — three bits of noise at full scale
+  instead of the tune, in **both** top levels, so never FPGA-only.
+
+Measured after the fix: PSG mix peaks at 10238 of 16383, all three channels
+live. Thexder's music sounds plausible in a captured WAV, but **nobody has heard
+it on hardware**, and `sel_n_i` (the PSG prescaler, `SOUND.v:149`) is still
+unconfirmed by ear — the comment there argues the divided setting is right and
+that leaving it undriven made every pitch an octave sharp. If the pitch is off
+rather than just the filtering, start there.
+
+`vsim` can now capture audio headlessly, which it never could before — that gap
+is most of why this survived:
+
+```sh
+cd vsim && make sound-test          # directed: does a register write make sound?
+./obj_dir/Vemu --headless --bootrom 0 --disk '<title>.d77' \
+    --stop-at-frame 900 --wav /tmp/out.wav
+```
+
+### FM-7: a real regression fixed, references were never stale
+
+`ca75bfe` converted `SRAM.v`'s shared window from a single-port `ram` to a
+`dpram` and qualified each side's write with the **other** side's select. The
+main CPU writes that window while the sub CPU is halted, so every main-side
+write was discarded: the mailbox was dead and the FM-7 booted to a **blank
+screen with both CPUs at normal instruction rates**. The suite had reported it
+for fifteen commits as `SCREEN+CNT` and it was written off in `TODO.md` as
+timing drift from the `CLKCTRL.v` fix. Restoring the two enable expressions
+reproduces `e19cde7`'s references exactly, so `shots-ref/` needed no bless.
+
+**Sharpest hardware check: the FM-7 should boot to the F-BASIC banner again.**
+If it does not, this is the first suspect.
+
+### FM77AV video
+
+The 2019 demo drew vertical colour bars instead of its 4096-colour gradient.
+Two things were missing: the MB61VH010 drawing ALU had no byte read-modify-write
+path (the demo writes `$D42B` zero times and uses only the access-intercept
+half), and `AVMEM` decoded only the VRAM part of the sub aperture, so the main
+CPU's MMR writes to `$1D400-$1D4FF` were dropped — losing the `$D430` page
+select collapsed all twelve bit planes onto the page-0 pair.
+
+Verified by dumping both machines' VRAM and diffing the twelve planes: at the
+demo's title screen every plane matches 77AVEMU byte for byte. Method is in
+`docs/TESTING.md`.
+
+**Sharpest hardware check: FM77AV + `software/FM77AV/2019_FM77AVDEMO...D77`
+should show a smooth 4096-colour gradient with text over it.** Vertical rainbow
+bars means the page select is not landing.
+
+### What changed that could plausibly break on hardware but not in simulation
+
+| change | why hardware might disagree |
+|---|---|
+| `PAL.v` palette is now three dual-clock block RAMs, written on `CLKSYS` and read on `SFTCLK` | a genuine clock-domain crossing where there was combinational logic before. Read-during-write to one entry is a don't-care by design, but this is new CDC. |
+| `SRAM.v` mailbox enables | touches every main-to-sub command on both machines |
+| `SOUND.v` `psg_data` latch | `bdir`/`bc1` carry sound **and both joysticks** |
+| kanji in SDRAM behind `SDRAM_MUX.v` | tape and kanji now share the controller; tape has priority, but tape playback is the thing to re-check |
+| `MRAM` serves the AV `$30000-$3FFFF` page | FM-7 mode should be untouched; AV mode now reads main RAM through it |
+
+Everything from the older list below still applies — `e699e9d`, `77c2780`,
+`b1aff78`, `777d8d4` remain hardware-unconfirmed, and `m77` stays async by
+agreement.
+
+---
+
 ## Status at `5133ccb` — over to you
 
 **Everything currently on the branch builds, fits and boots.** 40% ALMs,
