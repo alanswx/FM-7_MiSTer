@@ -394,6 +394,33 @@ Two leads, both from the sweep's own numbers:
   Story, Kugyokuden and Kohakuiro's later disks. Three unrelated titles idling at
   the same rate looks like one shared wait loop, not three coincidences.
 
-Do not read the 59 as "59 broken titles" until one has been traced. Several are
+#### Ys (FM77AV) traced: a main/sub BUSY deadlock
+
+First one traced, and it is not the FDC. At frame 293 the machine is doing
+**2216 reads of `$fd05` in a single frame, every one returning `$fe`**, while:
+
+- the **main** CPU sits in the boot ROM's delay loop, `$ff51 LEAY -1,Y / BNE`
+- the **sub** CPU sits at `$c036 LDB -1,U / BEQ $c036`, waiting for a byte in
+  its own address space to become non-zero
+- the FDC has read 861 sectors but the last is still **track 0 sector 9** — it
+  is re-reading one sector, not walking tracks the way Argo does
+
+`$fd05` read bit 7 is `BUSY | halted`, not BUSY alone. Main writes `$80` (halt
+request) then `$00` (release), then polls — so `halted` is clear and **BUSY is
+stuck set**. The sub is running, not halted, but never reaches whatever clears
+BUSY (the `$d40a` access). Main will not proceed until BUSY clears; the sub will
+not proceed until its byte arrives. Neither moves.
+
+Track 0 of the image is completely ordinary — 16 sectors, R=1..16, N=1, no CRC
+or deleted flags, no protection — so the repeated sector-9 read is a symptom of
+the retry loop above it, not a bad dump.
+
+Where to look first: what is supposed to write the byte the sub is polling at
+`$c036`, and does that write reach it. The main-to-sub shared window is the
+obvious candidate, and note that `SRAM.v`'s mailbox enables were wrong until
+this session — the AV path through `AVMEM`'s `SHARED_*` signals is a *different*
+route into the same block and has not been proven the way the FM-7 path now is.
+
+Do not read the 59 as "59 broken titles" until more have been traced. Several are
 data or scenario disks that were never bootable alone, and the per-title
 exclusion rules in `docs/TESTING.md` have not been applied to this list yet.
