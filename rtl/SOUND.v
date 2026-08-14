@@ -122,23 +122,52 @@ wire YM_CEN = machine_av ? EN_CLK_1_2 : EN_CLK_2_4;
 // (fm77avsound.cpp:100-172). CSP acts on the command write itself. Every
 // sequence in hand writes 2 or 3 and then 0, so the two models agree on it;
 // this follows CSP, which is also what the $fd0d path already did.
-reg wfd0d_d, wfd0e_d, wfd15_d, wfd16_d;
+// FILTERED leading edges, not one-cycle edge detection.
+//
+// These four are address-decode outputs used as strobes, and Quartus routes a
+// LUT-built decode on general routing where it GLITCHES as its inputs arrive
+// skewed (docs/REFERENCE.md section 3). A glitch is one or two CLKSYS cycles
+// wide, so a detector that only compares against the previous cycle still
+// reports it as an edge -- which is the very thing that needs fixing. Taking
+// the edge from a 3-stage shift register means a transient has to persist to
+// be believed. Same conversion as FLAGS, PERIPHERAL, MFD, PAL and MB60H010.
+//
+// This module is the one docs/REFERENCE.md singles out as unprovable by the
+// usual loop: "SOUND.v bdir/bc1 (PSG bus protocol -> all sound and both
+// joysticks) -- not attempted. A screenshot-based hardware loop cannot validate
+// this; a conversion needs a listening test or a joystick test." Both have now
+// been run on hardware, and they split: sound plays, the joystick does not.
+// That split is what a glitching command strobe looks like. A spurious command
+// is a spurious PSG register write; one among thousands is inaudible in music,
+// but a single bad write to register 15 clobbers the joystick SELECTION, and
+// port A then reads $ff -- "no stick" -- until software happens to write it
+// again. Sound survives, the stick does not.
+//
+// Simulation cannot confirm this: Verilator gives one clean edge per access, so
+// the behaviour is identical before and after. ONLY HARDWARE SETTLES IT.
+//
+// The leading edge is kept deliberately -- a trailing-edge sample races the CPU
+// releasing the bus, which is the $fd37 hazard in FLAGS.v. The filtered sample
+// lands two CLKSYS cycles into a strobe that is tens of cycles wide (E is
+// 1.2288 MHz against 48 MHz), so it stays comfortably inside the access.
+reg [2:0] wfd0d_sr, wfd0e_sr, wfd15_sr, wfd16_sr;
 always @(posedge CLKSYS) begin
-  wfd0d_d <= WFD0Dn;
-  wfd0e_d <= WFD0En;
-  wfd15_d <= WFD15n;
-  wfd16_d <= WFD16n;
+  wfd0d_sr <= { wfd0d_sr[1:0], WFD0Dn };
+  wfd0e_sr <= { wfd0e_sr[1:0], WFD0En };
+  wfd15_sr <= { wfd15_sr[1:0], WFD15n };
+  wfd16_sr <= { wfd16_sr[1:0], WFD16n };
 end
 
-// Leading edges. The trailing edge is where the CPU has already released the
-// bus in zero-delay RTL -- the mistake $fd37 made (see FLAGS.v).
-wire wfd0d_stb = ~WFD0Dn & wfd0d_d;
-wire wfd0e_stb = ~WFD0En & wfd0e_d;
-wire wfd15_stb = ~WFD15n & wfd15_d;
-wire wfd16_stb = ~WFD16n & wfd16_d;
+wire wfd0d_stb = wfd0d_sr[2] & ~wfd0d_sr[1];
+wire wfd0e_stb = wfd0e_sr[2] & ~wfd0e_sr[1];
+wire wfd15_stb = wfd15_sr[2] & ~wfd15_sr[1];
+wire wfd16_stb = wfd16_sr[2] & ~wfd16_sr[1];
 
 wire       cmd_stb = wfd0d_stb | wfd15_stb;
 wire [3:0] cmd_new = wfd15_stb ? MDATABUS_in[3:0] : { 2'b00, MDATABUS_in[1:0] };
+// MDATABUS_in is stable for the whole bus cycle, so sampling it two cycles
+// into the strobe rather than on its edge is safe -- and is what makes the
+// filter free: the byte the CPU is driving has not moved.
 wire       data_stb = wfd0e_stb | wfd16_stb;
 
 reg [7:0] ym_data;    // the latched data byte
