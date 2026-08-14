@@ -186,18 +186,28 @@ highest title-count-per-effort item after the register audit.
 
 ## Smaller open items
 
-- **Sound pitch** needs a human ear, on both halves of the chip. The FM-7's SSG
-  is bit-identical to what shipped before the `jt03` swap (`make sound-test`
-  asserts the tone divider), so the swap changed nothing — but "unchanged" is
-  not "right", and the FM77AV's initiator selects a YM2203 prescaler that puts
-  the AV's SSG an octave above the FM-7's. See `docs/FM77AV.md` §Sound: the two
-  references give both machines the same chip clock, which cannot be reconciled
-  with that prescaler. One listening test settles it; another derivation will
-  not.
-- **The FM half has no reference comparison.** `jt03` produces FM audio and the
-  status register behaves, but nothing has diffed a rendered tune against
-  77AVEMU or CSP. The YM2203's timers and its `$FD17` bit-3 IRQ are wired to
-  nothing — `jt03`'s `irq_n` is left unconnected in `core.v`.
+- **PSG pitch is now measured, and 2.3% flat.** `make sound-test` prints the
+  tone in Hz: 234.65 against the AY-3-8910's 240.00 at the FM-7's documented
+  1.2288 MHz. The octave error is fixed; what is left is the integer divider,
+  48/20 and 48/40 against a true 2.4576 and 1.2288, i.e. about 0.4 semitone on
+  both machines. Fixing it needs a fractional divider.
+- **The FM77AV's FM clock is still unverified.** jt03's `cen` is 1.2288 MHz on
+  the AV, which puts the FM half at cen/3 after the initiator's prescaler --
+  a ~34 kHz sample rate, plausible but unchecked. Nothing has diffed a rendered
+  tune against 77AVEMU or CSP, and the YM2203's timers and its `$FD17` bit-3
+  IRQ are wired to nothing (`jt03`'s `irq_n` is unconnected in `core.v`).
+- **The joystick is dead on hardware and works in simulation**, which is the
+  signature of the glitch-domain class, not of a logic bug. `SOUND.v`'s strobes
+  are now filtered on that reading; only hardware can say whether it worked.
+  Two things are worth knowing before chasing it further. **Thexder cannot test
+  it** — it never reads PSG registers 14/15 at all, so no joystick can drive it
+  on any machine. And of the 301 FM-7 images, only 25 contain a 6809 extended
+  *read* of `$fd0e` (a sound driver only ever writes that port), with Death
+  Force, Wibarm, Space Harrier and Topple Zip the strongest; none of the four
+  reached a poll inside 1600 frames, so a title-based test needs to get into
+  the game first. The game-independent test is the F-BASIC poke sequence in
+  `docs/IO_MAP.md`: it prints 238 with stick 0 held up+A, 255 if the stick is
+  not arriving at all, which separates a core bug from an OSD mapping problem.
 - **Keyboard layout is JIS-positional, not US** — a decision, not a bug. Shifted
   punctuation lands where a JIS keyboard puts it, which surprises US-layout
   users. Decide whether to offer a translation.

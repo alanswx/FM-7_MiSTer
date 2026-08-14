@@ -209,6 +209,12 @@ sample lands two cycles in, still comfortably inside the access; (3) preserve cl
 | `MB60H010.v` | `SRL`/`SRH` (display offset) | `b632ea1` |
 | `FLAGS.v`, `PERIPHERAL.v` | 3-cycle filters replacing 1-cycle edge detectors | `18e635c` |
 
+**A ratio is not a pitch.** `sound_tb.sv` asserted the PSG's tone *divider* was 16 and passed for
+the life of the project while the chip played every note an octave flat — the divider was right and
+the clock feeding it was half what it should be. The bench now prints the tone in Hz for a 48 MHz
+CLKSYS next to the number an AY-3-8910 at the FM-7's documented 1.2288 MHz plays, so the two can be
+compared without deriving anything. Measure the quantity the ear judges, not a proxy for it.
+
 **Still on async decode clocks:**
 
 - **`KEYBOARD.v:543` `m77`** (keyboard routing, `LPMASKn`, `TMMASK`) — **three hardware conversion
@@ -220,9 +226,14 @@ sample lands two cycles in, still comfortably inside the access; (3) preserve cl
   the only such register fed from `MDATABUS_out`, a wide combinational mux over the whole main bus
   (a data-side timing question, reproducible in vsim); and the only one whose output crosses into
   another clock domain (`TMMASK` into `CLKCTRL`).
-- **`SOUND.v:28` `bdir`/`bc1`** (PSG bus protocol → all sound and both joysticks) — not attempted.
-  **A screenshot-based hardware loop cannot validate this**; a conversion needs a listening test
-  or a joystick test.
+- **`SOUND.v`'s four `$fd0d`/`$fd0e`/`$fd15`/`$fd16` strobes** — **converted, awaiting hardware.**
+  This is the entry that said "a conversion needs a listening test or a joystick test", and both
+  were finally run: sound played, the joystick did not. That split is the diagnosis. A spurious
+  command is a spurious PSG register write — inaudible among the thousands a music driver issues,
+  but one bad write to register 15 clobbers the joystick *selection* and port A then reads `$ff`
+  ("no stick") until software writes it again. They were on one-cycle edge detectors, which the
+  recipe above says is too short. Now filtered. Sim is byte-identical either way, so only hardware
+  can confirm it.
 - **`FLAGS.v:228` `m46` (`$fd37`)** — behaviour verified correct in sim (latches on the leading
   `negedge WFD37n`; bit split matches MAME `& 0x77` and CSP `accessmask`/`dispmask`), but it is
   still an async decode-strobe latch on hardware.

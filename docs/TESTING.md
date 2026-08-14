@@ -72,6 +72,24 @@ Extracts the Neo Kobe floppy collection, runs every `.d77`, and writes
 Recorded results live in `vsim/sweep/*.tsv` and are the baseline for per-title
 comparison. Join on `TITLE`.
 
+### Killing a sweep does not kill the sweep
+
+`sweep.sh` and `av-sweep.sh` drive `sweep_one.sh` through `xargs -P`. Killing
+the driver script leaves that `xargs` reparented to init and **still running**:
+it keeps spawning simulator processes and keeps appending to the same
+`results.tsv`. Restarting the sweep on top of that gives two sweeps writing one
+file — every title appears twice, the machine carries double the load, and the
+whole thing takes twice as long for no extra coverage.
+
+The tell is duplicate titles in `results.tsv`, or a load average around twice
+the job count. Check for the orphan before restarting:
+
+```sh
+ps -o pid,ppid,command -ax | grep '[x]args -0 -P'
+```
+
+and kill the `xargs` itself, not just the driver.
+
 ### Triage by instruction rate, not by screenshot
 
 A screenshot cannot tell "crashed into a CWAI" from "idling at a screen it
