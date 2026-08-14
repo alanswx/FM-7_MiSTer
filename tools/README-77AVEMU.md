@@ -61,8 +61,8 @@ Rebuild with the steps above only if `refs/local` is missing or Mutsu changes.
 Run an FM77AV disk checkpoint:
 
 ```sh
-/tmp/fm7-77avemu-build/fm77av_headless \
-  /tmp/fm77av-roms \
+refs/local/fm77av_headless \
+  refs/local/fm77av-roms \
   '/tmp/fm7-sweep-fresh/disks/Thexder [b].d77' \
   2000000 /tmp/thexder-77av.png
 ```

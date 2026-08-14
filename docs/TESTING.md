@@ -266,9 +266,9 @@ VRAM wrongly or whether the wrong bytes are in VRAM, and those two have nothing
 in common as bugs. Dump both machines' video memory and diff it.
 
 ```sh
-# Reference. Build Mutsu first (tools/README-77AVEMU.md), then:
-FM77AV_VRAM_DUMP=/tmp/ref-vram.bin /tmp/fm7-77avemu-build/fm77av_headless \
-    /tmp/fm77av-roms path/to/image.d77 20000000 /tmp/ref.png
+# Reference. Prebuilt in refs/local -- see tools/README-77AVEMU.md if missing.
+FM77AV_VRAM_DUMP=/tmp/ref-vram.bin refs/local/fm77av_headless \
+    refs/local/fm77av-roms path/to/image.d77 20000000 /tmp/ref.png
 
 # This core, at a chosen frame.
 cd vsim
