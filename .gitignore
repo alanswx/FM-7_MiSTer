@@ -52,3 +52,6 @@ verilog/
 
 # Verilator build output for the vsim harness (~67 MB, regenerate with `make`)
 vsim/obj_dir/
+
+# Python bytecode from the sweep scripts
+__pycache__/
