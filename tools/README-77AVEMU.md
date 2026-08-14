@@ -13,6 +13,34 @@ repository. Build Mutsu normally first, then build the driver:
 tools/build_77avemu_headless.sh /tmp/fm7-77avemu-build
 ```
 
+### Staging the ROM directory
+
+Mutsu wants **upper-case** file names, and the AV boot ROMs are not in the same
+shape as the ones this core loads. Neither fact is obvious, and getting either
+wrong makes the reference emulator fail in ways that look like a bad disk image:
+
+```sh
+R=/tmp/fm77av-roms
+mkdir -p $R && unzip -o -q refs/fm77av.zip -d $R
+( cd $R && for f in *.rom; do mv "$f" "$(echo $f | tr 'a-z' 'A-Z')"; done )
+
+# BOOT_BAS.ROM / BOOT_DOS.ROM are 512 bytes. This repo carries them only as the
+# 480-byte loaders AVMEM.v copies out of initiate.rom, as .mem text, so convert
+# and pad. The AV boots from INITIATE.ROM, so the padding does not matter to an
+# AV run -- it matters only that the files exist.
+python3 - <<'EOF'
+import os
+R='/tmp/fm77av-roms'
+for src, dst in (('rtl/roms/fm77av_boot_basic.rom.mem', 'BOOT_BAS.ROM'),
+                 ('rtl/roms/fm77av_boot_dos.rom.mem',   'BOOT_DOS.ROM')):
+    b = bytes(int(l, 16) for l in open(src) if l.strip())
+    open(os.path.join(R, dst), 'wb').write(b + bytes(512 - len(b)))
+EOF
+```
+
+Everything under `/tmp` is disposable, so expect to redo this and the build
+after a reboot. Neither takes long.
+
 Run an FM77AV disk checkpoint:
 
 ```sh

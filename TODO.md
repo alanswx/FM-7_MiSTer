@@ -8,6 +8,37 @@ Reference material: `docs/REFERENCE.md` (read first), `docs/IO_MAP.md`,
 
 ---
 
+## Start here
+
+Everything is committed and pushed to `alanswx/fdc-d77-support`. Nothing is
+half-applied and there is no uncommitted state to reconstruct.
+
+**Where it stands.** The core fits the DE10-Nano again (54% ALMs, 508/553 M10K,
+fitter successful) and the nine-row gate is green — `./run_tests.sh` in `vsim/`
+compares screenshots *and* counters against `shots-ref/`. FM-7 boots, Thexder
+runs, the FM77AV demo matches 77AVEMU plane-for-plane, and PSG sound works and
+is at the right pitch. **None of it has run on hardware**; `HARDWARE-HANDOFF.md`
+is the FPGA side's log and its newest section says what to check first.
+
+**The one open thread, in priority order:**
+
+1. **59 of 68 FM77AV titles render nothing**, and the first one traced (Ys) is a
+   main/sub BUSY deadlock, not an FDC fault — see the FM77AV section below. This
+   is the single biggest thing standing between the AV backend and being useful.
+2. **The YM2203 does not exist**, so the AV has no FM sound at all. `jt03` from
+   jotego/jt12 is the way in; the research is written up below, including the
+   licence consequence.
+3. Timing closure is unverified — `map` and `fit` pass, `asm`/`sta` have not run.
+
+**Two environment facts that are not in the repo**, because they live under
+`/tmp` and will not survive a reboot: the 77AVEMU reference build
+(`tools/build_77avemu_headless.sh`) and its ROM directory
+(`tools/README-77AVEMU.md` now says how to stage it). Rebuild both before any
+differential work — comparing against the reference is what settled the last
+four bugs, and guessing instead of asking it wasted time on at least two.
+
+---
+
 ## Awaiting hardware
 
 Four commits are on `alanswx/fdc-d77-support` and have **not** been confirmed on
