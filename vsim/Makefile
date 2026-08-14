@@ -109,6 +109,14 @@ ifeq ($(DEBUG_JOY),1)
 V_DEFINE += +define+DEBUG_JOY
 endif
 
+# `make JT12_RAW=1` turns on jt12's own raw-audio dump, which writes
+# vsim/jt12.raw from jt12_top.v. Upstream guards it with `SIMULATION`, which
+# this Makefile defines unconditionally, so it had to be moved behind its own
+# define -- otherwise every run of every test silently grew that file.
+ifeq ($(JT12_RAW),1)
+V_DEFINE += +define+JT12_DUMP_RAW
+endif
+
 ifeq ($(DEBUG_FDC),1)
 V_DEFINE += +define+DEBUG_FDC_SCAN
 endif
@@ -187,6 +195,53 @@ EXE       = ./obj_dir/Vemu
 #
 # vsim/rtl/sdram.sv replaces rtl/sdram.sv -- the real controller drives SDRAM_*
 # pins that do not exist here.
+JT12_SRC = ../rtl/jt12/jt03.v \
+	../rtl/jt12/jt03_acc.v \
+	../rtl/jt12/jt12_csr.v \
+	../rtl/jt12/jt12_div.v \
+	../rtl/jt12/jt12_dout.v \
+	../rtl/jt12/jt12_eg.v \
+	../rtl/jt12/jt12_eg_cnt.v \
+	../rtl/jt12/jt12_eg_comb.v \
+	../rtl/jt12/jt12_eg_ctrl.v \
+	../rtl/jt12/jt12_eg_final.v \
+	../rtl/jt12/jt12_eg_pure.v \
+	../rtl/jt12/jt12_eg_step.v \
+	../rtl/jt12/jt12_exprom.v \
+	../rtl/jt12/jt12_kon.v \
+	../rtl/jt12/jt12_lfo.v \
+	../rtl/jt12/jt12_logsin.v \
+	../rtl/jt12/jt12_mmr.v \
+	../rtl/jt12/jt12_mod.v \
+	../rtl/jt12/jt12_op.v \
+	../rtl/jt12/jt12_pg.v \
+	../rtl/jt12/jt12_pg_comb.v \
+	../rtl/jt12/jt12_pg_dt.v \
+	../rtl/jt12/jt12_pg_inc.v \
+	../rtl/jt12/jt12_pg_sum.v \
+	../rtl/jt12/jt12_pm.v \
+	../rtl/jt12/jt12_reg.v \
+	../rtl/jt12/jt12_reg_ch.v \
+	../rtl/jt12/jt12_rst.v \
+	../rtl/jt12/jt12_sh.v \
+	../rtl/jt12/jt12_sh24.v \
+	../rtl/jt12/jt12_sh_rst.v \
+	../rtl/jt12/jt12_single_acc.v \
+	../rtl/jt12/jt12_sumch.v \
+	../rtl/jt12/jt12_timers.v \
+	../rtl/jt12/jt12_top.v \
+	../rtl/jt12/jt49/jt49.v \
+	../rtl/jt12/jt49/jt49_bus.v \
+	../rtl/jt12/jt49/jt49_cen.v \
+	../rtl/jt12/jt49/jt49_dcrm.v \
+	../rtl/jt12/jt49/jt49_dcrm2.v \
+	../rtl/jt12/jt49/jt49_div.v \
+	../rtl/jt12/jt49/jt49_dly.v \
+	../rtl/jt12/jt49/jt49_eg.v \
+	../rtl/jt12/jt49/jt49_exp.v \
+	../rtl/jt12/jt49/jt49_mave.v \
+	../rtl/jt12/jt49/jt49_noise.v
+
 V_SRC = \
 	sim.v \
 	rtl/sdram.sv \
@@ -232,7 +287,52 @@ V_SRC = \
 	$(RTL)/x74244.v \
 	$(RTL)/wd1793.sv \
 	$(RTL)/wd1793_dpram.v \
-	$(RTL)/ym2149_audio.v
+	$(RTL)/jt12/jt03.v \
+	$(RTL)/jt12/jt03_acc.v \
+	$(RTL)/jt12/jt12_csr.v \
+	$(RTL)/jt12/jt12_div.v \
+	$(RTL)/jt12/jt12_dout.v \
+	$(RTL)/jt12/jt12_eg.v \
+	$(RTL)/jt12/jt12_eg_cnt.v \
+	$(RTL)/jt12/jt12_eg_comb.v \
+	$(RTL)/jt12/jt12_eg_ctrl.v \
+	$(RTL)/jt12/jt12_eg_final.v \
+	$(RTL)/jt12/jt12_eg_pure.v \
+	$(RTL)/jt12/jt12_eg_step.v \
+	$(RTL)/jt12/jt12_exprom.v \
+	$(RTL)/jt12/jt12_kon.v \
+	$(RTL)/jt12/jt12_lfo.v \
+	$(RTL)/jt12/jt12_logsin.v \
+	$(RTL)/jt12/jt12_mmr.v \
+	$(RTL)/jt12/jt12_mod.v \
+	$(RTL)/jt12/jt12_op.v \
+	$(RTL)/jt12/jt12_pg.v \
+	$(RTL)/jt12/jt12_pg_comb.v \
+	$(RTL)/jt12/jt12_pg_dt.v \
+	$(RTL)/jt12/jt12_pg_inc.v \
+	$(RTL)/jt12/jt12_pg_sum.v \
+	$(RTL)/jt12/jt12_pm.v \
+	$(RTL)/jt12/jt12_reg.v \
+	$(RTL)/jt12/jt12_reg_ch.v \
+	$(RTL)/jt12/jt12_rst.v \
+	$(RTL)/jt12/jt12_sh.v \
+	$(RTL)/jt12/jt12_sh24.v \
+	$(RTL)/jt12/jt12_sh_rst.v \
+	$(RTL)/jt12/jt12_single_acc.v \
+	$(RTL)/jt12/jt12_sumch.v \
+	$(RTL)/jt12/jt12_timers.v \
+	$(RTL)/jt12/jt12_top.v \
+	$(RTL)/jt12/jt49/jt49.v \
+	$(RTL)/jt12/jt49/jt49_bus.v \
+	$(RTL)/jt12/jt49/jt49_cen.v \
+	$(RTL)/jt12/jt49/jt49_dcrm.v \
+	$(RTL)/jt12/jt49/jt49_dcrm2.v \
+	$(RTL)/jt12/jt49/jt49_div.v \
+	$(RTL)/jt12/jt49/jt49_dly.v \
+	$(RTL)/jt12/jt49/jt49_eg.v \
+	$(RTL)/jt12/jt49/jt49_exp.v \
+	$(RTL)/jt12/jt49/jt49_mave.v \
+	$(RTL)/jt12/jt49/jt49_noise.v
 
 C_SRC = \
 	sim_main.cpp dis6809.cpp \
@@ -291,10 +391,10 @@ kanji-test: all
 # Directed check that a PSG register write reaches the chip and makes sound.
 # A full-machine run is a ten-minute experiment; this is seconds, which is the
 # only way to iterate the $fd0d/$fd0e bus handshake.
-sound-test: sound_tb.sv ../rtl/SOUND.v ../rtl/ym2149_audio.v ../rtl/clk_en.v ../rtl/clocks.svh
+sound-test: sound_tb.sv ../rtl/SOUND.v ../rtl/clk_en.v ../rtl/clocks.svh $(JT12_SRC)
 	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-sound-obj -I../rtl \
 		--top-module sound_tb sound_tb.sv ../rtl/clocks.svh ../rtl/SOUND.v \
-		../rtl/ym2149_audio.v ../rtl/clk_en.v
+		../rtl/clk_en.v $(JT12_SRC)
 	/tmp/fm7-sound-obj/Vsound_tb
 
 # Directed check for the FM77AV MB61VH010 drawing ALU.  The byte

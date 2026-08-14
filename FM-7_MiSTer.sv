@@ -427,6 +427,7 @@ always @(posedge clk_sys) begin
 end
 wire SVIDEOCLK;
 wire [13:0] audio_out;
+wire [11:0] fm_audio_out;
 wire buzzer;
 wire [7:0] relay_snd;
 
@@ -445,8 +446,13 @@ wire [15:0] core_audio =  { 2'b00, audio_out };
 wire [15:0] buz_audio = { 1'b0, buzzer, 13'b0 };
 wire [15:0] relay_audio = { 1'b0, (status[9] ? relay_snd : 8'd0), 7'b0 };
 
-assign AUDIO_L = cin_audio + core_audio + buz_audio + relay_audio;
-assign AUDIO_R = cin_audio + core_audio + buz_audio + relay_audio;
+// The YM2203's FM half. It arrives unsigned around a 2048 midpoint, so it
+// costs a small DC offset and at most 4095 of swing -- the largest slice
+// left before this sum overflows 16 bits:
+// 8192 + 12240 + 8192 + 32640 + 4095 = 65359.
+wire [15:0] fm_audio = { 4'b0000, fm_audio_out };
+assign AUDIO_L = cin_audio + core_audio + buz_audio + relay_audio + fm_audio;
+assign AUDIO_R = cin_audio + core_audio + buz_audio + relay_audio + fm_audio;
 
 core u_core(
   .RESETn      ( RESETn        ),
@@ -463,6 +469,7 @@ core u_core(
   .SVIDEOCLK   ( SVIDEOCLK     ),
   .ce_pix      ( ce_pix        ),
   .audio_out   ( audio_out     ),
+  .fm_audio_out( fm_audio_out ),
   .KANJI_ADDR  ( kanji_addr    ),
   .KANJI_RD    ( kanji_rd      ),
   .KANJI_GNT   ( kanji_gnt     ),

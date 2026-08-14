@@ -219,6 +219,7 @@ wire [23:0] rgb;
 wire        HBlank, VBlank, HSync, VSync, ce_pix;
 wire        SVIDEOCLK;
 wire [13:0] audio_out;
+wire [11:0] fm_audio_out;
 wire        buzzer;
 wire  [7:0] relay_snd;
 
@@ -240,6 +241,7 @@ core u_core(
   .SVIDEOCLK   ( SVIDEOCLK   ),
   .ce_pix      ( ce_pix      ),
   .audio_out   ( audio_out   ),
+  .fm_audio_out( fm_audio_out),
   .buzzer      ( buzzer      ),
   // tape
   .cin         ( cin         ),
@@ -330,7 +332,8 @@ wire [15:0] core_audio  = { 2'b00, audio_out };
 wire [15:0] buz_audio   = { 1'b0, buzzer, 13'b0 };
 wire [15:0] relay_audio = { 1'b0, (tape_audio ? relay_snd : 8'd0), 7'b0 };
 
-assign AUDIO_L = cin_audio + core_audio + buz_audio + relay_audio;
+wire [15:0] fm_audio = { 4'b0000, fm_audio_out };
+assign AUDIO_L = cin_audio + core_audio + buz_audio + relay_audio + fm_audio;
 assign AUDIO_R = AUDIO_L;
 
 //////////////////////////////////////////////////////////////////
@@ -556,11 +559,11 @@ assign dbg_audio_out  = audio_out;
 assign dbg_core_audio = core_audio;
 assign dbg_wfd0dn = u_core.WFD0Dn;
 assign dbg_wfd0en = u_core.WFD0En;
-assign dbg_psg_bc = {u_core.u_SOUND.bdir, u_core.u_SOUND.bci};
-assign dbg_psg_addr = u_core.u_SOUND.psg_addr;
+assign dbg_psg_bc = u_core.u_SOUND.ym_cmd[1:0];
+assign dbg_psg_addr = u_core.u_SOUND.ym_addr[3:0];
 assign dbg_psg_cen = u_core.u_SOUND.EN_CLK_1_2;
-assign dbg_dac_a = u_core.u_SOUND.u_ym2149_audio.dac_a_r;
-assign dbg_dac_b = u_core.u_SOUND.u_ym2149_audio.dac_b_r;
-assign dbg_dac_c = u_core.u_SOUND.u_ym2149_audio.dac_c_r;
+assign dbg_dac_a = { 4'b0000, u_core.u_SOUND.psg_A };
+assign dbg_dac_b = { 4'b0000, u_core.u_SOUND.psg_B };
+assign dbg_dac_c = { 4'b0000, u_core.u_SOUND.psg_C };
 
 endmodule

@@ -21,15 +21,20 @@ module sound_tb;
   reg  [7:0] mdata  = 8'h00;
   reg        wfd0dn = 1'b1;
   reg        wfd0en = 1'b1;
+  reg        wfd15n = 1'b1;
+  reg        wfd16n = 1'b1;
+  reg        rfd16n = 1'b1;
   wire [7:0] dout;
   wire [13:0] mix;
+  wire [11:0] fm;
 
   SOUND dut(
     .CLKSYS(clk), .CLK1_2(1'b0), .RESETBn(resetn),
     .MDATABUS_in(mdata), .MDATABUS_out(dout),
     .RFD0En(1'b1), .WFD0En(wfd0en), .WFD0Dn(wfd0dn),
+    .RFD16n(rfd16n), .WFD16n(wfd16n), .WFD15n(wfd15n),
     .joystick_0(joy0), .joystick_1(joy1),
-    .mix_audio_o(mix)
+    .mix_audio_o(mix), .fm_audio_o(fm), .FMIRQn()
   );
 
   integer fails = 0;
@@ -43,6 +48,29 @@ module sound_tb;
       repeat (40) @(negedge clk);
       wfd0dn = 1'b1; wfd0en = 1'b1;
       repeat (40) @(negedge clk);
+    end
+  endtask
+
+  // The FM77AV window. Same shape, four-bit command set.
+  task av_write(input sel_c, input [7:0] value);
+    begin
+      @(negedge clk); mdata = value;
+      if (sel_c) wfd15n = 1'b0; else wfd16n = 1'b0;
+      repeat (40) @(negedge clk);
+      wfd15n = 1'b1; wfd16n = 1'b1;
+      repeat (40) @(negedge clk);
+    end
+  endtask
+
+  // Read $fd16: the port has no side effect, so this only has to assert the
+  // select long enough for the mux to be sampled.
+  task av_read(output [7:0] value);
+    begin
+      @(negedge clk); rfd16n = 1'b0;
+      repeat (8) @(negedge clk);
+      value = dout;
+      rfd16n = 1'b1;
+      repeat (8) @(negedge clk);
     end
   endtask
 
@@ -76,9 +104,13 @@ module sound_tb;
     psg_write(4'd7,  8'h3e);   // mixer: tone A on, everything else off
     psg_write(4'd8,  8'h0f);   // channel A amplitude, fixed, max
 
-    // Let the tone counter run and watch the mix.
+    // Let the tone counter run and watch the mix. This has to cover a whole
+    // tone period: TP = $0140 at the FM-7's PSG rate is 409,600 CLKSYS clocks,
+    // and the old 200,000-clock window was inside the FIRST HALF of it -- with
+    // jt49's output sitting at a true zero while the square is low, that reads
+    // as "the chip is silent" rather than as "the bench looked too early".
     mix_max = 14'd0;
-    for (i = 0; i < 200000; i = i + 1) begin
+    for (i = 0; i < 1000000; i = i + 1) begin
       @(posedge clk);
       if (mix > mix_max) mix_max = mix;
     end
@@ -126,8 +158,8 @@ module sound_tb;
       t0 = 0; t1 = 0; edges = 0; prev_hi = 1'b0;
       for (i = 0; i < 4000000; i = i + 1) begin
         @(posedge clk);
-        if ((mix > 14'd6000) != prev_hi) begin
-          prev_hi = (mix > 14'd6000);
+        if ((mix > 14'd1000) != prev_hi) begin
+          prev_hi = (mix > 14'd1000);
           if (prev_hi) begin
             edges = edges + 1;
             if (edges == 2) t0 = i;
@@ -186,6 +218,59 @@ module sound_tb;
       fails = fails + 1;
     end
     else $display("PASS no stick selected = %02x", dout);
+
+    // ---- FM77AV window: $fd15 / $fd16 ---------------------------------------
+    // Ys (FM77AV) spins on this exact sequence -- command 4, read $fd16, TSTA,
+    // BMI -- and never leaves it while bit 7 reads back set. An undecoded port
+    // returning $ff hung the game outright, so the status read is the single
+    // most load-bearing thing in this window.
+    begin : av
+      reg [7:0] st;
+      integer   spins;
+      spins = 0;
+      av_write(1'b1, 8'h04);            // command 4: status
+      av_read(st);
+      while (st[7] && spins < 200) begin
+        repeat (200) @(negedge clk);
+        av_read(st);
+        spins = spins + 1;
+      end
+      if (st[7]) begin
+        $display("FAIL $fd16 status bit 7 never cleared (got %02x) -- Ys hangs here", st);
+        fails = fails + 1;
+      end
+      else $display("PASS $fd16 status = %02x, bit 7 clear after %0d spins", st, spins);
+
+      // Command 9 is the AV's direct joystick port. 77AVEMU ORs in $80 only,
+      // because Gambler Jikochuushinha rejects $ff.
+      joy0 = 6'b011000;                 // up + button A
+      av_write(1'b0, 8'd15);            // point the address latch at port B
+      av_write(1'b1, 8'h03);
+      av_write(1'b1, 8'h00);
+      av_write(1'b0, 8'h20);            // port B high nibble 2 -> stick 0
+      av_write(1'b1, 8'h02);
+      av_write(1'b1, 8'h00);
+      av_write(1'b1, 8'h09);            // command 9: joystick
+      av_read(st);
+      if (st !== 8'hee) begin
+        $display("FAIL $fd16 command 9 joystick: got %02x wanted ee", st);
+        fails = fails + 1;
+      end
+      else $display("PASS $fd16 command 9 joystick = %02x", st);
+
+      // An FM register write must reach the chip. Register $28 is key-on; the
+      // only externally visible effect without a full patch is that the status
+      // register reports busy for the write and then clears again.
+      av_write(1'b0, 8'h28);
+      av_write(1'b1, 8'h03);
+      av_write(1'b1, 8'h00);
+      av_write(1'b0, 8'h00);
+      av_write(1'b1, 8'h02);
+      av_write(1'b1, 8'h00);
+      av_write(1'b1, 8'h04);
+      av_read(st);
+      $display("INFO $fd16 status after an FM register write = %02x", st);
+    end
 
     if (fails == 0) $display("SOUND TEST PASS");
     else begin

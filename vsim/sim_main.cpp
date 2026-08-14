@@ -294,7 +294,23 @@ static int         tape_rewind_frame = -1;
 //   $1f      floppy drive select                             (MFD.v)
 //   $37      VRAM page / display page latch                  (WFD37n)
 //   $38-$3f  palette                                         (PLTREGn)
+// The FM77AV adds more, and this list has to know about them: while it did not,
+// every AV run reported the analog palette, the MMR bank file and the YM2203 as
+// undecoded -- tens of thousands of accesses, all of them implemented. Read as a
+// to-do list that sends you to build things that already work, with the one
+// genuine entry buried in the middle.
+//   $10      initiator ROM overlay control                  (AVMEM.v)
+//   $12-$13  320-mode select / sub-monitor bank             (AVMEM.v)
+//   $15-$16  YM2203 command and data                        (SOUND.v)
+//   $30-$34  analog palette index and B/R/G components      (PAL.v)
+//   $80-$93  MMR banks, segment, TWR, enables               (AVMEM.v)
 static bool port_is_decoded(uint8_t p) {
+	if (opt_machine_av &&
+	    (p == 0x10 || p == 0x12 || p == 0x13 ||
+	     p == 0x15 || p == 0x16 ||
+	     (p >= 0x30 && p <= 0x34) ||
+	     (p >= 0x80 && p <= 0x93)))
+		return true;
 	return (p <= 0x07) || (p >= 0x0d && p <= 0x0f) ||
 	       (p >= 0x18 && p <= 0x1d) || p == 0x1f ||
 	       p == 0x37 || (p >= 0x38 && p <= 0x3f);
@@ -1011,10 +1027,15 @@ static void print_run_stats() {
 	printf("I/O cycles ($fdxx): %ld\n", stat_io_cycles);
 	printf("audio             : PSG max %u (nonzero %ld)  core_audio max %u (nonzero %ld)  AUDIO_L max %u\n",
 	       au_out_max, au_out_nz, au_core_max, au_core_nz, au_l_max);
-	printf("PSG bus           : $fd0d writes %ld  $fd0e writes %ld  cen ticks %ld  {bdir,bc1} seen %s%s%s%s\n",
+	// The command register replaced the {bdir,bc1} pair when the PSG became a
+	// jt03: the FM-7 writes 0-3 here, the FM77AV also uses 4 (status) and 9
+	// (joystick) through $fd15. A run with $fd0e writes but no command 2 is
+	// still the signature of a broken handshake -- software programming the
+	// chip and nothing landing.
+	printf("PSG bus           : $fd0d writes %ld  $fd0e writes %ld  cen ticks %ld  cmd[1:0] seen %s%s%s%s\n",
 	       psg_d_strobes, psg_e_strobes, psg_cen_ticks,
-	       (psg_bc_seen&1)?"00 ":"", (psg_bc_seen&2)?"01 ":"",
-	       (psg_bc_seen&4)?"10 ":"", (psg_bc_seen&8)?"11 ":"");
+	       (psg_bc_seen&1)?"0 ":"", (psg_bc_seen&2)?"1 ":"",
+	       (psg_bc_seen&4)?"2 ":"", (psg_bc_seen&8)?"3 ":"");
 	printf("PSG channels      : dac_a max %u  dac_b max %u  dac_c max %u\n",
 	       dac_a_max, dac_b_max, dac_c_max);
 	printf("keyboard          : %ld strobes, codes seen $%02x%s\n",

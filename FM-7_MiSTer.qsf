@@ -288,7 +288,6 @@ set_global_assignment -name VERILOG_FILE rtl/wd1793_dpram.v
 set_global_assignment -name VERILOG_FILE rtl/x74138.v
 set_global_assignment -name VERILOG_FILE rtl/x74139.v
 set_global_assignment -name VERILOG_FILE rtl/x74244.v
-set_global_assignment -name VERILOG_FILE rtl/ym2149_audio.v
 set_global_assignment -name QIP_FILE rtl/pll/pll_0002_q13.qip
 set_global_assignment -name VERILOG_FILE rtl/pcm.v
 set_instance_assignment -name FAST_INPUT_REGISTER ON -to SDRAM_DQ[*]

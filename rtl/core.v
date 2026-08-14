@@ -18,6 +18,7 @@ module core(
   output motor,
   output SVIDEOCLK,
   output [13:0] audio_out,
+  output [11:0] fm_audio_out,
   // Kanji ROM SDRAM channel -- the image is too big for block RAM.
   output [16:0] KANJI_ADDR,
   output        KANJI_RD,
@@ -142,6 +143,16 @@ wire BAB;
 wire BSB;
 wire RWB;
 wire WTQEn;
+// $fd15/$fd16, the FM77AV's YM2203 window (rtl/SOUND.v). These must sit after
+// WTQEn/RDQEn are declared: naming a net before its declaration makes Verilog
+// invent a ONE-BIT implicit wire, and -Wno-fatal lets that through as a
+// warning. Declared up with the other data-bus wires instead of here, the
+// write strobes came out permanently inactive and the main CPU ran away
+// through the whole address space at 32 instructions a frame.
+wire AV_YM_SEL = machine_av && (MADDRBUS == 16'hfd16);
+wire WFD15n = ~(machine_av && (MADDRBUS == 16'hfd15) && ~WTQEn);
+wire WFD16n = ~(AV_YM_SEL && ~WTQEn);
+wire RFD16n = ~(AV_YM_SEL && ~RDQEn);
 wire REFGRVTn;
 wire RDEn;
 wire RWBn;
@@ -326,6 +337,7 @@ assign MDATABUS_in =
   ~(RFD22n & RFD23n) ? KANJI_dout :
   ~PLTREGn ? PALDATA :
   AVIO_sel ? AVIO_dout :
+  ~RFD16n ? SOUND_dout :
   ~IOSn ? 8'hff :
 
   ~(SUBSELn | RDQEn) ? SRDATA_out :
@@ -1122,6 +1134,12 @@ KEYBOARD KEYBOARD(
 );
 
 
+// $fd15/$fd16 are the FM77AV's YM2203 window. They do not exist on the FM-7 --
+// there they belong to the optional WHG/THG sound cards, which this core does
+// not have -- so the decode is gated on the machine family. Both are plain
+// address compares against the existing bus strobes rather than new MDECODE
+// outputs, because MDECODE transliterates the FM-7 schematic and the AV's
+// registers are not on it.
 SOUND u_SOUND(
   .CLKSYS       ( CLKSYS       ),
   .CLK1_2       ( CLK1_2       ),
@@ -1131,9 +1149,14 @@ SOUND u_SOUND(
   .RFD0En       ( RFD0En       ),
   .WFD0En       ( WFD0En       ),
   .WFD0Dn       ( WFD0Dn       ),
+  .RFD16n       ( RFD16n       ),
+  .WFD16n       ( WFD16n       ),
+  .WFD15n       ( WFD15n       ),
   .joystick_0   ( joystick_0   ),
   .joystick_1   ( joystick_1   ),
-  .mix_audio_o  ( audio_out    )
+  .mix_audio_o  ( audio_out    ),
+  .fm_audio_o   ( fm_audio_out ),
+  .FMIRQn       (              )
 );
 
 
