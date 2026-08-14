@@ -19,7 +19,11 @@ log=$(mktemp)
 # uniform "nothing boots" result rather than as a broken harness.
 cd "$VSIM" || exit 1
 
-"$EXE" --headless --bootrom 0 --disk "$img" \
+# MACHINE selects the family. FM77AV titles will not boot as an FM-7 -- they
+# need the initiator ROM and the AV memory map -- so sweeping them without it
+# reports a uniform "nothing boots", which reads as a core failure rather than
+# as the wrong switch.
+"$EXE" --headless --bootrom 0 --machine "${MACHINE:-fm7}" --disk "$img" \
        --stop-at-frame "$FRAMES" --screenshot "$SHOT" \
        --screenshot-name "$png" >"$log" 2>&1
 

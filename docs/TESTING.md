@@ -142,6 +142,46 @@ Identical output means the change is not responsible — but see the
 measurement traps in `docs/REFERENCE.md` first: identical output is also what a
 patch that never reached the binary looks like.
 
+## The FM77AV breadth sweep
+
+```sh
+cd vsim/sweep
+./av-sweep.sh /tmp/avsw 8 2000            # outdir, jobs, frames
+python3 classify.py /tmp/avsw/shots /tmp/avsw/results.tsv
+```
+
+The AV set is picked out of `software/D77` by `(FM77AV)` in the file name --
+that is how the collection marks the AV release of titles that also shipped for
+the FM-7. Ys, Silpheed, Dragon Buster and others exist as both, and **the AV
+disk will not boot as an FM-7**, so `sweep_one.sh` takes a `MACHINE` env var.
+Sweeping the AV set without it reports a uniform "nothing boots", which reads
+as a core failure rather than as the wrong switch.
+
+### Screenshot size is not enough triage here
+
+The FM-7 sweep classifies on PNG size: ~3790 bytes is blank. That does not
+survive contact with the AV, which has a third state:
+
+| bytes | what it is |
+|---|---|
+| ~3790 | blank |
+| **~5182** | **the AV F-BASIC banner** — the disk did *not* boot and the machine fell through to BASIC. By size alone this reads as "renders something". |
+| 4000+ | could be either a real frame or a near-blank with a line of text |
+
+`classify.py` separates them on coverage and colour count, which is what
+actually distinguishes them: the banner is one colour over ~2% of the screen, a
+320x200 game frame has many colours over a large area. It merges the
+instruction rates back in, because a screenshot still cannot tell "idling at a
+finished screen" from "crashed" -- that part of `sweep.sh`'s method is
+unchanged.
+
+### AV titles need far more frames than FM-7 titles
+
+The 2019 demo needs ~560 frames just to reach its gradient, and games do
+considerably more disk loading before drawing anything. **A blank at 700 frames
+is not evidence of a broken title.** Sweep the AV set at 2000 and compare
+against the 700-frame run before calling anything a failure.
+
 ## Joysticks
 
 They hang off the PSG's I/O ports, so they ride on the same `$fd0d`/`$fd0e` bus
