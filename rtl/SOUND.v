@@ -23,6 +23,7 @@ module SOUND(
   input CLKSYS,
   input CLK1_2,
   input RESETBn,
+  input machine_av,
   input [7:0] MDATABUS_in,
   output [7:0] MDATABUS_out,
 
@@ -62,8 +63,35 @@ wire reset = ~RESETBn;
 // but whether the AV's real master clock compensates is UNVERIFIED -- MAME and
 // CSP both say 4.9152/4 = 1.2288 MHz, which cannot be reconciled with both
 // machines sounding alike. This needs an ear, not another derivation.
-wire EN_CLK_1_2;
-clk_en #(CORE_CLK_1_2) u_ck_en(.ref_clk(CLKSYS), .cen(EN_CLK_1_2));
+// MEASURED, not derived. `make sound-test` programs TP = $0140 and prints the
+// tone in Hz for a 48 MHz CLKSYS. With a 1.2 MHz cen it came out at 117.32 Hz
+// where an AY-3-8910 at the FM-7's documented 1.2288 MHz PSG clock plays
+// 1228800/(16*320) = 240.00 Hz -- exactly half, on every tone period tried.
+// Both references give that clock (CSP fm7.cpp:831, MAME fm7.cpp:1893), and the
+// retired ym2149_audio was flat by the same factor, so this is an old bug the
+// jt03 swap inherited rather than introduced.
+//
+// The factor of two is jt12's SSG chain: with its jt49 wrapped at CLKDIV=2 and
+// sel=1, and the prescaler at its reset /4, the tone counter ends up running at
+// cen/2 rather than cen/4. So `cen` has to be twice the nominal chip clock for
+// the SSG to land on the AY's rate.
+//
+// Which is why this is machine-dependent, and it is not arbitrary. The FM77AV
+// initiator selects registers $2D and $2E, which halves the YM2203's SSG
+// prescaler for the rest of the run -- so on the AV the same chain already
+// doubles the rate and the nominal 1.2288 MHz is the right number. The FM-7
+// never writes those registers, its prescaler stays at reset, and it needs the
+// doubled clock. Both machines end up with the SSG at 1.2288 MHz, which is the
+// only arrangement in which FM-7 software plays at the same pitch on both.
+//
+// Residual, unchanged: 48/40 = 1.2 MHz and 48/20 = 2.4 MHz against a true
+// 1.2288/2.4576, so both sit 2.3% flat -- about 0.4 semitone. Fixing that needs
+// a fractional divider and is a separate job.
+localparam CORE_CLK_2_4 = 19;   // 48/2.4 - 1
+wire EN_CLK_1_2, EN_CLK_2_4;
+clk_en #(CORE_CLK_1_2) u_ck_en   (.ref_clk(CLKSYS), .cen(EN_CLK_1_2));
+clk_en #(CORE_CLK_2_4) u_ck_en_2 (.ref_clk(CLKSYS), .cen(EN_CLK_2_4));
+wire YM_CEN = machine_av ? EN_CLK_1_2 : EN_CLK_2_4;
 
 //----------------------------------------------------------------------------
 // The two register windows
@@ -239,7 +267,7 @@ wire signed [15:0] fm_snd;
 jt03 u_jt03(
   .rst      ( reset        ),
   .clk      ( CLKSYS       ),
-  .cen      ( EN_CLK_1_2   ),
+  .cen      ( YM_CEN       ),
   .din      ( jt_din       ),
   .addr     ( jt_addr      ),
   .cs_n     ( ~jt_write    ),

@@ -1144,6 +1144,7 @@ SOUND u_SOUND(
   .CLKSYS       ( CLKSYS       ),
   .CLK1_2       ( CLK1_2       ),
   .RESETBn      ( RESETBn      ),
+  .machine_av   ( machine_av   ),
   .MDATABUS_in  ( MDATABUS_out ),
   .MDATABUS_out ( SOUND_dout   ),
   .RFD0En       ( RFD0En       ),

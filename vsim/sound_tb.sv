@@ -29,7 +29,7 @@ module sound_tb;
   wire [11:0] fm;
 
   SOUND dut(
-    .CLKSYS(clk), .CLK1_2(1'b0), .RESETBn(resetn),
+    .CLKSYS(clk), .CLK1_2(1'b0), .RESETBn(resetn), .machine_av(1'b0),
     .MDATABUS_in(mdata), .MDATABUS_out(dout),
     .RFD0En(1'b1), .WFD0En(wfd0en), .WFD0Dn(wfd0dn),
     .RFD16n(rfd16n), .WFD16n(wfd16n), .WFD15n(wfd15n),
@@ -171,13 +171,24 @@ module sound_tb;
         $display("FAIL PITCH: only %0d edges seen -- no tone", edges);
         fails = fails + 1;
       end
-      else if (((t1 - t0) / 4) / (2 * 320 * 40) != 16) begin
+      else if (((t1 - t0) / 4) / (2 * 320 * 20) != 16) begin
         $display("FAIL PITCH: divider %0d, want 16 (8 = octave sharp, 32 = octave flat)",
-                 ((t1 - t0) / 4) / (2 * 320 * 40));
+                 ((t1 - t0) / 4) / (2 * 320 * 20));
         fails = fails + 1;
       end
-      else $display("PASS PITCH divider = 16 (AY-3-8910), period %0d clocks",
-                    (t1 - t0) / 4);
+      else begin
+        $display("PASS PITCH divider = 16 (AY-3-8910), period %0d clocks",
+                 (t1 - t0) / 4);
+        // The divider check above is a RATIO and says nothing about absolute
+        // pitch. Print that too, because "is the pitch right" is the question
+        // an ear asks and a divider cannot answer. CLKSYS is 48 MHz in the
+        // real core, and an AY-3-8910 at the FM-7's documented 1.2288 MHz PSG
+        // clock plays TP=320 at 1228800/(16*320) = 240.0 Hz -- CSP fm7.cpp:831
+        // and MAME fm7.cpp:1893 both give that clock.
+        $display("PITCH  measured %0d.%02d Hz at 48 MHz CLKSYS, AY-3-8910 wants 240.00 Hz",
+                 48000000 / ((t1 - t0) / 4),
+                 (48000000 * 100 / ((t1 - t0) / 4)) % 100);
+      end
     end
 
     // ---- joysticks ---------------------------------------------------------
