@@ -53,6 +53,7 @@ wire [7:0] AV_SHARED_DOUT;
 wire [7:0] AVIO_dout;
 wire       AVIO_sel;
 wire       AVTWR_sel;
+wire       AVINITROM_en;
 wire [1:0] AV_SUBMON_SEL;
 wire       AV_SUBMON_RESET;
 wire       AV_MODE_320;
@@ -93,6 +94,7 @@ wire [7:0] SDATABUS_in;
 wire [7:0] SDATABUS_out;
 wire [7:0] SMEM_dout;
 wire [7:0] AV_D430_dout;
+wire AV_NMI_MASK;
 wire       AV_SUBMON_STATUS;
 wire [7:0] AV_KBD_dout;
 wire       AV_KBD_sel;
@@ -420,7 +422,8 @@ ROMS u_ROMS(
   .RAM1HB1n ( RAM1HB1n    ),
   .SW2      ( bootrom_sel ),
   .machine_av ( machine_av ),
-  .twr_active ( AVTWR_sel )
+  .twr_active ( AVTWR_sel ),
+  .av_initrom_en ( AVINITROM_en )
 );
 
 // MRAM is the FM-7 machine's 64 KB. In AV mode that same machine lives at
@@ -463,6 +466,7 @@ AVMEM u_AVMEM(
   .IODOUT      ( AVIO_dout    ),
   .IOSEL       ( AVIO_sel     ),
   .TWRSEL      ( AVTWR_sel    ),
+  .INITROM_EN  ( AVINITROM_en ),
   .SUBMON_SEL  ( AV_SUBMON_SEL ),
   .SUBMON_RESET ( AV_SUBMON_RESET ),
   .SUBMON_STATUS_CLEAR ( AV_SUBMON_STATUS_CLEAR ),
@@ -658,12 +662,41 @@ wire sub_vram_sel = ~(SDRAMBn & SDRAMGn & SDRAMRn);  // sub is addressing VRAM
 wire sub_vram_wait = sub_vram_sel & ~SCASSEL;        // ...while the raster owns it
 wire SCPUCLK_w = SCPUCLK & ~sub_vram_wait;
 
+// FM77AV: $D430 bit 7 masks the sub CPU's 20 ms NMI (SMEM.v holds the latch).
+// The FM-7 has no $D430 and its NMI is unconditional, so this is gated on
+// machine_av; both references agree on the bit and on the sense (CSP
+// display.cpp:827 `nmi_enable = ((val & 0x80) == 0)`, 77AVEMU fm77avio.cpp:614
+// `state.subNMIMask=(0!=(value&0x80))`).
+//
+// WHY IT MATTERS: the sub monitor's NMI handler at $FEBF opens with
+// `LDA <$0a` -- a read of $D40A, which CLEARS the sub-busy flag. A title that
+// hands the sub a block-transfer stub masks the NMI for exactly that reason.
+// With the mask ignored, an NMI landing mid-transfer cleared BUSY behind the
+// stub's back, the main CPU read $FD05 bit 7 as "sub idle" while the sub was
+// still copying, and ran a whole extra mailbox iteration -- so one 8-byte
+// block was overwritten before the sub ever read it. Ys (FM77AV) lost 3 of
+// its 294 download blocks that way and never started.
+//
+// SCLKNMIn is a 50% square wave, not a pulse, so the mask cannot simply gate
+// the level: unmasking while it is still low would manufacture a second
+// falling edge and a second NMI. Re-evaluate the mask only while the NMI is
+// inactive; masking during an active pulse deasserts it (CSP does the same,
+// `if(!nmi_enable) do_nmi(false)` on the write) and it stays deasserted for
+// the rest of that pulse.
+reg av_nmi_pass = 1'b1;
+always @(posedge CLKSYS) begin
+  if (~SRESETn)         av_nmi_pass <= 1'b1;
+  else if (SCLKNMIn)    av_nmi_pass <= ~AV_NMI_MASK;
+  else if (AV_NMI_MASK) av_nmi_pass <= 1'b0;
+end
+wire SCLKNMIn_gated = SCLKNMIn | (machine_av & ~av_nmi_pass);
+
 SCPU u_SCPU(
   // $FD13 monitor-bank writes reset only the sub-system; this must restart
   // the CPU so it fetches the newly selected monitor's reset vector.
   .RESETBn      ( SRESETn      ),
   .SCPUCLK      ( SCPUCLK_w    ),
-  .SCLKNMIn     ( SCLKNMIn     ),
+  .SCLKNMIn     ( SCLKNMIn_gated ),
   .SUBIRQn      ( SUBIRQn      ),
   .KSTROBEn     ( KSTROBEn     ),
   .SHALTn       ( SHALTn       ),
@@ -807,7 +840,8 @@ SMEM u_SMEM(
   .av_d430_out  ( AV_D430_dout ),
   .av_display_page ( AV_DISPLAY_PAGE ),
   .av_active_page  ( AV_ACTIVE_PAGE  ),
-  .av_vram_bank    ( AV_VRAM_BANK    )
+  .av_vram_bank    ( AV_VRAM_BANK    ),
+  .av_nmi_mask     ( AV_NMI_MASK     )
 );
 
 // shared RAM

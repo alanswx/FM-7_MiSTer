@@ -17,7 +17,8 @@ module ROMS (
   output RAM1HB1n,
   input [1:0] SW2,
   input machine_av,
-  input twr_active
+  input twr_active,
+  input av_initrom_en
 );
 
 assign FCXXn = ~&MADDRBUS[15:10];
@@ -33,7 +34,10 @@ wire [7:0] av_fbasic_q;
 // FM77AV reset overlays. The initiator is visible at $6000-$7fff and the AV
 // F-BASIC ROM follows at $8000-$fbff. $fc00-$ffff remains the live machine I/O
 // and RAM window; AVMEM supplies the writable boot RAM and MMR/TWR state.
-wire av_initiate_sel = machine_av && !twr_active &&
+// av_initrom_en is AVMEM's $FD10 bit 1 latch: on at reset, cleared by the
+// initiator's own last instruction so the RAM underneath becomes visible.
+// Leaving it permanently on deadlocked Ys (FM77AV) -- see AVMEM.v.
+wire av_initiate_sel = machine_av && !twr_active && av_initrom_en &&
                        (((MADDRBUS >= 16'h6000) && (MADDRBUS < 16'h8000)) ||
                         (MADDRBUS >= 16'hfffe));
 wire av_fbasic_sel   = machine_av && (MADDRBUS >= 16'h8000) && FCXXn;

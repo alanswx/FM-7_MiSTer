@@ -25,7 +25,8 @@ module SMEM(
   output [7:0] av_d430_out,
   output av_display_page,
   output av_active_page,
-  output av_vram_bank
+  output av_vram_bank,
+  output av_nmi_mask
 );
 
 wire [7:0] m153_q;
@@ -52,6 +53,11 @@ assign av_d430_out = {~SBLANKn, 2'b11, ~alu_busy, 1'b1, ~SVSYNCn, 1'b1, submon_s
 assign av_display_page = av_d430_reg[6];
 assign av_active_page = av_d430_reg[5];
 assign av_vram_bank = av_d430_reg[5];
+// Bit 7 masks the sub CPU's 20 ms NMI (1 = masked).  The FM-7 has no such
+// register and its NMI is unconditional; core.v gates on machine_av.  Reset
+// leaves it 0 = enabled, matching CSP's `nmi_enable = true` and 77AVEMU's
+// `state.subNMIMask=false`.
+assign av_nmi_mask = av_d430_reg[7];
 
 // $D430 is a write latch on the sub-system register bus.  SREGADDR/SREGWEn are
 // decode outputs rather than a clock, and the address can already be moving to

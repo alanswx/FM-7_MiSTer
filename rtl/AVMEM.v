@@ -28,6 +28,7 @@ module AVMEM(
   output reg [7:0] IODOUT,
   output       IOSEL,
   output       TWRSEL,
+  output       INITROM_EN,
   output [1:0] SUBMON_SEL,
   output       SUBMON_RESET,
   output       SUBMON_STATUS,
@@ -56,6 +57,11 @@ wire mode_io_sel = machine_av && (MADDRBUS == 16'hfd12);
 wire io_sel = machine_av && (((MADDRBUS >= 16'hfd80) && (MADDRBUS <= 16'hfd93)) ||
                              mode_io_sel);
 wire submon_io_sel = machine_av && (MADDRBUS == 16'hfd13);
+// $FD10 bit 1 = 1 removes the initiator ROM overlay from $6000-$7FFF (and the
+// reset-vector bytes), leaving RAM there. It is write-only -- neither CSP nor
+// 77AVEMU has a read handler -- so it is deliberately NOT part of io_sel,
+// which drives the $FDxx read mux.
+wire initrom_io_sel = machine_av && (MADDRBUS == 16'hfd10);
 assign IOSEL = io_sel;
 assign AV_MODE_320 = av_mode_320;
 
@@ -74,6 +80,20 @@ reg       bootram_write_enable;
 reg [1:0] submon_sel;
 reg [7:0] submon_reset_count;
 reg       submon_status;
+// The initiator ROM overlay. On at reset (77AVEMU fm77avmemory.cpp:471
+// `state.avBootROM=true` for MACHINETYPE_FM77AV and up; CSP's initiator_enabled
+// likewise), removed by $FD10 bit 1.
+//
+// It used to be permanently on, which is invisible until a title loads code
+// into the RAM under it and jumps there. Ys does exactly that: its second-stage
+// loader reads a file into $6000-$7FFF and calls it through a vector, and with
+// the overlay stuck on the CPU ran the initiator's cold-boot code instead --
+// re-seeding boot RAM and restarting the $5000 loader. The sub CPU, still
+// running the game's own downloaded dispatcher, then never answered the
+// monitor-protocol block the restarted loader wrote to the shared window, and
+// both CPUs waited on each other forever.
+reg       initrom_enable;
+assign INITROM_EN = initrom_enable;
 assign SUBMON_SEL = submon_sel;
 assign SUBMON_RESET = (submon_reset_count != 8'd0);
 assign SUBMON_STATUS = submon_status;
@@ -81,14 +101,14 @@ assign SUBMON_STATUS = submon_status;
 wire twr_sel = machine_av && twr_enable &&
                (MADDRBUS >= 16'h7c00) && (MADDRBUS < 16'h8000);
 assign TWRSEL = twr_sel;
-wire initiator_sel = machine_av &&
+wire initiator_sel = machine_av && initrom_enable &&
                      (((MADDRBUS >= 16'h6000) && (MADDRBUS < 16'h8000)) ||
                       (MADDRBUS >= 16'hfffe));
 wire fbasic_sel = FBASIC_ROM_SEL;
 
 wire av_write = machine_av && ~WTQEn;
 wire bootram_write = av_write && bootram_sel && bootram_write_enable;
-wire mmr_write = av_write && (io_sel || submon_io_sel);
+wire mmr_write = av_write && (io_sel || submon_io_sel || initrom_io_sel);
 
 // TWR maps the 1 KB window at $7c00-$7fff into page zero. MMR is checked only
 // below $fc00; the entire $fc00-$ffff range stays on the physical FM77AV page.
@@ -273,6 +293,7 @@ always @(posedge CLKSYS) begin
     submon_sel          <= 2'd0; // Type C monitor
     submon_reset_count  <= 8'd0;
     submon_status       <= 1'b0;
+    initrom_enable      <= 1'b1;
     mmr[0][0] <= 6'd0; mmr[0][1] <= 6'd0; mmr[0][2] <= 6'd0; mmr[0][3] <= 6'd0;
     mmr[0][4] <= 6'd0; mmr[0][5] <= 6'd0; mmr[0][6] <= 6'd0; mmr[0][7] <= 6'd0;
     mmr[0][8] <= 6'd0; mmr[0][9] <= 6'd0; mmr[0][10] <= 6'd0; mmr[0][11] <= 6'd0;
@@ -301,6 +322,9 @@ always @(posedge CLKSYS) begin
 
     if (mmr_write) begin
       case (MADDRBUS[7:0])
+      // CSP fm7_mainio.cpp:1603 `flag = ((data & 0x02) == 0)`;
+      // 77AVEMU fm77avmemory.cpp:325 `state.avBootROM=(0==(data&2))`.
+      8'h10: initrom_enable <= ~DIN[1];
       8'h12: av_mode_320 <= DIN[6];
       8'h80, 8'h81, 8'h82, 8'h83,
       8'h84, 8'h85, 8'h86, 8'h87,
