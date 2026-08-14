@@ -328,6 +328,41 @@ paths behind the same family signal.
 Research and reference addresses are in
 `docs/FM77AV.md`.
 
+### The YM2203 is missing entirely, and jt03 is the way in
+
+`$FD15`/`$FD16` are **not decoded at all** — no `ym2203` anywhere in `rtl/` —
+while software writes them constantly (Thexder alone: 1572 writes to `$15`, 524
+to `$16`, all landing in the UNDECODED list). Per `docs/FM77AV.md` the AV has
+one YM2203 whose SSG half is `$FD0D`/`$FD0E`, so today we emulate the SSG half
+with `ym2149_audio` and none of the FM half.
+
+`jt03` in <https://github.com/jotego/jt12> is that chip. Facts checked, not
+assumed:
+
+- **Licence.** jt12/jt49 are GPLv3-**or-later**; this repo's `LICENSE` is GPLv2
+  but `FM-7_MiSTer.sv` and the MiSTer `sys/` framework both say *"version 2 …
+  or (at your option) any later version"*. Compatible — and the combined work
+  then ships as GPLv3. That is a one-way door, so it is a decision, not a
+  detail.
+- **It is the whole chip.** `jt03` carries the embedded YM2149, exposing
+  `psg_snd`, `fm_snd` and a combined `snd` — matching the AV's one-chip layout
+  rather than bolting a second device alongside.
+- **It has real I/O ports** (`IOA_in/IOB_in/IOA_out/IOB_out/IOA_oe/IOB_oe`).
+  The joysticks hang off those on real hardware. `SOUND.v` currently snoops the
+  bus to fake them precisely because `ym2149_audio` "has no I/O ports at all";
+  that hack can go.
+- **The bus maps cleanly.** `jt03` takes `din/addr/cs_n/wr_n`, where `addr`
+  selects register-vs-data. The `$fd0d` command values measured off Thexder's
+  bus land straight on it: command 3 (latch address) → `addr=0`, command 2
+  (write data) → `addr=1`.
+
+Cost to be aware of before starting: it replaces `ym2149_audio`, so the PSG
+work already done — the `sel_n_i` divider, the pitch, the joystick encoding —
+gets re-verified against a different implementation. `make sound-test` asserts
+all three, so a regression shows immediately. **The gate counters may legitimately
+move**, because `$fd0e` reads become `jt03`'s `dout` and the joystick read path
+changes; both are CPU-visible.
+
 ### FM77AV titles: 59 of 68 are blank, and that is the next AV job
 
 The 2019 demo renders perfectly and matches 77AVEMU plane-for-plane, but it
