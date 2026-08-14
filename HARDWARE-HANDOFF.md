@@ -6,6 +6,92 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+## Status at `9a45326` — jt03 verified, sound still fast, joystick still dead
+
+**Builds and fits: 23,325/41,910 ALMs (56%), 516/553 RAM blocks (93%), 34 DSPs,
+zero negative-slack paths.** Deployed, with `releases/boot.rom` alongside the
+core.
+
+### The chip swap is clean
+
+jt03 replacing `ym2149_audio` was the risky change, so it was measured rather
+than assumed. Same title, same capture path, before and after:
+
+| build | peak | dominant tones |
+|---|---|---|
+| ym2149 (`4b88cbe`) | 7192 | 156 Hz (D#2), 73 Hz (D1), 139 Hz |
+| **jt03 (`9a45326`)** | 6503 | **156 Hz (D#2)**, 73 Hz (D1), 78 Hz |
+
+Same pitches, same octave, comparable level — the new chip reproduces the old
+one. FM-7 regression clean: Thexder, Ys, Hydlide II, Archon, Xevious all render,
+Hydlide II byte-identical.
+
+Audio is captured off the HDMI capture card (`arecord -D hw:3,0`), which is how
+this side can now measure pitch without ears.
+
+### Sound is still roughly a third too fast — confirmed by ear AND by measurement
+
+`1346e0e` predicted the dominant tone would land near **117 Hz** after the
+`sel_n_i` fix. Hardware measures **156 Hz** on the same title. Ratio **1.33** —
+not the octave bug returning, but real, and the human listener independently
+reports it still sounds fast.
+
+Caveat on the number: this side's window is the loudest second of a 12 s capture
+taken ~40 s after load, while the prediction came from a 900-frame sim run, so
+the two may simply be different passages. **A same-passage sim-vs-hardware A/B is
+what settles it** and has not been done.
+
+Note the known `CORE_CLK_1_2 = 39` residual makes pitches ~2.3% **flat**, so it
+cannot explain sounding sharp. Something else is.
+
+### Joystick: bound in the OSD, never reaches the core
+
+A real Xbox 360 pad is attached (`event0`/`js0`). MiSTer falls back to its
+default mapping — no per-core map is needed, and the OSD's define-buttons screen
+shows A/B bound when the buttons are pressed. **The presses do not reach the
+core.**
+
+The chip-side path was traced and appears correct, which is worth recording so
+nobody re-treads it:
+
+| checked | result |
+|---|---|
+| `IOB_out = regarray[15]` (`jt49.v:66`) | ungated by port direction, so selection is not blocked |
+| read of register 14 | `4'he: dout <= port_A` with `port_A = IOA_in` (`jt49.v:67,249`) — the stick value does reach the CPU |
+| bit mapping in `SOUND.v` | `{2'b11,~joy[5],~joy[4],~joy[0],~joy[1],~joy[2],~joy[3]}` = bit0 up, bit1 down, bit2 left, bit3 right, bit4/5 triggers, active low — matches `joystick.cpp` |
+| selection | `iob_out[7:4]==2` stick 0, `==5` stick 1 — matches CSP |
+
+So the fault is either **upstream** — `joy1[5:0]` from `hps_io` never carrying
+the bits — or the premise is wrong and **Thexder does not use the stick to
+start** at all.
+
+**The decisive test is sim-side and costs one run.** `SOUND.v` already has the
+instrumentation: `make DEBUG_JOY=1` prints `JOYSEL` per stick-select write and
+`JOYRD` per port read. Run Thexder with `--joystick`:
+
+- no `JOYSEL` at all → Thexder never polls the stick; it wants a key, and the
+  joystick is a red herring for *starting* it
+- `JOYSEL` present but `JOYRD` returns `$ff` → selection is not landing, look at
+  `iob_out`
+- `JOYRD` returns live bits and the game ignores them → the fault is above the PSG
+
+### Injecting a joystick from this side, without mrext
+
+mrext only sends keyboard messages. `tools/mister-vjoy.py` creates a virtual pad
+on the MiSTer through `/dev/uinput` in pure ctypes — no evdev, which is not
+installed there. It impersonates the attached pad's VID/PID (045e:028e) so
+MiSTer applies the existing map rather than treating it as a new device, and it
+really does enumerate: `js1` and `event6` appear while it is alive.
+
+```sh
+scp tools/mister-vjoy.py root@<mister>:/tmp/ && ssh root@<mister> 'python3 /tmp/mister-vjoy.py a'
+```
+
+Buttons a/b/x/y/start/select and the hat directions. Useful once we know what to
+inject; pressing them at Thexder's title does not start it.
+
+---
+
 ## Status at `a44c8b7` — FM77AV video, FM-7 sound, and it fits again
 
 **Builds and fits: 22,745/41,910 ALMs (54%), 508/553 RAM blocks (92%), fitter
