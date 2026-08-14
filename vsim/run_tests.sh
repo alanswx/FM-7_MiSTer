@@ -172,6 +172,28 @@ if [ -f "$AVDISK" ]; then
   TESTS+=("av-demo|--machine fm77av --disk '$AVDISK'")
 fi
 
+# Curated AV titles. Chosen from the 68-image breadth sweep (see
+# vsim/sweep/av-sweep.sh and docs/TESTING.md) on two criteria: they render real
+# graphics, and they render the SAME thing at 700 and 2000 frames. The second
+# one matters -- most AV titles are still drawing at the gate's frame count, and
+# a reference blessed mid-draw would fail on any timing change for no reason.
+#
+#   Kohakuiro no Yuigon  81% coverage, 18 colours -- the strongest exercise of
+#                        the 320-mode plane path outside the demo
+#   Wizardry IV          colour sprites over text, a different draw path
+#
+# Deliberately NOT here: Tetris, which renders its title screen but goes from
+# 21% to 57% coverage between 700 and 2000 frames, so it is mid-draw at the
+# gate's 620. It belongs in the sweep, not the gate.
+# Short test names on purpose: the name becomes the reference file name, and
+# "av-Kohakuiro no Yuigon (FM77AV) (Disk 1).png" is a poor thing to have in git.
+AVTITLES=${AVTITLES:-../software/D77}
+av_add() {   # <short-name> <disk basename>
+  [ -f "$AVTITLES/$2.d77" ] && TESTS+=("$1|--machine fm77av --disk '$AVTITLES/$2.d77'")
+}
+av_add av-kohakuiro "Kohakuiro no Yuigon (FM77AV) (Disk 1)"
+av_add av-wizardry4 "Wizardry IV (FM77AV) (Disk A)"
+
 # One entry per tape image found. Types LOAD"" + RETURN, which is what F-BASIC
 # needs before it will start the motor -- t77_decode.v only advances while
 # PERIPHERAL.v has the motor relay on.

@@ -327,3 +327,38 @@ unexercised. Then connect host key events to AV scan codes and add the YM2203
 paths behind the same family signal.
 Research and reference addresses are in
 `docs/FM77AV.md`.
+
+### FM77AV titles: 59 of 68 are blank, and that is the next AV job
+
+The 2019 demo renders perfectly and matches 77AVEMU plane-for-plane, but it
+exercises the video path and almost nothing else. A breadth sweep over the 68 AV
+images in `software/D77` (`vsim/sweep/av-sweep.sh`, classified with
+`classify.py`) says the game path is a different story. At **2000** frames:
+
+| count | |
+|---|---|
+| 5 | renders graphics — Kohakuiro no Yuigon, Wizardry IV, Tetris, Gambler Jikochuushinha, Dragon Buster |
+| 4 | AV F-BASIC banner — the disk did not boot and fell through to BASIC |
+| 59 | blank |
+
+**The blanks are not crashes.** Three separate pieces of evidence:
+
+- Argo's FDC loader is actively working at frame 800 — one `FLOPPY DMA` line per
+  sector, walking up through track 7. The disk path is fine; whatever fails,
+  fails during or after a long load.
+- Main-CPU rates are normal across the blanks (4000–6200 per frame), which the
+  triage in `docs/TESTING.md` reads as "executing fine, not drawing".
+- Going from 700 to 2000 frames rescued none of them, so they are not merely
+  slow — except Tetris, which went 21% → 57% coverage and *was* still drawing.
+
+Two leads, both from the sweep's own numbers:
+
+- **Laydock: main 5982/frame, sub 81/frame.** The sub CPU is effectively
+  stopped, and the sub is what draws. A different failure from the rest.
+- **A suspiciously common sub rate of ~8778/frame** across Argo, Digital Devil
+  Story, Kugyokuden and Kohakuiro's later disks. Three unrelated titles idling at
+  the same rate looks like one shared wait loop, not three coincidences.
+
+Do not read the 59 as "59 broken titles" until one has been traced. Several are
+data or scenario disks that were never bootable alone, and the per-title
+exclusion rules in `docs/TESTING.md` have not been applied to this list yet.
