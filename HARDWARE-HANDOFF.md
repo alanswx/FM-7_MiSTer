@@ -50,12 +50,36 @@ independent bugs:
   `audio_out[2:0]` shifted to bits 15:13 — three bits of noise at full scale
   instead of the tune, in **both** top levels, so never FPGA-only.
 
+**And the pitch was an octave sharp — your "2x too fast on the FPGA" was exactly
+right.** `sel_n_i` was driven `1'b1` on the reading that 1 = "divide by two" put
+the tone counters right. Measured, it is the other way round; the name is
+active low:
+
+    sel_n_i = 1  ->  tone counter divides the enable by 8   (an octave SHARP)
+    sel_n_i = 0  ->  divides by 16, the AY-3-8910           (correct)
+
+`make sound-test` programs TP = $0140 and measures the square wave: 204,800
+clocks per period at `1'b1` against 409,600 at `1'b0`, and now asserts the
+divider so it cannot come back. On Thexder's actual music the dominant tone
+drops from ~224 Hz to ~117 Hz, a ratio of 1.91.
+
+Residual, NOT fixed: `CORE_CLK_1_2 = 39` gives 48/40 = 1.2 MHz where the real
+PSG clock is 1.2288 MHz, so everything still sits 2.3% flat — about 0.4
+semitone. That needs a fractional divider and is a separate job.
+
 Measured after the fix: PSG mix peaks at 10238 of 16383, all three channels
-live. Thexder's music sounds plausible in a captured WAV, but **nobody has heard
-it on hardware**, and `sel_n_i` (the PSG prescaler, `SOUND.v:149`) is still
-unconfirmed by ear — the comment there argues the divided setting is right and
-that leaving it undriven made every pitch an octave sharp. If the pitch is off
-rather than just the filtering, start there.
+live. **Nobody has heard it on hardware.**
+
+### Joysticks work, and they ride on the same handshake
+
+They hang off the PSG's I/O ports, so the bus fix moved them too. Verified end
+to end in the simulator against the F-BASIC sequence in `docs/IO_MAP.md`: with
+stick 0 held up+A, `?peek(64782)` prints **238**, the value that section records
+from a real stick. `make sound-test` asserts the register path directly.
+
+`docs/IO_MAP.md` had that poke order backwards and is corrected — it was written
+when `SOUND.v` was backwards the same way, so it only ever proved the two agreed
+with each other.
 
 `vsim` can now capture audio headlessly, which it never could before — that gap
 is most of why this survived:

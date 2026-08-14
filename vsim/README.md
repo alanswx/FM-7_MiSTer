@@ -67,12 +67,15 @@ video chain, which is exactly what the core depends on.
 | `--trace-io [file]` | Every `$fdxx` read/write with the port, the data and the PC. |
 | `--trace-mem <lo>-<hi>` | Every main-CPU bus cycle in a hex address range, with the memory-map chip selects. |
 | `--dump-shadow <file>` | The 64K of bytes the CPU has actually seen on its bus. |
+| `--joystick <frame>:<buttons>[:<hold>]` | Press stick 1 buttons (`up down left right a b fire none`, `+`-joined). **`--joystick-hold` applies only to options after it** — use the per-action `<hold>` instead. |
 | `--wav <file>` | Capture `AUDIO_L`/`AUDIO_R` to a 16-bit stereo RIFF/WAVE at 44100 Hz. Works headless — `audio.Clock()` is otherwise skipped without a window, which is why the sound path went unverified for so long. |
 | `--trace-av-video [file]` | FM77AV video writes: main aperture, sub VRAM, drawing ALU, MMR sub-I/O, `$D4xx`. Off by default; it is per-bus-cycle noisy. |
 | `--av-dump-frame <n>` + `FM7_VRAM_DUMP=<file>` | Write the 12 FM77AV VRAM planes at frame *n*, in the 77AVEMU reference layout. See `docs/TESTING.md`. |
 
-**There is no joystick option** because the core has no joystick input —
-`core.v` takes `ps2_key` and nothing else. Keyboard only.
+(Superseded claim: *"there is no joystick option because the core has no
+joystick input — `core.v` takes `ps2_key` and nothing else"*. Both sticks are
+wired now, from `core.v` through `SOUND.v` onto the PSG's I/O ports, and
+`--joystick` / `--joystick2` drive them.)
 
 Everything schedulable is in **frames**, not cycles, because frames stay
 meaningful across clock changes; a cycle-based schedule has to be rewritten

@@ -142,6 +142,29 @@ Identical output means the change is not responsible — but see the
 measurement traps in `docs/REFERENCE.md` first: identical output is also what a
 patch that never reached the binary looks like.
 
+## Joysticks
+
+They hang off the PSG's I/O ports, so they ride on the same `$fd0d`/`$fd0e` bus
+handshake the sound does — a change to one moves the other. `make sound-test`
+covers the register path; the integration proof is the F-BASIC sequence from
+`docs/IO_MAP.md`, driven in the simulator:
+
+```sh
+./obj_dir/Vemu --headless --bootrom 0 --key-hold 3 --joystick 300:up+a:4000 \
+    --key 400:'poke64782,15' --key 484:@RETURN ...      # see IO_MAP.md for the full line
+```
+
+With stick 0 held up+A it prints **238**. `make DEBUG_JOY=1` adds a line per
+selection and per read (`JOYSEL port_b=20 -> stick 0`, `JOYRD ... -> ee`), which
+is what to look at when the screen says 255.
+
+**`--joystick-hold` only affects `--joystick` options that come after it.** A
+press with the default 10-frame hold is released almost immediately, so a stick
+"does nothing" in a test that reads it hundreds of frames later. Prefer the
+per-action form, `--joystick <frame>:<buttons>:<hold>`, which cannot be ordered
+wrongly. Reading 255 (`$ff`, "no stick selected") when the trace shows the
+selection succeeded means exactly this: the stick was released, not misrouted.
+
 ## The kanji ROM lives in SDRAM
 
 At 128 KB it was 128 M10K, 23% of the device, and it is the only ROM that could

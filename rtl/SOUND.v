@@ -140,13 +140,22 @@ wire clk_i = CLKSYS;
 wire en_clk_psg_i = EN_CLK_1_2;
 wire reset_n_i = RESETBn;
 
-// P4-3: this was declared and never driven. sel_n_i divides the PSG strobe --
-// per the header of ym2149_audio.v, 0 = undivided, 1 = divide by two. The FM-7's
-// AY-3-8910 runs from a 1.2288 MHz master clock and halves it internally, so
-// with en_clk_psg_i already at 1.2 MHz the divided setting is the one that puts
-// the tone counters at the right rate; undriven (effectively 0) makes every
-// pitch an octave sharp. Worth confirming by ear against a reference recording.
-wire sel_n_i = 1'b1;
+// P4-3: this was declared and never driven, then driven to 1'b1 on the reading
+// that 1 = 'divide by two' put the tone counters right. MEASURED, and it is the
+// other way round -- the name is active low:
+//
+//     sel_n_i = 1  ->  tone counter divides the enable by 8   (an octave SHARP)
+//     sel_n_i = 0  ->  divides by 16, which is the AY-3-8910   (correct)
+//
+// `make sound-test` programs TP = $0140 and measures the square wave: 204,800
+// clocks per period at 1'b1 against 409,600 at 1'b0. Shipping 1'b1 made every
+// pitch exactly twice the right frequency, which is what the hardware sounded
+// like. The bench now asserts the divider so this cannot come back.
+//
+// Residual: CORE_CLK_1_2 = 39 gives 48/40 = 1.2 MHz where the real PSG clock is
+// 1.2288 MHz, so pitches sit 2.3% flat -- about 0.4 semitone. Fixing that needs
+// a fractional divider and is a separate job.
+wire sel_n_i = 1'b0;
 wire bc_i   = bci;
 wire bdir_i = bdir;
 // The latched $fd0e byte, not the live bus -- see the psg_data comment above.
@@ -162,14 +171,15 @@ assign MDATABUS_out = (psg_addr == 4'd14) ? joy_port_a : data_r_o;
 reg rfd0e_d;
 always @(posedge CLKSYS) begin
   rfd0e_d <= RFD0En;
-  if (wfd0e_stb && {bdir, bci} == 2'b11)
-    $display("PSGADDR  <- %0d", MDATABUS_in[3:0]);
-  if (wfd0e_stb && {bdir, bci} == 2'b10)
-    $display("PSGWR    reg%0d <- %02x", psg_addr, MDATABUS_in);
-  if (wfd0e_stb && {bdir, bci} == 2'b10 && psg_addr == 4'd15)
-    $display("JOYSEL port_b=%02x -> %s", MDATABUS_in,
-             (MDATABUS_in[7:4] == 4'h2) ? "stick 0" :
-             (MDATABUS_in[7:4] == 4'h5) ? "stick 1" : "none");
+  // The command write is what acts, on the byte $fd0e latched earlier.
+  if (wfd0d_stb && MDATABUS_in[1:0] == 2'b11)
+    $display("PSGADDR  <- %0d", psg_data[3:0]);
+  if (wfd0d_stb && MDATABUS_in[1:0] == 2'b10)
+    $display("PSGWR    reg%0d <- %02x", psg_addr, psg_data);
+  if (wfd0d_stb && MDATABUS_in[1:0] == 2'b10 && psg_addr == 4'd15)
+    $display("JOYSEL port_b=%02x -> %s", psg_data,
+             (psg_data[7:4] == 4'h2) ? "stick 0" :
+             (psg_data[7:4] == 4'h5) ? "stick 1" : "none");
   if (~RFD0En && rfd0e_d && psg_addr == 4'd14)
     $display("JOYRD  port_b=%02x -> %02x", psg_port_b, joy_port_a);
 end

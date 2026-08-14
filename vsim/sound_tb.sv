@@ -28,7 +28,7 @@ module sound_tb;
     .CLKSYS(clk), .CLK1_2(1'b0), .RESETBn(resetn),
     .MDATABUS_in(mdata), .MDATABUS_out(dout),
     .RFD0En(1'b1), .WFD0En(wfd0en), .WFD0Dn(wfd0dn),
-    .joystick_0(6'd0), .joystick_1(6'd0),
+    .joystick_0(joy0), .joystick_1(joy1),
     .mix_audio_o(mix)
   );
 
@@ -57,6 +57,9 @@ module sound_tb;
       cpu_write(1'b1, 8'h00);
     end
   endtask
+
+  // MiSTer bit order: [0]=right [1]=left [2]=down [3]=up [4]=A [5]=B, active high.
+  reg  [5:0] joy0 = 6'd0, joy1 = 6'd0;
 
   reg [13:0] mix_max;
   integer i;
@@ -102,6 +105,87 @@ module sound_tb;
       fails = fails + 1;
     end
     else $display("PASS amplitude 0 drops the mix to %0d", mix_max);
+
+    // ---- pitch -------------------------------------------------------------
+    // Measure the divider the tone counter actually uses, independent of any
+    // absolute clock: with one channel on, the mix is a square wave whose full
+    // period is 2 * TP * divider PSG-enable ticks, and the enable here is one
+    // tick per 40 clocks (CORE_CLK_1_2 = 39).
+    //
+    // A real AY-3-8910 is clock/(16*TP). The FM-7 clocks it at 1.2288 MHz, so
+    // TP = $0140 (320) should sound at 1.2288e6/(16*320) = 240 Hz. If the
+    // measured divider is 32 rather than 16, every pitch is an octave FLAT;
+    // if 8, an octave SHARP.
+    psg_write(4'd0,  8'h40);
+    psg_write(4'd1,  8'h01);   // TP = $0140 = 320
+    psg_write(4'd7,  8'h3e);
+    psg_write(4'd8,  8'h0f);
+    begin : pitch
+      integer t0, t1, edges;
+      reg prev_hi;
+      t0 = 0; t1 = 0; edges = 0; prev_hi = 1'b0;
+      for (i = 0; i < 4000000; i = i + 1) begin
+        @(posedge clk);
+        if ((mix > 14'd6000) != prev_hi) begin
+          prev_hi = (mix > 14'd6000);
+          if (prev_hi) begin
+            edges = edges + 1;
+            if (edges == 2) t0 = i;
+            if (edges == 6) t1 = i;
+          end
+        end
+      end
+      if (edges < 6) begin
+        $display("FAIL PITCH: only %0d edges seen -- no tone", edges);
+        fails = fails + 1;
+      end
+      else if (((t1 - t0) / 4) / (2 * 320 * 40) != 16) begin
+        $display("FAIL PITCH: divider %0d, want 16 (8 = octave sharp, 32 = octave flat)",
+                 ((t1 - t0) / 4) / (2 * 320 * 40));
+        fails = fails + 1;
+      end
+      else $display("PASS PITCH divider = 16 (AY-3-8910), period %0d clocks",
+                    (t1 - t0) / 4);
+    end
+
+    // ---- joysticks ---------------------------------------------------------
+    // They hang off the PSG's I/O ports, so they ride on exactly the bus
+    // handshake this file just corrected: psg_addr and psg_port_b now latch on
+    // the $fd0d write from the byte $fd0e stored. If that were wrong the sticks
+    // would break with the sound. Expected byte is the one IO_MAP.md records
+    // against a real stick, active low:
+    //   { 1, 1, ~B, ~A, ~right, ~left, ~down, ~up }
+    joy0 = 6'b011000;                  // up + button A
+    joy1 = 6'b000001;                  // right -> ~right is bit 3, so $f7
+    psg_write(4'd15, 8'h20);           // port B high nibble 2 -> select stick 0
+    cpu_write(1'b0, 8'd14);            // point the read address at port A
+    cpu_write(1'b1, 8'h03);
+    #1;
+    if (dout !== 8'hee) begin
+      $display("FAIL joystick 0 up+A: got %02x wanted ee (238)", dout);
+      fails = fails + 1;
+    end
+    else $display("PASS joystick 0 up+A = %02x (238)", dout);
+
+    psg_write(4'd15, 8'h50);           // high nibble 5 -> select stick 1
+    cpu_write(1'b0, 8'd14);
+    cpu_write(1'b1, 8'h03);
+    #1;
+    if (dout !== 8'hf7) begin
+      $display("FAIL joystick 1 right: got %02x wanted f7", dout);
+      fails = fails + 1;
+    end
+    else $display("PASS joystick 1 right = %02x", dout);
+
+    psg_write(4'd15, 8'h00);           // nothing selected -> $ff, as CSP returns
+    cpu_write(1'b0, 8'd14);
+    cpu_write(1'b1, 8'h03);
+    #1;
+    if (dout !== 8'hff) begin
+      $display("FAIL no stick selected: got %02x wanted ff", dout);
+      fails = fails + 1;
+    end
+    else $display("PASS no stick selected = %02x", dout);
 
     if (fails == 0) $display("SOUND TEST PASS");
     else begin
