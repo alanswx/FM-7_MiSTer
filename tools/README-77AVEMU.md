@@ -38,8 +38,25 @@ for src, dst in (('rtl/roms/fm77av_boot_basic.rom.mem', 'BOOT_BAS.ROM'),
 EOF
 ```
 
-Everything under `/tmp` is disposable, so expect to redo this and the build
-after a reboot. Neither takes long.
+### Keep it out of /tmp
+
+`/tmp` is disposable and this material is not, so a working build and ROM set
+are kept under `refs/local/`, which is already gitignored:
+
+```
+refs/local/fm77av_headless      the driver, runs standalone from here
+refs/local/fm77av-roms/         the staged ROM directory
+refs/local/av-divergence/       reference renders of titles this core draws blank
+```
+
+so a differential run needs no rebuild:
+
+```sh
+refs/local/fm77av_headless refs/local/fm77av-roms \
+    'software/D77/Ys (FM77AV) (Disk A).d77' 20000000 /tmp/ys-ref.png
+```
+
+Rebuild with the steps above only if `refs/local` is missing or Mutsu changes.
 
 Run an FM77AV disk checkpoint:
 

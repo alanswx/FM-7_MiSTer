@@ -30,12 +30,19 @@ is the FPGA side's log and its newest section says what to check first.
    licence consequence.
 3. Timing closure is unverified — `map` and `fit` pass, `asm`/`sta` have not run.
 
-**Two environment facts that are not in the repo**, because they live under
-`/tmp` and will not survive a reboot: the 77AVEMU reference build
-(`tools/build_77avemu_headless.sh`) and its ROM directory
-(`tools/README-77AVEMU.md` now says how to stage it). Rebuild both before any
-differential work — comparing against the reference is what settled the last
-four bugs, and guessing instead of asking it wasted time on at least two.
+**The 77AVEMU reference is ready to use, no rebuild needed.** It lives in
+`refs/local/` (gitignored, but persistent) rather than `/tmp`:
+
+```sh
+refs/local/fm77av_headless refs/local/fm77av-roms \
+    'software/D77/Ys (FM77AV) (Disk A).d77' 20000000 /tmp/ys-ref.png
+```
+
+`refs/local/av-divergence/` holds its renders of Ys, Argo and Laydock — the
+three this core draws blank. **Ask the reference before theorising.** It settled
+the last four bugs, and guessing instead wasted time on at least two:
+"still loading" and "one shared wait loop" were both wrong, and one run of the
+reference would have killed either in a minute.
 
 ---
 
