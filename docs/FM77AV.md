@@ -49,7 +49,7 @@ Registers (main CPU side):
 | `$FD92` | W | TWR window offset, 256-byte units (`fm7_mainio.cpp:1814-1816`) |
 | `$FD93` | R/W | b7 = MMR enable, b6 = TWR enable, b0 = boot-RAM write enable (`fm7_mainio.cpp:1817-1826`, read `:1448`) |
 | `$FD94` | W | AV40-family only: b7 = extended MMR (`fm7_mainio.cpp:1828-1830`) |
-| `$FD10` | W | b1 = 1 disables the initiator ROM overlay (`fm7_mainio.cpp:1603-1605`) |
+| `$FD10` | W | b1 = 1 disables the initiator ROM overlay (`fm7_mainio.cpp:1603-1605`; 77AVEMU `fm77avmemory.cpp:325` `state.avBootROM=(0==(data&2))`). On at reset for AV-family machines only. While it is on, writes to `$6000-$7FFF` are discarded (`fm77avmemory.cpp:917`) and the reset vector reads `$6000`; with it off, `$6000-$7FFF` is ordinary RAM and the vector comes from boot RAM |
 
 Translation (77AVEMU `fm77avmemory.h:337-351`; CSP `mainmem_readseq.cpp:32-70`):
 
@@ -99,6 +99,14 @@ Quirks:
   the original loader does not reappear (77AVEMU `fm77avmemory.h:178-183`).
 - `$FD0B` read, b0: 0 = BASIC, 1 = DOS boot mode (CSP `fm7_mainio.cpp:1263-1264`;
   MAME `fm7.cpp:784-797` agrees).
+- **The initiator's `$6000` entry is a re-runnable cold start, and titles call it.**
+  It programs the YM2203 (`$6009` onward), fills the analog palette with the reset ramp,
+  sets MMR banks `$30-$3F`, re-seeds `$FE00-$FFDF` from `initiate.rom[$1800/$1A00]`,
+  copies `initiate.rom[$1C00]` to `$5000-$527F`, then runs a stub in `$FC00-$FC79` that
+  clears `$FD93`, writes `$FD10 = $02` and jumps to `$5000`. Ys reaches it through
+  `JSR [$024b]` after loading its next stage — so a core that never lets `$FD10` take the
+  overlay away runs the ROM instead of the loaded code and silently reboots itself.
+  Nothing in this path resets the sub CPU.
 
 ## Display
 
@@ -107,11 +115,23 @@ Quirks:
 | bit | write | read (CSP `display.cpp:812-847`) |
 |---|---|---|
 | 7 | NMI mask (1 = masked) | 1 during active display (`!hblank`) — 77AVEMU has the opposite sense; CSP+MAME outvote it (**unverified** against software) |
+
 | 6 | display page | 1 |
 | 5 | CPU access page | 1 |
 | 4 | — | 1 = ALU idle |
 | 2 | fine-offset enable | VSYNC |
 | 1:0 | CG font bank (§Sub-system) | b0 = power-on-reset flag |
+
+**Bit 7 is load-bearing, and the reason is on the sub side.** The sub monitor's 20 ms
+NMI handler at `$FEBF` opens with `LDA <$0a` — a read of `$D40A`, which CLEARS the
+sub-busy flag. Any title that hands the sub a block-transfer stub therefore masks the NMI
+first, because an NMI landing mid-transfer tells the main CPU "sub idle" while the sub is
+still copying. Ys (FM77AV) does exactly this: its shared-RAM downloader sets `$D430 = $85`
+before its first byte, and with the mask ignored the main CPU ran an extra mailbox
+iteration each time an NMI landed, overwriting three of its 294 8-byte blocks. 77AVEMU
+additionally suppresses the NMI while the sub CPU is halted, with the note "Greater than
+40ms halt will double-fire the NMI, which is not good" (`fm77av.h:340`); this core does
+not, and no title in hand needs it.
 
 Scroll: one offset register pair per page, selected by the access page; the display page
 picks which one the raster uses. `$D430` b2 = 0 masks the offset to `$FFE0` (32-byte
@@ -212,6 +232,22 @@ by the rotating `$D422/$D423` stipple.
   unchanged from the FM-7.
 
 ## Sound
+
+Implemented as one `jt03` (jotego/jt12) serving both machines: `rtl/SOUND.v` presents the
+`$FD0D`/`$FD0E` window with the command masked to two bits and, on the AV only, the
+`$FD15`/`$FD16` window with the full four. `make sound-test` covers both, including the
+status read Ys spins on. The joysticks moved onto the chip's real I/O ports; the bus-snoop
+that stood in for them is gone. **jt12/jt49 are GPLv3-or-later, so the combined work now
+ships as GPLv3** — see `rtl/jt12/LICENSE-jt12`.
+
+Two things about it are **unverified and need an ear, not another derivation**: the FM
+clock, and whether the SSG lands on the right octave. jt03's `cen` is fed the same 1.2 MHz
+enable the retired AY had, so the FM-7's pitch is bit-identical to what shipped before —
+but the AV's initiator selects registers `$2D` and `$2E`, which halves the YM2203's SSG
+prescaler, so on the AV the SSG runs an octave above the FM-7. That cannot be right for
+both machines, and the two references do not settle it: CSP (`fm7.cpp:831-837`) and MAME
+(`fm7.cpp:1893, 1996`) both give the FM-7's AY and the AV's YM2203 the *same* 4.9152/4 =
+1.2288 MHz, which the prescaler difference contradicts.
 
 The AV has **one YM2203 and no separate AY**: `$FD0D/$FD0E` drive the SSG half of the
 same chip that `$FD15/$FD16` drive as FM (CSP `sound.cpp:46-50` sets `opn_psg_77av`;

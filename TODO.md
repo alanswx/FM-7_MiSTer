@@ -10,25 +10,29 @@ Reference material: `docs/REFERENCE.md` (read first), `docs/IO_MAP.md`,
 
 ## Start here
 
-Everything is committed and pushed to `alanswx/fdc-d77-support`. Nothing is
-half-applied and there is no uncommitted state to reconstruct.
-
-**Where it stands.** The core fits the DE10-Nano again (54% ALMs, 508/553 M10K,
-fitter successful) and the nine-row gate is green — `./run_tests.sh` in `vsim/`
+**Where it stands.** The nine-row gate is green — `./run_tests.sh` in `vsim/`
 compares screenshots *and* counters against `shots-ref/`. FM-7 boots, Thexder
-runs, the FM77AV demo matches 77AVEMU plane-for-plane, and PSG sound works and
-is at the right pitch. **None of it has run on hardware**; `HARDWARE-HANDOFF.md`
-is the FPGA side's log and its newest section says what to check first.
+runs, the FM77AV demo matches 77AVEMU plane-for-plane, and **Ys (FM77AV) now
+boots and draws its title screen**. The PSG became a `jt03` (jotego/jt12) that
+also supplies the FM77AV's YM2203, so `$FD15`/`$FD16` are decoded for the first
+time and **the combined work now ships as GPLv3** (see `Readme.md`). **None of
+it has run on hardware**; `HARDWARE-HANDOFF.md` is the FPGA side's log and its
+newest section says what to check first.
 
-**The one open thread, in priority order:**
+**Open, in priority order:**
 
-1. **59 of 68 FM77AV titles render nothing**, and the first one traced (Ys) is a
-   main/sub BUSY deadlock, not an FDC fault — see the FM77AV section below. This
-   is the single biggest thing standing between the AV backend and being useful.
-2. **The YM2203 does not exist**, so the AV has no FM sound at all. `jt03` from
-   jotego/jt12 is the way in; the research is written up below, including the
-   licence consequence.
-3. Timing closure is unverified — `map` and `fit` pass, `asm`/`sta` have not run.
+1. **The FPGA fit is unknown again.** The last successful fit was 54% ALMs and
+   508 of 553 M10K — 92% of the block RAM on the device — and `jt03` has been
+   added since. `tools/quartus-build.sh` has not been run against it. Nothing
+   below matters if it does not fit.
+2. **Re-sweep the FM77AV set.** Every AV figure in this file predates the two
+   fixes below, so the "59 of 68 are blank" table is stale and must not be
+   quoted. `vsim/sweep/av-sweep.sh` at 2000 frames, then `classify.py`.
+3. **The FM sound has never been heard.** `make sound-test` proves registers
+   reach the chip and that the FM-7's SSG pitch is bit-identical to the retired
+   `ym2149_audio`, but nothing proves the notes are right — and the AV's
+   prescaler question in `docs/FM77AV.md` §Sound is open by construction.
+4. Timing closure is unverified — `map` and `fit` pass, `asm`/`sta` have not run.
 
 **The 77AVEMU reference is ready to use, no rebuild needed.** It lives in
 `refs/local/` (gitignored, but persistent) rather than `/tmp`:
@@ -38,13 +42,11 @@ refs/local/fm77av_headless refs/local/fm77av-roms \
     'software/D77/Ys (FM77AV) (Disk A).d77' 20000000 /tmp/ys-ref.png
 ```
 
-`refs/local/av-divergence/` holds its renders of Ys, Argo and Laydock — the
-three this core draws blank. **Ask the reference before theorising.** It settled
-the last four bugs, and guessing instead wasted time on at least two:
-"still loading" and "one shared wait loop" were both wrong, and one run of the
-reference would have killed either in a minute.
-
----
+`refs/local/av-divergence/` holds its renders of Ys, Argo and Laydock. **Ask the
+reference before theorising.** It settled the last five bugs. On Ys it killed a
+whole line of enquiry in one run: the sub CPU sitting at `$c036` reads as a
+deadlock, and the reference sits at exactly the same address with the title
+screen drawn — that is the program's normal idle loop, not a hang.
 
 ## Awaiting hardware
 
@@ -161,8 +163,12 @@ Remaining validation:
 
 ### Ys
 
-Playable, but only characterised as far as the town map. Nobody has played
-further to see what breaks next.
+**FM-7 version:** playable, but only characterised as far as the town map.
+Nobody has played further to see what breaks next.
+
+**FM77AV version:** reaches its title screen at frame 900 and keeps drawing.
+Not characterised past that, and nobody has compared the finished title against
+`refs/local/av-divergence/Ys__FM77AV___Disk_A__.png` pixel for pixel.
 
 ---
 
@@ -180,8 +186,18 @@ highest title-count-per-effort item after the register audit.
 
 ## Smaller open items
 
-- **PSG pitch** needs a human ear. `SOUND.v`'s select was fixed but nobody has
-  confirmed the notes are right.
+- **Sound pitch** needs a human ear, on both halves of the chip. The FM-7's SSG
+  is bit-identical to what shipped before the `jt03` swap (`make sound-test`
+  asserts the tone divider), so the swap changed nothing — but "unchanged" is
+  not "right", and the FM77AV's initiator selects a YM2203 prescaler that puts
+  the AV's SSG an octave above the FM-7's. See `docs/FM77AV.md` §Sound: the two
+  references give both machines the same chip clock, which cannot be reconciled
+  with that prescaler. One listening test settles it; another derivation will
+  not.
+- **The FM half has no reference comparison.** `jt03` produces FM audio and the
+  status register behaves, but nothing has diffed a rendered tune against
+  77AVEMU or CSP. The YM2203's timers and its `$FD17` bit-3 IRQ are wired to
+  nothing — `jt03`'s `irq_n` is left unconnected in `core.v`.
 - **Keyboard layout is JIS-positional, not US** — a decision, not a bug. Shifted
   punctuation lands where a JIS keyboard puts it, which surprises US-layout
   users. Decide whether to offer a translation.
@@ -192,102 +208,10 @@ highest title-count-per-effort item after the register audit.
 
 ## FM77AV bring-up
 
-The OSD and simulator now have a machine-family selector. The initiator overlay
-is mapped at `$6000-$7FFF` (and supplies `$FFFE-$FFFF`), AV F-BASIC is mapped at
-`$8000-$FBFF`, and `AVMEM.v` now models writable boot RAM, `$FD80-$FD93`
-MMR/TWR registers, and the 256 KB physical main-memory map. The `$FD13`
-sub-monitor selector now switches the secondary CPU's `$E000-$FFFF` window
-between the Type C, A, and B monitor images. `make avmem-test` covers identity
-RAM, bank translation, TWR, boot seeding, boot-RAM writes, and monitor select.
-The main-CPU MMR aperture into the three shared VRAM planes is wired and
-`make crtram-test` checks blue/red/green storage.
-The AV `$D800-$DFFF` character-generator aperture is now banked by the
-sub-system `$D430` register; `make smem-test` checks the ROM banks and status.
-The `$D430` display/active page bits now select the page on the shared
-raster/sub-CPU VRAM port; `make crtram-test` covers both page paths.
-The main-CPU VRAM aperture now uses `$D430` bit 5 as its bank select;
-`make crtram-test` covers a bank-1 write/read. Mode gating and the 320×200
-address transform are wired through `$FD12` and the existing scroll offset;
-`make avmem-test` covers both masks. The raster now uses 40-byte lines and
-doubles each logical pixel, while retaining the FM-7's 640-clock line timing.
-The FM77AV `$FD30-$FD34` analog palette index/component registers are now
-separated from the FM-7 digital palette and tested with the reference reset
-ramp and DAC expansion.
-The reference-matched 12-plane pixel-code combiner now assembles
-`{G3,G2,G1,G0,R3,R2,R1,R0,B3,B2,B1,B0}` MSB-first and has a directed test.
-The raster offset latches now retain separate access/display page values and
-reset to zero; `make mb60h010-test` covers the split selection.
-CRTRAM now stores each gun as four 8 KB slices, exposes all twelve raster
-bytes in 320 mode, and feeds the analog palette's 24-bit RGB result at the
-core boundary; `make crtram-test` covers the four B slices.
-`$D40E/$D40F` capture is qualified by the exact sub-CPU address and write
-strobe. The demo reaches the matching CPU checkpoint, but its simulated VRAM
-contents still need a write-path comparison against 77AVEMU before the analog
-gradient can be called complete.
-Selecting FM77AV now releases both CPUs through the normal reset path so the
-initiator ROM can execute. `make av-boot-test` verifies the reset vector,
-initiator execution, both CPU liveness, and the first raster frame. The checked
-in 77AVEMU demo disk now passes the four-drive probe, loads its bootstrap into
-RAM, reaches the AV PIO sector loader, and produces visible analog-raster
-output after the post-load delay (frame 1100 checkpoint). The remaining AV
-work is reference-raster comparison and confirming the later demo stages. The
-main `$FC80-$FCFF` alias now connects to the sub-CPU `$D380-$D3FF` mailbox,
-which the demo uses for its loader stub. The AV `$D431/$D432` encoder protocol
-is also wired with directed command/status coverage; host key-to-scan-code
-injection remains open. The AV boot-RAM read window previously fell through to
-zero-filled RAM and is fixed in `a0d4bd2`.
-The `$D430` read path now matches the reference live-status semantics: blanking,
-VSYNC, idle-ALU, and the monitor-switch/reset latch are reported independently
-of the write-only font/page latch. Focused tests cover the status latch and
-clear-on-read behavior. The top-level sub-bus mux also now gives this AV status
-read priority over the legacy FM-7 keyboard decode; otherwise the keyboard
-alias returned `$00`, leaving the AV monitor in its `$D430` wait loop and the
-main CPU stuck polling `$FD05`. The 77AVEMU headless runner now leaves the
-reset-time busy latch clear so its disk path reaches the same handshake.
-The Verilator video tap now selects the AV 24-bit output, matching the FPGA
-top level, so screenshots are useful for raster comparison. With the status-mux
-fix, the 2019 demo reaches the same post-loader `$328D` main / `$C020` sub idle
-loops as 77AVEMU and clears BUSY at the frame-1100 checkpoint. The raster is
-now visible in the sim; its text/bit layout still needs pixel-level comparison
-against the reference before the AV video path can be called complete.
-The FM77AV shadow-RAM control at `$FD0F` now switches the F-BASIC window between
-ROM and RAM, and the MMR-mapped physical `$1C000-$1D37F` sub-system RAM is
-dual-ported to the secondary CPU. The core-side address calculation now
-preserves the hardware page order (`$C000->$1C000`, `$D000->$1D000`); the old
-13-bit subtract-and-truncate expression silently reversed those pages. The
-directed `$CA00` command test passes. In the real 2019 AV demo, however, the
-startup code leaves MMR segment 0 at C/D=`$0C/$0D` while copying its
-`$D40A/$CA00` stub to main physical `$0C000`; the sub CPU consequently does
-not see that payload in its fixed physical `$1D000` D page and later executes
-garbage. The next AV task is to reproduce this loader/MMR protocol against
-77AVEMU and determine which hardware transition or ROM stage should select
-the sub-system RAM page; the current trace first diverges when the sub monitor
-returns from `$D3C9` to a zero-filled `$D100` target after consuming the
-`$D380` mailbox command. Do not add a game-specific alias.
-The AV memory regression also covers the exact loader command path: main MMR
-segment 0 `$CA00` writes are visible at sub `$CA00` as physical `$1CA00`.
+The hardware facts and their citations live in `docs/FM77AV.md`; what is
+implemented is in the RTL and its comments. What is *not* done is under
+"Open FM77AV implementation gaps" below.
 
-The simulator/reference comparison was rerun from the required `vsim/`
-working directory so all ROMs are actually loaded. The mailbox sequence is
-hardware-consistent: the sub monitor consumes `Y=$CA05` and then `Y=$CC85`,
-matching 77AVEMU's `$D3C9` trace. The frame-346 runaway was traced to a generic
-reset-path bug: `$FD13` monitor-bank writes assert the derived sub-reset, but
-`SCPU` was wired to global reset and continued executing the old monitor. It
-then took the newly selected monitor's `$D2B7` NMI vector as RAM and ran into
-zero-filled space. Wiring `SCPU` to `SRESETn` fixes the bank-switch handoff;
-the demo now remains in valid sub ROM/RAM through the frame-1100 checkpoint
-with the original NMI cadence. No game-specific alias or interrupt workaround
-is justified.
-
-`ca75bfe` converted `SRAM.v`'s shared-RAM window from a single-port `ram` to a
-`dpram` and, in the rewrite, qualified each side's write with the **other**
-side's select. The main CPU writes that window while the sub CPU is halted, so
-the sub is never addressing `$d000-$d3ff` at that moment and every main-side
-write was discarded: the mailbox was dead and the FM-7 booted to a blank screen
-with both CPUs at normal instruction rates. Restoring the two enable
-expressions reproduces `e19cde7`'s references exactly. The regression suite had
-been reporting this for fifteen commits as `SCREEN+CNT` and it was written off
-as timing drift — `docs/REFERENCE.md` trap 18.
 
 ## FPGA fit
 
@@ -339,126 +263,94 @@ block's 10 bits. Error 170048 counts blocks. Price a change from the map
 report's RAM summary, never in bits.
 
 
-The suite now has an FM77AV row (`av-demo`, CaptainYS's 2019 demo from
-`software/FM77AV/`). It had none before, which is why a broken `$D430` page
-select and a missing drawing ALU both survived. Its disk scan also no longer
-runs every image in `software/` — with a few hundred there the gate became a
-six-hour sweep; use `ALLDISKS=1` or `vsim/sweep/sweep.sh`.
+**That fit predates `jt03`.** 508 of 553 M10K left 45 blocks of headroom, and
+the YM2203 has been added since — `jt12_exprom`/`jt12_logsin` are tables and the
+`jt12_sh*` shift registers are what Quartus most likes to infer as RAM. Re-run
+`tools/quartus-build.sh` and price the change from the map report's RAM summary
+before assuming anything below is reachable. The retired `ym2149_audio.v` gives
+a little back, but not much.
 
-The AV raster is now validated against 77AVEMU by dumping both machines' VRAM
-and diffing the twelve 8 KB planes (`docs/TESTING.md`). At the 2019 demo's
-title screen every plane matches byte-for-byte except the text lines this core
-has not finished typing yet, so the 320-mode plane layout, the scroll
-transform, the pixel-code combiner and the analog palette are all confirmed.
-Two things were missing and are now implemented: the MB61VH010 drawing ALU's
-byte read-modify-write path (`rtl/AVHDRAW.v`, `make avhdraw-test`), and the
-main CPU's MMR window onto the sub-system I/O page at physical `$1D400-$1D4FF`.
-Only the VRAM half of that aperture existed, so the demo's page-select write
-was dropped and the whole gradient collapsed onto the page-0 planes.
+### Why the three AV references were re-blessed
 
-Open AV work: the main-CPU MMR path into the sub aperture is implemented for
-**writes** only — no software in hand reads `$1D4xx`, and the reference gates
-the whole aperture on the sub CPU being halted while this core gates only the
-new sub-I/O half (the VRAM half stays ungated, as before). The drawing ALU's
-line trigger (`$D42B`) is implemented but no title in hand writes it, so it is
-unexercised. Then connect host key events to AV scan codes and add the YM2203
-paths behind the same family signal.
-Research and reference addresses are in
-`docs/FM77AV.md`.
+`shots-ref/` was rewritten for the AV rows only; the eight FM-7 rows came out
+**byte-identical**, screenshots and counters, which is the evidence that
+swapping `ym2149_audio` for `jt03` changed nothing on the FM-7. The AV rows
+moved because all three AV fixes are CPU-visible:
 
-### The YM2203 is missing entirely, and jt03 is the way in
+| row | before | after |
+|---|---|---|
+| `av-demo` | 507616 I/O cycles | 507617 — one extra cycle, screenshot byte-identical |
+| `av-kohakuiro` | — | unchanged, both halves |
+| `av-wizardry4` | overlapping, unreadable title text | renders correctly: "THE RETURN OF WERDNA / THE FOURTH WIZARDRY SCENARIO" and its credits |
 
-`$FD15`/`$FD16` are **not decoded at all** — no `ym2203` anywhere in `rtl/` —
-while software writes them constantly (Thexder alone: 1572 writes to `$15`, 524
-to `$16`, all landing in the UNDECODED list). Per `docs/FM77AV.md` the AV has
-one YM2203 whose SSG half is `$FD0D`/`$FD0E`, so today we emulate the SSG half
-with `ym2149_audio` and none of the FM half.
+Only `av-wizardry4.png` and `counters.tsv` changed on disk. Wizardry IV is the
+one to look at if this bless ever needs re-justifying — the old reference is a
+picture of the bug.
 
-`jt03` in <https://github.com/jotego/jt12> is that chip. Facts checked, not
-assumed:
+The `--joystick`/F-BASIC integration check in `docs/TESTING.md` was run against
+the `jt03` swap and still prints **238**, which is what covers the joystick move
+from the old bus snoop onto the chip's real port A. The gate does not exercise
+joysticks, so that check is the only thing that does.
 
-- **Licence.** jt12/jt49 are GPLv3-**or-later**; this repo's `LICENSE` is GPLv2
-  but `FM-7_MiSTer.sv` and the MiSTer `sys/` framework both say *"version 2 …
-  or (at your option) any later version"*. Compatible — and the combined work
-  then ships as GPLv3. That is a one-way door, so it is a decision, not a
-  detail.
-- **It is the whole chip.** `jt03` carries the embedded YM2149, exposing
-  `psg_snd`, `fm_snd` and a combined `snd` — matching the AV's one-chip layout
-  rather than bolting a second device alongside.
-- **It has real I/O ports** (`IOA_in/IOB_in/IOA_out/IOB_out/IOA_oe/IOB_oe`).
-  The joysticks hang off those on real hardware. `SOUND.v` currently snoops the
-  bus to fake them precisely because `ym2149_audio` "has no I/O ports at all";
-  that hack can go.
-- **The bus maps cleanly.** `jt03` takes `din/addr/cs_n/wr_n`, where `addr`
-  selects register-vs-data. The `$fd0d` command values measured off Thexder's
-  bus land straight on it: command 3 (latch address) → `addr=0`, command 2
-  (write data) → `addr=1`.
+### FM77AV titles: the blank-screen count needs redoing
 
-Cost to be aware of before starting: it replaces `ym2149_audio`, so the PSG
-work already done — the `sel_n_i` divider, the pitch, the joystick encoding —
-gets re-verified against a different implementation. `make sound-test` asserts
-all three, so a regression shows immediately. **The gate counters may legitimately
-move**, because `$fd0e` reads become `jt03`'s `dout` and the joystick read path
-changes; both are CPU-visible.
+The old breadth sweep said 5 of 68 AV images rendered graphics, 4 fell through
+to the AV F-BASIC banner and 59 were blank. **Those numbers are stale and must
+not be quoted.** Both bugs behind the first title traced were core faults that
+every AV title would hit, and the YM2203 did not exist when the sweep ran:
 
-### FM77AV titles: 59 of 68 are blank, and that is the next AV job
+- `$D430` bit 7, the sub-CPU NMI mask, was ignored. The sub monitor's NMI
+  handler reads `$D40A`, which clears the sub-busy flag, so an NMI landing
+  inside a shared-RAM block transfer told the main CPU "sub idle" while the sub
+  was still copying. See `docs/FM77AV.md`.
+- `$FD10` bit 1, which removes the initiator ROM overlay from `$6000-$7FFF`, was
+  not decoded at all, so the overlay was permanent. A title that loads code into
+  the RAM underneath and calls it — Ys does, through `JSR [$024b]` — ran the
+  initiator's cold-boot code instead and silently rebooted itself.
+- `$FD15`/`$FD16` were undecoded, so a status read returned `$ff` and any title
+  that waits for the YM2203's busy bit to clear span forever. Ys does.
 
-The 2019 demo renders perfectly and matches 77AVEMU plane-for-plane, but it
-exercises the video path and almost nothing else. A breadth sweep over the 68 AV
-images in `software/D77` (`vsim/sweep/av-sweep.sh`, classified with
-`classify.py`) says the game path is a different story. At **2000** frames:
+Redo the sweep before deciding what is left:
 
-| count | |
-|---|---|
-| 5 | renders graphics — Kohakuiro no Yuigon, Wizardry IV, Tetris, Gambler Jikochuushinha, Dragon Buster |
-| 4 | AV F-BASIC banner — the disk did not boot and fell through to BASIC |
-| 59 | blank |
+```sh
+cd vsim/sweep && ./av-sweep.sh /tmp/avsw 8 2000
+python3 classify.py /tmp/avsw/shots /tmp/avsw/results.tsv
+```
 
-**The blanks are not crashes.** Three separate pieces of evidence:
+Then apply the per-title exclusion rules in `docs/TESTING.md` — several of the
+68 are data or scenario disks that were never bootable alone — before counting
+anything as a failure. Two leads from the old sweep are worth keeping because
+they are shape, not count: **Laydock** ran main 5982/frame against sub 81/frame,
+i.e. the sub effectively stopped and the sub is what draws; and a **sub rate of
+~8778/frame** recurred across Argo, Digital Devil Story, Kugyokuden and
+Kohakuiro, which is the sub monitor's idle loop, not three coincidences.
 
-- Argo's FDC loader is actively working at frame 800 — one `FLOPPY DMA` line per
-  sector, walking up through track 7. The disk path is fine; whatever fails,
-  fails during or after a long load.
-- Main-CPU rates are normal across the blanks (4000–6200 per frame), which the
-  triage in `docs/TESTING.md` reads as "executing fine, not drawing".
-- Going from 700 to 2000 frames rescued none of them, so they are not merely
-  slow — except Tetris, which went 21% → 57% coverage and *was* still drawing.
+### Open FM77AV implementation gaps
 
-Two leads, both from the sweep's own numbers:
+- The main-CPU MMR path into the sub aperture is implemented for **writes**
+  only. No software in hand reads `$1D4xx`, and the reference gates the whole
+  aperture on the sub CPU being halted while this core gates only the new
+  sub-I/O half (the VRAM half stays ungated, as before).
+- The drawing ALU's line trigger (`$D42B`) is implemented but no title in hand
+  writes it, so it is unexercised.
+- Host key events are not connected to AV scan codes; `$D431`/`$D432` answer the
+  encoder protocol but no key ever arrives.
+- 77AVEMU also suppresses the sub NMI while the sub CPU is halted
+  (`fm77av.h:340`); this core does not, and nothing in hand needs it.
+- **Eight `$FDxx` ports are still genuinely undecoded on an AV run.** With
+  `port_is_decoded()` in `sim_main.cpp` taught the AV map, the summary line is
+  worth reading again, and 60 frames of Ys leaves: `$0b` (boot-mode flag,
+  read once), `$1e`, `$25`/`$27`/`$29`/`$2b` (7 accesses each) and
+  `$96`/`$97` (10 each, written by the initiator through `LDU #$fd96`). None is
+  in `docs/IO_MAP.md` or `docs/FM77AV.md`; find out what they are before
+  assuming they do not matter.
 
-- **Laydock: main 5982/frame, sub 81/frame.** The sub CPU is effectively
-  stopped, and the sub is what draws. A different failure from the rest.
-- **A suspiciously common sub rate of ~8778/frame** across Argo, Digital Devil
-  Story, Kugyokuden and Kohakuiro's later disks. Three unrelated titles idling at
-  the same rate looks like one shared wait loop, not three coincidences.
+Research and reference addresses are in `docs/FM77AV.md`.
 
-#### Ys (FM77AV) traced: a main/sub BUSY deadlock
+### Build-file housekeeping
 
-First one traced, and it is not the FDC. At frame 293 the machine is doing
-**2216 reads of `$fd05` in a single frame, every one returning `$fe`**, while:
-
-- the **main** CPU sits in the boot ROM's delay loop, `$ff51 LEAY -1,Y / BNE`
-- the **sub** CPU sits at `$c036 LDB -1,U / BEQ $c036`, waiting for a byte in
-  its own address space to become non-zero
-- the FDC has read 861 sectors but the last is still **track 0 sector 9** — it
-  is re-reading one sector, not walking tracks the way Argo does
-
-`$fd05` read bit 7 is `BUSY | halted`, not BUSY alone. Main writes `$80` (halt
-request) then `$00` (release), then polls — so `halted` is clear and **BUSY is
-stuck set**. The sub is running, not halted, but never reaches whatever clears
-BUSY (the `$d40a` access). Main will not proceed until BUSY clears; the sub will
-not proceed until its byte arrives. Neither moves.
-
-Track 0 of the image is completely ordinary — 16 sectors, R=1..16, N=1, no CRC
-or deleted flags, no protection — so the repeated sector-9 read is a symptom of
-the retry loop above it, not a bad dump.
-
-Where to look first: what is supposed to write the byte the sub is polling at
-`$c036`, and does that write reach it. The main-to-sub shared window is the
-obvious candidate, and note that `SRAM.v`'s mailbox enables were wrong until
-this session — the AV path through `AVMEM`'s `SHARED_*` signals is a *different*
-route into the same block and has not been proven the way the FM-7 path now is.
-
-Do not read the 59 as "59 broken titles" until more have been traced. Several are
-data or scenario disks that were never bootable alone, and the per-title
-exclusion rules in `docs/TESTING.md` have not been applied to this list yet.
+`FM-7_MiSTer.qsf` carries an IDE-injected per-file list that duplicates
+`files.qip` (which the qsf sources). It is a strict duplicate apart from
+`sys/sys.qip`, and `docs/REFERENCE.md` says to delete it whenever Quartus writes
+it back. It has not been deleted this time — only the retired `ym2149_audio.v`
+line was removed from it, so the two lists agree again.

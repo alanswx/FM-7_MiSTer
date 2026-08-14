@@ -96,3 +96,12 @@ why.
 which lives in SDRAM rather than block RAM and is uploaded by the MiSTer
 framework on ioctl index 0 at core start. Without it the `$fd20-$fd23`
 kanji window reads garbage; everything else still boots.
+
+## Licence
+
+GPL. The core's own files carry the MiSTer framework's "version 2 ... or (at
+your option) any later version" grant, and `rtl/jt12/` is jotego's jt12/jt49
+under GPL**v3**-or-later. The combination is permitted by that grant, and the
+**combined work therefore ships as GPLv3** — see `rtl/jt12/LICENSE-jt12`.
+`jt03` is the FM77AV's YM2203 and also supplies the FM-7's PSG, so removing it
+is not an option that leaves a working core.

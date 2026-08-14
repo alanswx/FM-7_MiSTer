@@ -396,6 +396,14 @@ confident wrong answer at least once:
     instructions. Comparing frame 870 against that reference shows five missing lines of text
     that are not a bug. Align on what is on screen, not on the counter.
 
+21. **A fixed measurement window shorter than the signal's period reads as silence.**
+    `sound_tb.sv` watched the PSG mix for 200,000 clocks after programming a tone whose
+    full period is 409,600 — the window sat entirely inside the square wave's low half.
+    Against the old chip that still showed a non-zero DC floor; against jt49, whose low
+    half is a true zero, the identical, correct RTL reported "PSG mix stayed at zero", i.e.
+    exactly the signature of the handshake bug the bench exists to catch. Size the window
+    from the period you programmed.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

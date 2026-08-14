@@ -251,13 +251,23 @@ DAC" without opening the file:
 
 ```
 audio  : PSG max 10238 (nonzero 233965093)  core_audio max 10238  AUDIO_L max 10238
-PSG bus: $fd0d writes 4096  $fd0e writes 2048  cen ticks 18130034  {bdir,bc1} seen 00 10 11
+PSG bus: $fd0d writes 4096  $fd0e writes 2048  cen ticks 18130034  cmd[1:0] seen 0 2 3
 PSG channels: dac_a max 4095  dac_b max 4095  dac_c max 2048
 ```
 
 **A PSG max of 0 with non-zero `$fd0e` writes is the signature of a broken bus
 handshake** — the software is programming the chip and nothing is landing. That
 is exactly what a whole run of Thexder looked like before the fix.
+
+The chip is a `jt03` (jotego/jt12) and serves both machines: the FM-7's PSG and
+the FM77AV's YM2203 are the same block, addressed through `$fd0d`/`$fd0e` with
+the command masked to two bits and, on the AV, `$fd15`/`$fd16` with all four.
+`cmd[1:0] seen` is the low half of that command register — 2 is "write data" and
+3 is "latch address", so a run showing only 0 never programmed anything.
+
+`make sound-test` also covers the AV window directly, including the status read
+(command 4) that Ys spins on: an undecoded `$fd16` returns `$ff`, bit 7 reads as
+permanently busy, and the game never leaves its wait loop.
 
 ## Differential VRAM comparison against 77AVEMU (FM77AV)
 
