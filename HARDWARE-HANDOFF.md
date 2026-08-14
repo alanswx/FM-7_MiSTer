@@ -6,6 +6,90 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+## Answer from the sim side at `048f2cc` — both questions closed
+
+### The joystick: **no JOYSEL. Thexder never polls the stick.**
+
+That is the first branch of the decision tree above, run exactly as specified —
+`make DEBUG_JOY=1`, `--joystick 300:up+a:6000`, 1200 frames of Thexder:
+
+```
+JOYSEL 0   JOYRD 0   PSGWR 1686
+145 reg0  145 reg1   76 reg2   76 reg3  290 reg4  290 reg5
+  1 reg7  146 reg8   78 reg9  290 reg10   2 reg12 147 reg13
+```
+
+1686 register writes, every one of them tone/noise/envelope/amplitude, and
+**zero to registers 14 or 15**. So Thexder cannot be started or driven by a
+stick on this core, on 77AVEMU, or on a real FM-7 — and "pressing the vjoy
+buttons at Thexder's title does not start the game" is expected, not a symptom.
+`tools/mister-vjoy.py` is not implicated.
+
+Finding a title that *does* poll it is harder than it looks. Of the 301 FM-7
+images, only **25** contain a 6809 extended read of `$fd0e` (a sound driver only
+ever writes that port, so a read of it is the giveaway): Death Force leads with
+10, then Wibarm, Topple Zip, Space Harrier. None of those four reached a poll
+inside 1600 frames — they are still in loaders or on title screens, so a
+title-based test has to get into the game first.
+
+**The game-independent test is the F-BASIC sequence in `docs/IO_MAP.md`.** Hold
+stick 0 up+A and type it: `238` means the stick reaches the PSG and the core is
+fine, `255` means it never arrived. That separates a core bug from anything
+upstream in one line, without depending on a game.
+
+Meanwhile `SOUND.v`'s four strobes were still on one-cycle edge detectors, which
+`docs/REFERENCE.md` says is too short for a routed decode — and that module is
+the one the doc singles out as needing "a listening test or a joystick test",
+both of which this report finally ran. They now use the 3-stage filter. A
+spurious command is a spurious register write: inaudible among thousands in
+music, but one bad write to register 15 clobbers the joystick *selection* and
+port A reads `$ff` until software writes it again. Sound survives, the stick
+does not — which is the split reported here. Sim is byte-identical either way,
+so only hardware can say whether it helped.
+
+### The sound: the 156 Hz vs 117 Hz comparison is passage-ambiguous, and a
+### controlled tone says the chip is an octave FLAT
+
+The caveat recorded above is the whole story: the loudest second of a 12 s
+capture 40 s after load is not the same passage as a 900-frame sim run, and
+156/117 = 1.33 is a perfect fourth — two different notes of the same tune.
+
+So the sim side stopped comparing passages and programmed **one known tone**
+with nothing else running. `make sound-test` now prints it in Hz:
+
+```
+before   117.32 Hz        after   234.65 Hz        AY-3-8910 wants 240.00 Hz
+```
+
+The error was exactly **2.000** at TP = 320, 190, 143 and 47 — a clean octave,
+not rounding. Ground truth is not in dispute: CSP `fm7.cpp:831` and MAME
+`fm7.cpp:1893` both clock the FM-7's PSG at 4.9152/4 = 1.2288 MHz, so TP=320 is
+1228800/(16*320) = 240.00 Hz. The cause is jt12's SSG chain — jt49 wrapped at
+CLKDIV=2/sel=1 with the prescaler at its reset /4 runs the tone counter at
+cen/2, so `cen` has to be twice the nominal chip clock.
+
+**This makes the FM-7 sound an octave HIGHER, which is the opposite direction to
+the listener's report, and that conflict is not resolved.** A controlled tone on
+hardware settles it, and it is the same stimulus on both sides — type this in
+F-BASIC and hold the note:
+
+```
+poke64782,0:poke64781,3:poke64781,0:poke64782,64:poke64781,2:poke64781,0
+poke64782,1:poke64781,3:poke64781,0:poke64782,1:poke64781,2:poke64781,0
+poke64782,7:poke64781,3:poke64781,0:poke64782,62:poke64781,2:poke64781,0
+poke64782,8:poke64781,3:poke64781,0:poke64782,15:poke64781,2:poke64781,0
+```
+
+That is TP = $0140, channel A, tone only, full amplitude. **240 Hz means this
+build is right. 117 Hz means the octave fix should be reverted** (`378fee6`,
+one commit, one file). Anything else means something neither side has modelled.
+
+Note the 2.3% residual is unchanged and is FLAT on both machines — 48/20 and
+48/40 against a true 2.4576 and 1.2288 — so it still cannot be the cause of
+anything sounding fast.
+
+---
+
 ## Status at `9a45326` — jt03 verified, sound still fast, joystick still dead
 
 **Builds and fits: 23,325/41,910 ALMs (56%), 516/553 RAM blocks (93%), 34 DSPs,
