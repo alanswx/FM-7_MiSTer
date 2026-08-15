@@ -297,6 +297,22 @@ Only `av-wizardry4.png` and `counters.tsv` changed on disk. Wizardry IV is the
 one to look at if this bless ever needs re-justifying — the old reference is a
 picture of the bug.
 
+### And re-blessed again for the $FD12 status bits
+
+Two counter rows only, and **no screenshot anywhere changed** — all three AV
+shots are byte-identical, as are the eight FM-7 rows:
+
+| row | change |
+|---|---|
+| `av-kohakuiro` | main 5077 → 5309, io 889656 → 924729 |
+| `av-wizardry4` | io 532261 → 532204 |
+
+`$FD12` used to read back as a constant and now returns live VSYNC/DISPLAY, so
+any AV title that polls it spends a different number of cycles doing so. That is
+the whole of it: the two rows that moved are the two that read the register, and
+the interrupt commit that followed left both numbers unchanged, i.e. neither
+title arms the YM2203 timer.
+
 The `--joystick`/F-BASIC integration check in `docs/TESTING.md` was run against
 the `jt03` swap and still prints **238**, which is what covers the joystick move
 from the old bus snoop onto the chip's real port A. The gate does not exercise
