@@ -470,7 +470,27 @@ ROMS u_ROMS(
 // of backing it a second time -- 64 M10K on a device the design overflows.
 // FM-7 mode is untouched.
 wire [15:0] MRAM_addr = AV_FM7PAGE_SEL ? AV_FM7PAGE_ADDR : MADDRBUS;
-wire        MRAM_rwbn = AV_FM7PAGE_SEL ? AV_FM7PAGE_WRITE : RWBn;
+// AV MODE MUST NOT FALL BACK TO THE RAW WRITE STROBE. The old expression was
+//
+//     AV_FM7PAGE_SEL ? AV_FM7PAGE_WRITE : RWBn
+//
+// so whenever the AV's physical address was NOT in the FM-7 page, the write
+// enable reverted to the main CPU's own strobe -- while the address mux
+// reverted to the untranslated MADDRBUS. Every AV write to anywhere therefore
+// ALSO wrote MRAM at the raw CPU address, silently corrupting the FM-7 page
+// underneath.
+//
+// Woody Poco shows what that costs. It loads an 8 KB routine to main $6000
+// with MMR mapping that window to physical $36000 -- all 8192 bytes arrive
+// correctly, last-write values matching the reference byte for byte. It then
+// re-points the same window at bank $13 and writes there, and those writes
+// landed a second time on MRAM[$6xxx], erasing the routine. Its interrupt
+// handler later does `CLR $fd93 / JSR $6000`, reads back zeros and runs away
+// through the shared window into $FDxx.
+//
+// AV_FM7PAGE_WRITE already carries blk_d_sel, so it is 0 unless the access
+// really targets $30000-$3FFFF. FM-7 mode is untouched.
+wire        MRAM_rwbn = machine_av ? AV_FM7PAGE_WRITE : RWBn;
 
 MRAM u_MRAM(
   .RAM1HB1n ( RAM1HB1n     ),
