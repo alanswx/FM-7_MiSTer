@@ -21,6 +21,12 @@ module CLKCTRL(
   output reg _2MS,
   input IRQCLRn,
   input EXTIRQ,
+  // FM77AV only: the YM2203's timer interrupt. 77AVEMU keeps this source in
+  // MAIN_IRQ_ENABLE_ALWAYS_ON (fm77av.h:117) with the note "Never mask by
+  // $FD02" -- the YM2203C card has no mask register, so software cannot turn
+  // it off and does not expect to. Tied high in FM-7 mode, where there is no
+  // YM2203 at all.
+  input FMIRQn,
   output MCPUCLK, // 8 | 4.9
   output SCPUCLK, // 8 | 4
   output reg [7:0] MDATABUS_out,
@@ -209,7 +215,12 @@ always @*
   else MDATABUS_out = 8'd0;
 
 // IRQ generation logic
-assign IRQn = m50_1 & KEYINn & LPINTn;
+// The YM2203 timer joins the timer, keyboard and printer sources. Woody Poco
+// (FM77AV) programs timer A with IRQ A enabled (register $27 <- $05 at
+// pc=$c981) and then waits on a counter its handler increments; with jt03's
+// irq_n going nowhere the handler never ran and the main CPU span forever at
+// $b532 on `LDA $2119,PCR / CMPA #$14 / BCS`.
+assign IRQn = m50_1 & KEYINn & LPINTn & FMIRQn;
 
 // This is a simple clock divider that generates the 2MS clock.
 // Bottom right on schematic page.

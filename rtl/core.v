@@ -150,6 +150,16 @@ wire WTQEn;
 // write strobes came out permanently inactive and the main CPU ran away
 // through the whole address space at 32 instructions a frame.
 wire AV_YM_SEL = machine_av && (MADDRBUS == 16'hfd16);
+wire AV_FM_IRQn;
+// Active low, and only on the AV -- the FM-7 has no YM2203, so its IRQ line
+// is held inactive there rather than left floating into the interrupt OR.
+wire AV_FM_IRQn_gated = AV_FM_IRQn | ~machine_av;
+// $FD17 bit 3 reports it, active low, which is how software tells a YM2203
+// interrupt from the other sources (77AVEMU fm77avio.cpp:897-901: the read
+// masks bit 3 off while the source is pending). Read-only; the flag is
+// cleared by writing the YM's own $27 reset bits, not by this read.
+wire AV_FD17_SEL = machine_av && (MADDRBUS == 16'hfd17);
+wire [7:0] AV_FD17_dout = { 4'hf, AV_FM_IRQn, 3'b111 };
 wire WFD15n = ~(machine_av && (MADDRBUS == 16'hfd15) && ~WTQEn);
 wire WFD16n = ~(AV_YM_SEL && ~WTQEn);
 wire RFD16n = ~(AV_YM_SEL && ~RDQEn);
@@ -199,6 +209,21 @@ wire TMMASK;
 wire MRDYn;
 wire _2MS;
 wire EXTIRQ;
+// EXTIRQ was DECLARED AND NEVER DRIVEN, so $fd03 bit 3 always read back as
+// "no external interrupt". That is invisible until something actually raises
+// one, because the FM-7's own FDC interrupt reaches the CPU through MFD.v
+// rather than through here.
+//
+// The FM77AV's YM2203 is exactly such a source. 77AVEMU folds every enabled
+// interrupt above bit 3 -- FDC, RS232C and YM2203C -- into this one EXT bit
+// when $fd03 is read (fm77avio.cpp:824-830), which is what lets a handler
+// written for the FM-7's four sources notice a card interrupt at all.
+//
+// Woody Poco's handler is precisely that shape: `LDA $fd03 / BITA #$08 / BNE`
+// to dismiss when no external interrupt is pending. With the bit stuck at
+// "none" it dismissed every time, and since the YM2203's timer flag stays up
+// until software resets it, the machine sat in an interrupt storm.
+assign EXTIRQ = machine_av & ~AV_FM_IRQn;
 wire MCPUCLK;
 wire SCPUCLK;
 wire SUBIRQn;
@@ -338,6 +363,7 @@ assign MDATABUS_in =
   ~PLTREGn ? PALDATA :
   AVIO_sel ? AVIO_dout :
   ~RFD16n ? SOUND_dout :
+  (AV_FD17_SEL & ~RDQEn) ? AV_FD17_dout :
   ~IOSn ? 8'hff :
 
   ~(SUBSELn | RDQEn) ? SRDATA_out :
@@ -406,6 +432,7 @@ CLKCTRL u_CLKCTRL(
   ._2MS         ( _2MS         ),
   .IRQCLRn      ( IRQCLRn      ),
   .EXTIRQ       ( EXTIRQ       ),
+  .FMIRQn       ( AV_FM_IRQn_gated ),
   .MCPUCLK      ( MCPUCLK      ),
   .SCPUCLK      ( SCPUCLK      ),
   .MDATABUS_out ( CLKCTRL_out  ),
@@ -1183,7 +1210,7 @@ SOUND u_SOUND(
   .joystick_1   ( joystick_1   ),
   .mix_audio_o  ( audio_out    ),
   .fm_audio_o   ( fm_audio_out ),
-  .FMIRQn       (              )
+  .FMIRQn       ( AV_FM_IRQn   )
 );
 
 
