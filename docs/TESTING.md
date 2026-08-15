@@ -160,6 +160,72 @@ Identical output means the change is not responsible — but see the
 measurement traps in `docs/REFERENCE.md` first: identical output is also what a
 patch that never reached the binary looks like.
 
+## Driving the reference: keys and a joystick
+
+`refs/local/fm77av_headless` takes the same input options as `vsim`, and the
+frame numbers mean the same thing on both — a frame is 1/60 s of **machine
+time**, not a raster frame, because the two machines share no instruction count
+and do not even agree on the main CPU's clock.
+
+```sh
+refs/local/fm77av_headless refs/local/fm77av-roms game.d77 60000000 out.png --fm7 \
+    --key 700:MID_SPACE:40  --joystick 1200:right+a:600  --shot-every 1500
+```
+
+* `--key F:NAME[:HOLD]` — `NAME` is 77AVEMU's own label. The FM-7 has three
+  space bars (`LEFT_SPACE`, `MID_SPACE`, `RIGHT_SPACE`) and its function keys are
+  `PF1`-`PF10`; there is no `SPACE` or `F1`, and an unknown name is reported
+  rather than silently ignored.
+* `--joystick F:B[:HOLD]` — `B` is `+`-separated: `up down left right a b`.
+* `--shot-every N` — a PNG every N frames, which is how you watch an attract
+  sequence instead of guessing at it.
+
+**Answer questions about the software on the reference first.** "Which key
+starts this game" is a fact about the game, not about our RTL, and asking it on
+the core under test conflates "we typed the wrong key" with "the core dropped
+the key". The reference is also about fifty times faster: 200 M instructions is
+about ninety seconds, where the same machine time in Verilator is hours.
+
+### What that immediately settled about Thexder
+
+Thexder **cannot be started by a key or a stick**, and it is not a core problem:
+
+* Its attract loop runs for *minutes* of machine time — title, then credits,
+  then back — so a 1500-frame Verilator run only ever sees the first screen, and
+  everything looks unresponsive.
+* All **100** of 77AVEMU's real key labels were pressed in turn on the
+  reference. Not one changes the screen. Pressing later, or hammering a key
+  every 300 frames across a 200 M-instruction run, only shifts the animation
+  phase.
+* It never reads PSG registers 14 or 15 at all — 1686 register writes in a
+  Verilator run with a stick held, every one of them tone, noise, envelope or
+  amplitude.
+
+### Which titles actually read a joystick
+
+`Port::Read()` stamps `lastAccessTime` and power-on zeroes it, so the driver's
+`GAMEPORT` line is free proof that a title polled the stick. Over the 67 AV
+images, **20 do**:
+
+```
+Deep Forest · Digital Devil Story · Dragon Buster · Gambler Jikochuushinha
+How Many Robot · Kugyokuden · Luxsor 1+2 · Mugen Senshi Valis 1+2
+Pro Yakyuu Fan · Psy-O-Blade · Reviver · Shounen Mike no Hitoritabi
+The Return of Ishtar (both dumps) · The Tower of Druaga (both dumps)
+Woody Poco · Urusei Yatsura
+```
+
+Six of those read **port 1** as well, so they are the two-player tests.
+
+**Test the joystick on an FM77AV title, not an FM-7 one.** 77AVEMU routes the
+gameport only through the `$FD15`/`$FD16` YM2203 window
+(`fm77avsound.cpp:182-186`); a read of PSG register 14 through the FM-7's
+`$FD0D`/`$FD0E` window returns the AY's own register (`:428`) and never reaches
+the port. CaptainYS says why in `fm77avkeyboard.h`: gamepads became common
+"after Fujitsu released YM2203C expansion card". On a base FM-7 the stick is a
+minority path — most games read the keyboard — which is a fact about the
+machine, and it is why hunting for an FM-7 joystick title kept coming up empty.
+
 ## The FM77AV breadth sweep
 
 ```sh
