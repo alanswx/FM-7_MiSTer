@@ -322,29 +322,49 @@ every one of the same images (`vsim/sweep/compare-av-jt03.txt`, raw rates in
 comparison buys, and it is why the count had to be redone rather than argued
 about.
 
-**Eight of the fourteen have a starved sub CPU**, with the main CPU running
-perfectly normally — and the sub is what draws:
+**The "starved sub CPU" reading of eight of them was wrong.** Traced on Woody
+Poco, the most extreme case at 44 instructions/frame: the sub is not starved, it
+is **halted, on purpose, by the game** — and 77AVEMU does the same, parking it
+at `$e146` in the monitor idle loop while the main CPU draws through the MMR
+aperture, and rendering the title from that state. A low sub rate on an AV title
+is not a fault by itself. Remember that before applying the same reading to
+Laydock.
 
-| title | main/frame | sub/frame |
-|---|---|---|
-| Woody Poco (Disk 1) | 7269 | **44** |
-| Psy-O-Blade (Disk 1) | 6021 | **165** |
-| Silpheed (Disk A) | 6016 | **185** |
-| Mahjong Kyou Jidai (Disk 1) | 5744 | **189** |
-| Luxsor (Disk 2) | 6017 | **227** |
-| Deep Forest (Disk A) | 6009 | **615** |
-| Luxsor (Disk 1) | 5810 | **812** |
-| In the Dream (Disk A) | 4987 | **1272** |
+Three real faults came out of tracing it, all generic AV paths rather than
+anything title-specific, and each was only reachable once the previous one was
+fixed:
 
-A healthy sub is ~8000/frame. This is the old Laydock lead (main 5982, sub 81)
-turning out to be one shared fault across eight titles rather than eight
-separate ones, so it is the single highest-value thing left on the AV. The
-obvious suspect is `core.v`'s `sub_vram_wait`, which stalls the sub's clock
-outright whenever it touches VRAM while the raster owns the address bus — a
-title that hammers VRAM would starve exactly like this. Trace one of them
-against the reference before believing that, and prefer Woody Poco: at 44
-instructions a frame it is the most extreme, so whatever the mechanism is, it
-will be easiest to see there.
+1. **`$FD12` read back as a constant** — bits 0/1 are VSYNC/DISPLAY. Fixed;
+   note DISPLAY needs *vertical* blanking, not the horizontal `SBLANKn` behind
+   `$D430` bit 7.
+2. **The sub I/O MMR aperture was write-only.** Woody Poco halts the sub, points
+   `$FD82` at physical `$1D`, and drives the AV keyboard encoder from the main
+   side — `$2431`/`$2432` are `$D431`/`$D432`.
+3. **The YM2203 interrupt reached nothing**, and `EXTIRQ` was declared and never
+   driven, so `$fd03` bit 3 always read "nothing pending". Both fixed.
+
+**Where it stands: it runs 2438 serviced interrupt cycles instead of hanging at
+frame 16, and draws one glyph — but not the screen.** The remaining fault is
+concrete. Its interrupt handler does
+
+```
+c378  b6 fd 93   LDA $fd93     ; save MMR control
+c37d  7f fd 93   CLR $fd93     ; MMR off -> plain FM-7 map
+c380  bd 60 00   JSR $6000     ; call a routine at physical $36000
+```
+
+and physical `$36000` holds game code on the reference (`34 07 1a 50 8d 2b …`,
+via `FM77AV_MEM_DUMP`) and **zeros here**, so the CPU executes `$00 $00` —
+`NEG <$00` — up through the shared window into `$FDxx`. The game does write
+that area: `$FD86 <- $36` maps main `$6xxx` to physical `$36xxx`, and code at
+`$c601` stores through `U` at `$6013`, `$6019`, stride 6. Find why those stores
+do not end up where the reference has them.
+
+**A dead end already eliminated, so nobody repeats it:** widening
+`mmr_ram_sel`'s `< $36000` bound to cover the freed initiator window is a
+**no-op**. For any CPU address either `initiator_sel` is already false (so the
+existing term permits the write) or the address is in `$6000-$7FFF` with the
+overlay on (correctly blocked). It was tried; the output was byte-identical.
 
 The other six are a different shape and should not be lumped in: Little Box has
 a dead MAIN CPU (243/frame), and four — both `FM77AV demo` dumps in

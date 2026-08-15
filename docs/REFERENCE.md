@@ -415,6 +415,22 @@ confident wrong answer at least once:
     exactly the signature of the handshake bug the bench exists to catch. Size the window
     from the period you programmed.
 
+23. **A signal can be DECLARED AND NEVER DRIVEN, and nothing warns you.** `core.v` had
+    `wire EXTIRQ;` with no assignment for the life of the project. It reads as 0, so `$fd03`
+    bit 3 reported "no external interrupt" forever — correct-looking, because the FM-7's own
+    FDC interrupt reaches the CPU through `MFD.v` instead, so nothing ever raised one. It
+    only surfaced when the FM77AV's YM2203 needed that path. Verilator does not warn (an
+    undriven wire is legal), and neither does Quartus below its default severity. When a
+    status bit is suspiciously constant, grep for a driver before theorising about the
+    device behind it.
+24. **A working interrupt and an interrupt storm look identical from outside.** Both show a
+    high interrupt count and a CPU that is not making progress. What separates them is
+    whether the handler *clears the source*: 2438 interrupts against 2439 writes to the
+    YM2203's timer-control register is a working timer; the same 2438 with no clears is a
+    storm. Count the acknowledge, not the interrupt — and note that connecting a real
+    interrupt can make a title look *worse* (it ran away where it used to hang), which is
+    progress, not regression.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
