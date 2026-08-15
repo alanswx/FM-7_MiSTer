@@ -23,6 +23,9 @@ module AVMEM(
   input        SUBRAM_WRITE,
   input  [7:0] SUBRAM_DIN,
   input        SUBMON_STATUS_CLEAR,
+  input        SVSYNCn,
+  input        SBLANKn,
+  input        VBLANKn,
   output [7:0] SUBRAM_DOUT,
   output [7:0] DOUT,
   output reg [7:0] IODOUT,
@@ -46,6 +49,7 @@ module AVMEM(
   output [7:0] SUBIO_ADDR,
   output       SUBIO_WRITE,
   output [7:0] SUBIO_DIN,
+  input  [7:0] SUBIO_DOUT,
   output        FM7PAGE_SEL,
   output [15:0] FM7PAGE_ADDR,
   output        FM7PAGE_WRITE,
@@ -366,7 +370,28 @@ end
 
 always @* begin
   case (MADDRBUS[7:0])
-    8'h12: IODOUT = 8'hbf | (av_mode_320 ? 8'h40 : 8'h00);
+    // $FD12 is not just the mode latch: bit 0 is VSYNC and bit 1 is DISPLAY,
+    // and titles wait on them. 77AVEMU spells out both senses
+    // (fm77avcrtc.cpp:238-257): base $BF, `if(!InVSYNC) &= 0xFE` so bit 0 is 1
+    // DURING vsync, and `if(InBlank) &= 0xFD` so bit 1 is 0 while blanking.
+    // CSP drives the same two bits from SIG_DISPLAY_VSYNC and
+    // SIG_DISPLAY_DISPLAY (fm7_mainio.cpp:1095-1108).
+    //
+    // This read used to be a constant, so bits 1:0 were always 11 -- a state
+    // that never occurs on real hardware. Woody Poco halts the sub CPU, then
+    // spins on `LDA $fd12 / ANDA #$03 / DECA / BNE` waiting for 01, i.e. vsync
+    // with the display off, which is the ordinary way to wait for vblank before
+    // drawing. It never arrived, so the main span forever in that four
+    // instruction loop.
+    //
+    // The DISPLAY bit needs VERTICAL blanking, and that is the subtlety.
+    // 77AVEMU's InBlank() is `InVBLANK() || InHSYNC()` (fm77avcrtc.h:136-139),
+    // and InVSYNC() is a sub-interval of that same vertical period. SBLANKn --
+    // which drives $D430 bit 7 -- is HORIZONTAL only, so using it alone
+    // produced a machine that was never in vblank and vsync together: the read
+    // returned $ff, $fe and $fc but never the $fd the title waits for.
+    8'h12: IODOUT = { 1'b1, av_mode_320, 4'b1111,
+                      ~(~VBLANKn | ~SBLANKn), ~SVSYNCn };
     8'h80, 8'h81, 8'h82, 8'h83,
     8'h84, 8'h85, 8'h86, 8'h87,
     8'h88, 8'h89, 8'h8a, 8'h8b,
@@ -378,8 +403,16 @@ always @* begin
   endcase
 end
 
+// The sub I/O aperture is readable, not just writable. It used to fall through
+// to the RAM array -- which reads as zero, since nothing ever writes it -- and
+// that is invisible until a title actually reads it. Woody Poco does: it halts
+// the sub CPU, maps physical $1D000 to $2000-$2FFF, writes an AV keyboard
+// encoder command to $2431 ($D431) and then polls $2432 ($D432) for the ACK
+// bit. With the read landing in dead RAM the ACK never arrived and the main CPU
+// span on `LDA $2432 / BITA #$01 / BEQ` forever.
 assign DOUT = bootram_sel ? boot_q :
               vram_sel ? VRAM_DOUT :
+              subio_sel ? SUBIO_DOUT :
               shared_sel ? SHARED_DOUT : ram_q;
 
 endmodule

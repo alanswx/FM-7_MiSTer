@@ -482,6 +482,9 @@ AVMEM u_AVMEM(
   .SUBMON_SEL  ( AV_SUBMON_SEL ),
   .SUBMON_RESET ( AV_SUBMON_RESET ),
   .SUBMON_STATUS_CLEAR ( AV_SUBMON_STATUS_CLEAR ),
+  .SVSYNCn     ( SVSYNCn      ),
+  .SBLANKn     ( SBLANKn      ),
+  .VBLANKn     ( VBLANKn      ),
   .SUBMON_STATUS ( AV_SUBMON_STATUS ),
   .AV_MODE_320 ( AV_MODE_320 ),
   .VRAM_SEL    ( AV_VRAM_SEL    ),
@@ -497,6 +500,7 @@ AVMEM u_AVMEM(
   .SUBIO_ADDR  ( AV_SUBIO_ADDR  ),
   .SUBIO_WRITE ( AV_SUBIO_WRITE ),
   .SUBIO_DIN   ( AV_SUBIO_DIN   ),
+  .SUBIO_DOUT  ( AV_SUBIO_dout  ),
   .FM7PAGE_SEL   ( AV_FM7PAGE_SEL   ),
   .FM7PAGE_ADDR  ( AV_FM7PAGE_ADDR  ),
   .FM7PAGE_WRITE ( AV_FM7PAGE_WRITE ),
@@ -514,6 +518,26 @@ AVMEM u_AVMEM(
 // not merely by the address decode, so an unrelated main-CPU cycle whose
 // physical address happens to land in the page cannot mask a sub-CPU write.
 wire        AV_SUBIO_MMR = AV_SUBIO_WRITE & ~SHALTn;
+
+// ...and the matching READ path, which did not exist. The aperture was
+// write-only because no software in hand read it -- until Woody Poco, which
+// polls the AV keyboard encoder's ACK bit through it (see AVMEM.v).
+//
+// Only the registers with a meaningful read are decoded: $D430's live status
+// (SMEM.v already matches the reference for it) and the encoder pair
+// $D431/$D432. Everything else returns $FF, which is what an undecoded sub
+// I/O address reads as.
+//
+// Gated on the sub CPU being halted, as both references are: CSP returns $FF
+// unless the sub is halted (mainmem_readseq.cpp read_direct_access) and
+// 77AVEMU states the same rule the other way round, discarding the access
+// while the sub is running (fm77avmemory.cpp:804-809).
+wire [7:0] AV_KBD_mmr_dout;
+wire [7:0] AV_SUBIO_dout =
+  ~SHALTn ? 8'hff :
+  (AV_SUBIO_ADDR == 8'h30) ? AV_D430_dout :
+  ((AV_SUBIO_ADDR == 8'h31) || (AV_SUBIO_ADDR == 8'h32)) ? AV_KBD_mmr_dout :
+  8'hff;
 wire [15:0] SREGADDR = AV_SUBIO_MMR ? {8'hd4, AV_SUBIO_ADDR} : SADDRBUS;
 wire  [7:0] SREGDIN  = AV_SUBIO_MMR ? AV_SUBIO_DIN : SDATABUS_out;
 wire        SREGWEn  = AV_SUBIO_MMR ? 1'b0 : SWTQEn;
@@ -825,7 +849,9 @@ AVKEYBOARD u_AVKEYBOARD(
   .SWTQEn     ( SWTQEn       ),
   .SRWB       ( SRWB         ),
   .DOUT       ( AV_KBD_dout ),
-  .SEL        ( AV_KBD_sel   )
+  .SEL        ( AV_KBD_sel   ),
+  .MMR_ADDR   ( AV_SUBIO_ADDR ),
+  .MMR_DOUT   ( AV_KBD_mmr_dout )
 );
 
 SMEM u_SMEM(

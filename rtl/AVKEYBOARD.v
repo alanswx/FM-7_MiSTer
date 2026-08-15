@@ -13,7 +13,13 @@ module AVKEYBOARD(
   input        SWTQEn,
   input        SRWB,
   output [7:0] DOUT,
-  output       SEL
+  output       SEL,
+  // Second, read-only view for the main CPU's MMR window onto the sub I/O
+  // page. Woody Poco halts the sub, maps physical $1D000 into $2000-$2FFF and
+  // then drives the encoder from the main side, so these registers have to be
+  // readable from an address that is not on the sub bus at all.
+  input  [7:0] MMR_ADDR,
+  output [7:0] MMR_DOUT
 );
 
 wire io_window = machine_av && (SADDRBUS[15:8] == 8'hd4);
@@ -34,6 +40,7 @@ wire [7:0] status = {~data_valid, 6'd0,
 
 assign SEL  = data_sel || stat_sel;
 assign DOUT = data_sel ? data_reg : status;
+assign MMR_DOUT = (MMR_ADDR[5:0] == 6'h31) ? data_reg : status;
 
 always @(posedge CLKSYS) begin
   if (~RESETBn) begin
