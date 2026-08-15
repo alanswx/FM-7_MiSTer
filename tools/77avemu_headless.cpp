@@ -347,6 +347,29 @@ int main(int argc, char **argv)
         }
     }
 
+    // Optional main-memory dump, the counterpart of the VRAM dump below.
+    // docs/REFERENCE.md trap 19: when a screen is wrong, dump the bytes and diff
+    // them before theorising about the thing that draws them. The same applies
+    // to a CPU stuck on a flag -- "what is at $2432 on a machine that gets past
+    // this" is a question a dump answers and a disassembly argues about.
+    //
+    // Writes the whole 256 KB physical space, so a main-CPU address needs its
+    // MMR mapping applied: with MMR off the FM-7 machine page is $30000, i.e.
+    // main $2432 is at offset $32432.
+    if (const char *memOut = std::getenv("FM77AV_MEM_DUMP"))
+    {
+        FILE *fp = fopen(memOut, "wb");
+        if (nullptr == fp)
+        {
+            std::cerr << "mem dump failed: " << memOut << "\n";
+            return 1;
+        }
+        fwrite(vm->physMem.state.data, 1, sizeof(vm->physMem.state.data), fp);
+        fclose(fp);
+        std::cerr << "mem dump: " << memOut << " ("
+                  << sizeof(vm->physMem.state.data) << " bytes)\n";
+    }
+
     // Optional VRAM dump for differential triage against the Verilator core.
     // Emits bank 0 then bank 1, each 0xC000 bytes: blue, red, green in order.
     if (const char *vramOut = std::getenv("FM77AV_VRAM_DUMP"))
