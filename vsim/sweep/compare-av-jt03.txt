@@ -1,0 +1,77 @@
+VERDICT     OURS         COV% REF          COV%  MAIN/f   SUB/f  TITLE
+CORE-BLANK  blank         0.1 GRAPHICS     99.9    6574    8707  Shounen_Mike_no_Hitoritabi__FM77AV__
+CORE-BLANK  blank         0.0 GRAPHICS     92.8    6255    7467  FM77AV-DEMO.D77_
+CORE-BLANK  blank         0.0 GRAPHICS     92.8    6255    7467  FM77AV_demo_
+CORE-BLANK  blank         0.0 GRAPHICS     83.9    6009     615  Deep_Forest__FM77AV___Disk_A__
+CORE-BLANK  blank         0.0 GRAPHICS     81.8    6017     227  Luxsor__FM77AV___Disk_2__
+CORE-BLANK  blank         0.0 lowcolour    66.8    5744     189  Mahjong_Kyou_Jidai_Special__FM77AV___Disk_1__
+CORE-BLANK  blank         0.1 GRAPHICS     57.3    7269      44  Woody_Poco__FM77AV___Disk_1__
+CORE-BLANK  blank         0.1 GRAPHICS     40.2    5435    8745  Pro_Yakyuu_Fan__FM77AV___Disk_A__
+CORE-BLANK  blank         0.0 GRAPHICS     27.3    5810     812  Luxsor__FM77AV___Disk_1__
+CORE-BLANK  blank         0.4 lowcolour    19.7    6021     165  Psy-O-Blade__FM77AV___Disk_1_-_Program__
+CORE-BLANK  blank         0.0 GRAPHICS     16.5    5977    8131  Daiva_Story_2_-_Memory_in_Durga__FM77AV___Disk_A__
+CORE-BLANK  blank         0.0 GRAPHICS     13.3    6016     185  Silpheed__FM77AV___Disk_A__
+CORE-BLANK  blank         0.0 lowcolour     9.6     243    8709  Little_Box__FM77AV___Disk_A__
+CORE-BLANK  blank         0.0 lowcolour     9.6    4987    1272  In_the_Dream__FM77AV___Disk_A__
+CORE-WORSE  lowcolour     3.6 lowcolour    85.3    4568    7183  How_Many_Robot__FM77AV___Disk_0__
+CORE-WORSE  GRAPHICS     23.7 GRAPHICS     82.3    4919     236  Mugen_Senshi_Valis__FM77AV___Disk_2__
+CORE-WORSE  lowcolour    10.0 lowcolour    74.7    4936    7609  Gambler_Jikochuushinha__FM77AV__
+TEXT-ONLY   blank         0.1 text          7.8    4805    5488  Tetris__FM77AV__
+TEXT-ONLY   text          2.7 text          3.7    5032    8530  Wizardry_IV__FM77AV___Disk_C__
+TEXT-ONLY   blank         0.0 text          1.2    4378    7332  Yami_no_Iyo_Densetsu__FM77AV___Disk_1__
+TEXT-ONLY   text          1.1 text          1.2    5669    9952  How_Many_Robot__FM77AV___Disk_1__
+TEXT-ONLY   text          0.8 text          0.8    5693   10055  Metal_-X-__FM77AV___run_METAL-X-__
+TEXT-ONLY   blank         0.1 text          0.5    4492    8710  Kugyokuden__FM77AV___Disk_2_-_Gekan__
+TEXT-ONLY   text          2.0 blank         0.1    5696   10108  Urusei_Yatsura_-_Koi_no_Survival_Birthday__FM77AV___Disk_2__
+TEXT-ONLY   text          2.0 blank         0.1    5696   10108  Urusei_Yatsura_-_Koi_no_Survival_Birthday__FM77AV___Disk_3__
+TEXT-ONLY   text          2.0 blank         0.1    5696   10109  Yami_no_Iyo_Densetsu__FM77AV___Disk_2__
+BOTH-BLANK  blank         0.1 blank         0.4    4429    8778  _OS__F-BASIC_v3.3_L10__FM77AV__
+BOTH-BLANK  blank         0.1 blank         0.4    4429    8778  _OS__F-BASIC_v3.3_L11__FM77AV__
+BOTH-BLANK  blank         0.2 blank         0.2    6687    8753  Psy-O-Blade__FM77AV___Disk_3_-_B__
+BOTH-BLANK  blank         0.2 blank         0.2    6687    8753  Psy-O-Blade__FM77AV___Disk_2_-_A__
+BOTH-BLANK  blank         0.2 blank         0.2    6687    8753  Psy-O-Blade__FM77AV___Disk_5_-_D__
+BOTH-BLANK  blank         0.2 blank         0.2    6687    8753  Psy-O-Blade__FM77AV___Disk_4_-_C__
+BOTH-BLANK  blank         0.1 blank         0.1    4656    8778  Kohakuiro_no_Yuigon__FM77AV___Disk_2__
+BOTH-BLANK  blank         0.1 blank         0.1    4656    8778  Kohakuiro_no_Yuigon__FM77AV___Disk_3__
+BOTH-BLANK  blank         0.1 blank         0.1    4656    8778  Kohakuiro_no_Yuigon__FM77AV___Disk_4__
+BOTH-BLANK  blank         0.1 blank         0.1    5982      81  Laydock__FM77AV___Disk_A_-_Program__
+BOTH-BLANK  blank         0.1 blank         0.1    5982      81  Laydock__FM77AV___T_E___Disk_A_-_Program__
+BOTH-BLANK  blank         0.1 blank         0.1      48    8778  Mahjong_Kyou_Jidai_Special__FM77AV___Disk_2__
+BOTH-BLANK  blank         0.1 blank         0.1    3757    8337  Space_Harrier__FM77AV__Dempa___Disk_1__
+BOTH-BLANK  blank         0.1 blank         0.1    3757    8337  Space_Harrier__FM77AV___Disk_1__
+BOTH-BLANK  blank         0.1 blank         0.1    6695    8778  Woody_Poco__FM77AV___Disk_2__
+BOTH-BLANK  blank         0.1 blank         0.1      45    8778  World_Golf_II__FM77AV___Disk_2__
+BOTH-BLANK  blank         0.1 blank         0.1    6695    8778  Ys_II__FM77AV___Disk_A__
+BOTH-BLANK  blank         0.0 blank         0.0     427      44  Death_Force__FM77AV___Disk_A__
+BOTH-BLANK  blank         0.1 blank         0.0    4492    8711  Kugyokuden__FM77AV___Disk_1_-_Joukan__
+BOTH-BLANK  blank         0.1 blank         0.0    5012    8778  Might_and_Magic__FM77AV___Disk_A__
+BOTH-BLANK  blank         0.1 blank         0.0    4537    8778  Might_and_Magic__FM77AV___Disk_C__
+BOTH-BLANK  blank         0.1 blank         0.0    4537    8778  Might_and_Magic__FM77AV___Disk_D__
+BOTH-BLANK  blank         0.0 blank         0.0    5030    8623  Nobunaga_no_Yabou_-_Zenkoku-ban__FM77AV___Disk_A__
+BOTH-BLANK  blank         0.0 blank         0.0    4885    3093  Seles__FM77AV___Disk_A__
+BOTH-BLANK  blank         0.0 blank         0.0    5410    3396  Space_Harrier__FM77AV__Dempa___Disk_0__
+BOTH-BLANK  blank         0.0 blank         0.0    5410    3396  Space_Harrier__FM77AV___Disk_0__
+BOTH-BLANK  blank         0.1 blank         0.0    6019     272  World_Golf_II__FM77AV___Disk_1__
+MATCH       lowcolour    99.7 GRAPHICS     87.6    6488     112  Dragon_Buster__FM77AV__
+MATCH       lowcolour    88.4 lowcolour    73.8     602    8621  Argo__FM77AV___Disk_A__
+MATCH       lowcolour   100.0 lowcolour    69.8     604    8718  _Utility__FM_Sound_Editor__FM77AV__
+MATCH       lowcolour    33.9 lowcolour    47.9    6429    8893  The_Return_of_Ishtar__FM77AV___Disk_A__
+MATCH       lowcolour    33.9 lowcolour    47.9    6429    8893  The_Return_of_Ishtar__FM77AV___SPS___Disk_A__
+MATCH       lowcolour    32.5 lowcolour    32.4    4898    7244  Ys__FM77AV___Disk_A__
+MATCH       lowcolour    26.0 lowcolour    24.4    4351     130  Mugen_Senshi_Valis__FM77AV___Disk_1__
+MATCH       lowcolour    11.6 lowcolour    11.8    4625    8798  Reviver__FM77AV___Disk_A_-_Master__
+MATCH       lowcolour     8.5 lowcolour    10.2    3721    8063  Wizardry_IV__FM77AV___Disk_A__
+MATCH       lowcolour     1.6 lowcolour     1.6    5056    8679  The_Tower_of_Druaga__FM77AV__
+MATCH       lowcolour     1.6 lowcolour     1.6    5056    8679  The_Tower_of_Druaga__FM77AV___Dempa__
+REF-WORSE   GRAPHICS     59.7 text          6.3    3578    3086  Digital_Devil_Story_-_Megami_Tensei__FM77AV___Disk_A__
+REF-WORSE   GRAPHICS     94.2 text          4.6    5725    7021  Ys_II__FM77AV___Program_disk__
+REF-WORSE   GRAPHICS     81.4 blank         0.0    5162    8010  Kohakuiro_no_Yuigon__FM77AV___Disk_1__
+NO-SHOT     blank         0.0 missing       0.0     423    8064  Urusei_Yatsura_-_Koi_no_Survival_Birthday__FM77AV___Disk_1__
+
+  14  CORE-BLANK
+   3  CORE-WORSE
+   9  TEXT-ONLY
+  27  BOTH-BLANK
+  11  MATCH
+   3  REF-WORSE
+   1  NO-SHOT

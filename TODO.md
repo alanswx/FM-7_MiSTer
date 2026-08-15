@@ -302,38 +302,56 @@ the `jt03` swap and still prints **238**, which is what covers the joystick move
 from the old bus snoop onto the chip's real port A. The gate does not exercise
 joysticks, so that check is the only thing that does.
 
-### FM77AV titles: the blank-screen count needs redoing
+### FM77AV titles: 14 genuine blanks, and 8 of them share one cause
 
-The old breadth sweep said 5 of 68 AV images rendered graphics, 4 fell through
-to the AV F-BASIC banner and 59 were blank. **Those numbers are stale and must
-not be quoted.** Both bugs behind the first title traced were core faults that
-every AV title would hit, and the YM2203 did not exist when the sweep ran:
+Swept at 2000 frames with the fixes in and joined against a 77AVEMU render of
+every one of the same images (`vsim/sweep/compare-av-jt03.txt`, raw rates in
+`results-av-f2000-jt03.tsv`). The old "5 render / 59 blank" figure is retired:
 
-- `$D430` bit 7, the sub-CPU NMI mask, was ignored. The sub monitor's NMI
-  handler reads `$D40A`, which clears the sub-busy flag, so an NMI landing
-  inside a shared-RAM block transfer told the main CPU "sub idle" while the sub
-  was still copying. See `docs/FM77AV.md`.
-- `$FD10` bit 1, which removes the initiator ROM overlay from `$6000-$7FFF`, was
-  not decoded at all, so the overlay was permanent. A title that loads code into
-  the RAM underneath and calls it — Ys does, through `JSR [$024b]` — ran the
-  initiator's cold-boot code instead and silently rebooted itself.
-- `$FD15`/`$FD16` were undecoded, so a status read returned `$ff` and any title
-  that waits for the YM2203's busy bit to clear span forever. Ys does.
+| count | verdict | meaning |
+|---|---|---|
+| 11 | MATCH | both render comparable content |
+| 14 | **CORE-BLANK** | **the reference draws a picture and we do not — ours to fix** |
+| 3 | CORE-WORSE | both draw, we have much less on screen |
+| 3 | REF-WORSE | we draw and the reference does not |
+| 9 | TEXT-ONLY | one or both reach text only |
+| 27 | BOTH-BLANK | the reference is blank too — not our bug |
+| 1 | NO-SHOT | 77AVEMU itself aborts (Urusei Yatsura) |
 
-Redo the sweep before deciding what is left:
+**27 of the old "blanks" were never our bug.** That is what the reference
+comparison buys, and it is why the count had to be redone rather than argued
+about.
 
-```sh
-cd vsim/sweep && ./av-sweep.sh /tmp/avsw 8 2000
-python3 classify.py /tmp/avsw/shots /tmp/avsw/results.tsv
-```
+**Eight of the fourteen have a starved sub CPU**, with the main CPU running
+perfectly normally — and the sub is what draws:
 
-Then apply the per-title exclusion rules in `docs/TESTING.md` — several of the
-68 are data or scenario disks that were never bootable alone — before counting
-anything as a failure. Two leads from the old sweep are worth keeping because
-they are shape, not count: **Laydock** ran main 5982/frame against sub 81/frame,
-i.e. the sub effectively stopped and the sub is what draws; and a **sub rate of
-~8778/frame** recurred across Argo, Digital Devil Story, Kugyokuden and
-Kohakuiro, which is the sub monitor's idle loop, not three coincidences.
+| title | main/frame | sub/frame |
+|---|---|---|
+| Woody Poco (Disk 1) | 7269 | **44** |
+| Psy-O-Blade (Disk 1) | 6021 | **165** |
+| Silpheed (Disk A) | 6016 | **185** |
+| Mahjong Kyou Jidai (Disk 1) | 5744 | **189** |
+| Luxsor (Disk 2) | 6017 | **227** |
+| Deep Forest (Disk A) | 6009 | **615** |
+| Luxsor (Disk 1) | 5810 | **812** |
+| In the Dream (Disk A) | 4987 | **1272** |
+
+A healthy sub is ~8000/frame. This is the old Laydock lead (main 5982, sub 81)
+turning out to be one shared fault across eight titles rather than eight
+separate ones, so it is the single highest-value thing left on the AV. The
+obvious suspect is `core.v`'s `sub_vram_wait`, which stalls the sub's clock
+outright whenever it touches VRAM while the raster owns the address bus — a
+title that hammers VRAM would starve exactly like this. Trace one of them
+against the reference before believing that, and prefer Woody Poco: at 44
+instructions a frame it is the most extreme, so whatever the mechanism is, it
+will be easiest to see there.
+
+The other six are a different shape and should not be lumped in: Little Box has
+a dead MAIN CPU (243/frame), and four — both `FM77AV demo` dumps in
+`software/D77`, Daiva Story 2, Shounen Mike — run both CPUs at full rate and
+still draw nothing. Note the demo case: the suite's `av-demo` row renders
+perfectly from `software/FM77AV/`, so those two `software/D77` demo images are a
+different dump and worth diffing against the one that works.
 
 ### Open FM77AV implementation gaps
 
