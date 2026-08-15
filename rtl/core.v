@@ -580,8 +580,16 @@ wire        AV_SUBIO_MMR = AV_SUBIO_WRITE & ~SHALTn;
 // 77AVEMU states the same rule the other way round, discarding the access
 // while the sub is running (fm77avmemory.cpp:804-809).
 wire [7:0] AV_KBD_mmr_dout;
+// SHALTn is ACTIVE LOW, so ~SHALTn means HALTED -- the same sense the write
+// path above uses to permit a write. The gate here was written the other way
+// round and returned $FF while the sub was halted, i.e. in exactly the case
+// the aperture exists for. Woody Poco still progressed past its encoder poll,
+// because $FF happens to have the ACK bit set -- a right answer for the wrong
+// reason, and the kind that hides until another title reads a different bit.
+// In the Dream does: it waits on $D430 bit 7 through this window and got $FF's
+// bit 7 = 1 immediately, then hung later on the value behind it.
 wire [7:0] AV_SUBIO_dout =
-  ~SHALTn ? 8'hff :
+  SHALTn ? 8'hff :
   (AV_SUBIO_ADDR == 8'h30) ? AV_D430_dout :
   ((AV_SUBIO_ADDR == 8'h31) || (AV_SUBIO_ADDR == 8'h32)) ? AV_KBD_mmr_dout :
   8'hff;
