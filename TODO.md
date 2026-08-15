@@ -318,76 +318,65 @@ the `jt03` swap and still prints **238**, which is what covers the joystick move
 from the old bus snoop onto the chip's real port A. The gate does not exercise
 joysticks, so that check is the only thing that does.
 
-### FM77AV titles: 14 genuine blanks, and 8 of them share one cause
+### FM77AV titles: six core faults fixed, four titles rescued
 
-Swept at 2000 frames with the fixes in and joined against a 77AVEMU render of
-every one of the same images (`vsim/sweep/compare-av-jt03.txt`, raw rates in
-`results-av-f2000-jt03.tsv`). The old "5 render / 59 blank" figure is retired:
+The 68-image sweep joined against a 77AVEMU render of every title
+(`vsim/sweep/compare-av-jt03.txt`) found 14 genuine CORE-BLANKs — and **27 of the
+old "blanks" are blank on the reference too**, so were never our bug. Tracing the
+worst one (Woody Poco) turned up six faults, every one a generic AV path rather
+than anything title-specific:
 
-| count | verdict | meaning |
+1. **`$FD12` read back as a constant.** Bits 0/1 are VSYNC/DISPLAY, so every
+   "wait for vblank" spun forever. DISPLAY needs *vertical* blanking —
+   77AVEMU's `InBlank()` is `InVBLANK() || InHSYNC()`, not the horizontal
+   `SBLANKn` behind `$D430` bit 7.
+2. **The sub I/O MMR aperture was write-only.** Titles drive the AV keyboard
+   encoder from the main side with the sub halted.
+3. **The YM2203 interrupt reached nothing** — `jt03`'s `irq_n` was unconnected.
+4. **`EXTIRQ` was declared and never driven**, so `$fd03` bit 3 always read
+   "nothing pending" and handlers dismissed every card interrupt.
+5. **Every AV write also landed on the FM-7 page.** `MRAM_rwbn` fell back to the
+   raw CPU strobe whenever the physical address was outside `$30000-$3FFFF`,
+   corrupting memory continuously for every AV title. This is the big one.
+6. **The aperture's halt gate was inverted**, returning `$FF` exactly when the
+   sub was halted. Woody Poco survived it by luck — `$FF` has the ACK bit set.
+
+**Four titles went from rendering nothing to rendering game art**, measured at
+2000 frames:
+
+| title | before | after |
 |---|---|---|
-| 11 | MATCH | both render comparable content |
-| 14 | **CORE-BLANK** | **the reference draws a picture and we do not — ours to fix** |
-| 3 | CORE-WORSE | both draw, we have much less on screen |
-| 3 | REF-WORSE | we draw and the reference does not |
-| 9 | TEXT-ONLY | one or both reach text only |
-| 27 | BOTH-BLANK | the reference is blank too — not our bug |
-| 1 | NO-SHOT | 77AVEMU itself aborts (Urusei Yatsura) |
+| Deep Forest | 3790 | **98940** — landscape with title logo |
+| Luxsor (Disk 1) | 3790 | **40843** — pyramid scene |
+| Psy-O-Blade | 3841 | **24536** — character portraits |
+| Luxsor (Disk 2) | 3790 | **17023** |
 
-**27 of the old "blanks" were never our bug.** That is what the reference
-comparison buys, and it is why the count had to be redone rather than argued
-about.
+with Daiva Story 2 (7510) and Silpheed (7410) newly partial. **The renders are
+not clean** — colour banding on Deep Forest, vertical stripes on Psy-O-Blade,
+wrong palette on Luxsor — so there is at least one video-path fault left. Diff
+the VRAM against the reference (`docs/TESTING.md`) rather than guessing at it.
 
-**The "starved sub CPU" reading of eight of them was wrong.** Traced on Woody
-Poco, the most extreme case at 44 instructions/frame: the sub is not starved, it
-is **halted, on purpose, by the game** — and 77AVEMU does the same, parking it
-at `$e146` in the monitor idle loop while the main CPU draws through the MMR
-aperture, and rendering the title from that state. A low sub rate on an AV title
-is not a fault by itself. Remember that before applying the same reading to
-Laydock.
+Six remain blank: Woody Poco, Shounen Mike, Pro Yakyuu Fan, FM77AV demo, In the
+Dream, Little Box.
 
-Three real faults came out of tracing it, all generic AV paths rather than
-anything title-specific, and each was only reachable once the previous one was
-fixed:
+### The next lead: another undelivered interrupt
 
-1. **`$FD12` read back as a constant** — bits 0/1 are VSYNC/DISPLAY. Fixed;
-   note DISPLAY needs *vertical* blanking, not the horizontal `SBLANKn` behind
-   `$D430` bit 7.
-2. **The sub I/O MMR aperture was write-only.** Woody Poco halts the sub, points
-   `$FD82` at physical `$1D`, and drives the AV keyboard encoder from the main
-   side — `$2431`/`$2432` are `$D431`/`$D432`.
-3. **The YM2203 interrupt reached nothing**, and `EXTIRQ` was declared and never
-   driven, so `$fd03` bit 3 always read "nothing pending". Both fixed.
+Two of the remaining blanks wait on a **main-RAM flag that only an interrupt
+handler can set**, which is the same shape as the YM2203 fault above:
 
-**Where it stands: it runs 2438 serviced interrupt cycles instead of hanging at
-frame 16, and draws one glyph — but not the screen.** The remaining fault is
-concrete. Its interrupt handler does
+* **Woody Poco** now runs 2438+ serviced interrupt cycles and reaches `$c989`,
+  inside the `$c9xx` region 77AVEMU executes in, but still draws only one glyph.
+* **In the Dream** spins on `BITB $d430 / BEQ` — and note `$d430` there is *not*
+  the sub I/O register: main `$Dxxx` maps to the FM-7 page, so it is ordinary
+  RAM. It writes `$fd02 <- $40`, which per CSP `fm7_mainio.cpp:459` enables
+  **RXRDY** and nothing else, then takes one interrupt in 900 frames.
 
-```
-c378  b6 fd 93   LDA $fd93     ; save MMR control
-c37d  7f fd 93   CLR $fd93     ; MMR off -> plain FM-7 map
-c380  bd 60 00   JSR $6000     ; call a routine at physical $36000
-```
+The other two shapes, for whoever picks this up:
 
-and physical `$36000` holds game code on the reference (`34 07 1a 50 8d 2b …`,
-via `FM77AV_MEM_DUMP`) and **zeros here**, so the CPU executes `$00 $00` —
-`NEG <$00` — up through the shared window into `$FDxx`. The game does write
-that area: `$FD86 <- $36` maps main `$6xxx` to physical `$36xxx`, and code at
-`$c601` stores through `U` at `$6013`, `$6019`, stride 6. Find why those stores
-do not end up where the reference has them.
-
-**A dead end already eliminated, so nobody repeats it:** widening
-`mmr_ram_sel`'s `< $36000` bound to cover the freed initiator window is a
-**no-op**. For any CPU address either `initiator_sel` is already false (so the
-existing term permits the write) or the address is in `$6000-$7FFF` with the
-overlay on (correctly blocked). It was tried; the output was byte-identical.
-
-The other six are a different shape and should not be lumped in: Little Box has
-a dead MAIN CPU (243/frame), and four — both `FM77AV demo` dumps in
-`software/D77`, Daiva Story 2, Shounen Mike — run both CPUs at full rate and
-still draw nothing. Note the demo case: the suite's `av-demo` row renders
-perfectly from `software/FM77AV/`, so those two `software/D77` demo images are a
-different dump and worth diffing against the one that works.
+* **Pro Yakyuu Fan** polls `LDA $fd18 / BITA #$81` — the FDC status register,
+  so an FDC problem rather than an interrupt one.
+* **Little Box** executes garbage at `$61b8` with a dead main CPU
+  (243 instructions/frame) — a runaway, and a different fault again.
 
 ### Open FM77AV implementation gaps
 
