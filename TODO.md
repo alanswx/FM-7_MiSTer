@@ -372,6 +372,24 @@ so the comparison is legitimate** (trap 20):
 
 So we are setting pixels that should not be set, in every plane and both banks.
 
+**Four suspects are already eliminated — do not re-check them:**
+
+* **The MB61VH010 drawing ALU.** `--trace-av-video` over 200 frames: 9356
+  `SUBVRAM`, **0 `ALUW`, 0 `AVVRAM`**. Deep Forest never uses it.
+* **The 320-mode sub-CPU address transform.** `MB60H010.v:112` `SUBRA_320`
+  preserves bit 13 and wraps the low 13 bits, which is the same shape as
+  `AVMEM.v`'s `vram_addr_320` for the main aperture. Correct as written.
+* **The picture width.** The reference emits 320x200 PNGs in 320 mode; this core
+  renders the same mode pixel-doubled to 640x200 by design. Not a fault.
+* **"The title never sets 320 mode".** It does — `$fd12 <- $40` at frame 202,
+  `$00` at 338, `$40` again at 344, so 320 mode is on at the end. A 200-frame
+  sample showed zero writes and was simply too short a window (trap 20 again).
+
+What is left: the scroll offset (`VOFFSET`), the plane/bank selection, or the
+possibility that the two dumps are at different points of an animated title —
+which has to be excluded first, since "more bytes" is also what "further along"
+looks like.
+
 `--trace-av-video` says where they come from, and it rules out most of the video
 back end: over 200 frames Deep Forest issues **9356 `SUBVRAM` writes, 0 `ALUW`,
 0 `AVVRAM`**. It draws entirely through the sub CPU's own VRAM writes — no
