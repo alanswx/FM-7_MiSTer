@@ -58,3 +58,9 @@ __pycache__/
 
 # Hardware-harness screenshot output
 tools/hw/shots/
+# Sweep renders and the comparison page built from them (a few MB of PNGs).
+# Rebuild with `sweep/av-sweep.sh renders 8 2000`, `sweep/ref-sweep.sh renders`
+# and `sweep/gallery.py renders`. The contents change every time a title is
+# fixed or the collection changes, so they are not worth versioning -- the
+# per-title numbers that ARE worth keeping go in vsim/sweep/*.tsv, checked in.
+vsim/sweep/renders/

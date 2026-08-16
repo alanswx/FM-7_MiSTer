@@ -241,6 +241,34 @@ disk will not boot as an FM-7**, so `sweep_one.sh` takes a `MACHINE` env var.
 Sweeping the AV set without it reports a uniform "nothing boots", which reads
 as a core failure rather than as the wrong switch.
 
+### Looking at all 68 of them at once
+
+```sh
+cd vsim/sweep
+./av-sweep.sh  renders 8 2000        # this core, one PNG per title
+./ref-sweep.sh renders 6             # 77AVEMU, the same list
+./gallery.py   renders               # -> renders/gallery.html
+```
+
+`renders/` is gitignored: the PNGs are regenerable and they change every time a
+title is fixed, while the numbers worth keeping go in `vsim/sweep/*.tsv`.
+
+The page pairs each title's two renders, sorts least-agreeing first, and gives a
+per-title agreement figure computed in **palette-nibble space** — necessary,
+because the two emulators expand a 4-bit gun level differently and a byte-exact
+comparison calls every non-black pixel different. It also resamples to the
+logical grid: this core emits 640x200 always (320 mode is pixel-doubled by
+design), the reference emits 320x200 in 320 mode and line-doubles 640x200 into a
+640x400 buffer, so comparing raw scores two identical pictures as unrelated.
+
+**The agreement figure is not a pass mark**, and the page says so. The two
+machines stop at points chosen independently, so a title mid-fade or mid-attract
+differs for no reason worth chasing. Two worked examples of why the eye beats
+the number here: Dragon Buster scores badly and is *correct* — its cave screen is
+grey on both machines and our greys match the reference nibble for nibble, we
+are simply not as far into the game; and Luxsor renders 98% coverage in 369
+colours and is *wrong*.
+
 ### Screenshot size is not enough triage here
 
 The FM-7 sweep classifies on PNG size: ~3790 bytes is blank. That does not
