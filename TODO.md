@@ -522,30 +522,29 @@ what 77AVEMU reports for an absent drive before changing `FDC.v` — its
 (`refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1346`) and returns false for an
 unloaded drive, which does *not* obviously explain it.
 
-### Two of the six blanks want a display mode this core does not have
+### Nothing in the collection uses 640x400 (superseded claim, corrected)
 
-**In the Dream and Little Box both render 640x400 on the reference.** That is
-not an inference from a register trace — 77AVEMU sizes its output buffer from
-`scrnMode` (`fm77avrender.cpp:102-114`), so a 640x400 PNG *is* the mode. Both
-come out 640x400 with ~24.5 k non-black pixels; In the Dream reaches a
-"PUSH ANY KEY" screen with a framed paragraph of Japanese text.
+**A previous version of this file said In the Dream and Little Box select
+640x400 via `$FD04` bit 3, and that is wrong.** The evidence was that 77AVEMU
+renders them into a 640x400 PNG. It sizes the buffer 640x400 for **both**
+`SCRNMODE_640X200` and `SCRNMODE_640X400` (`fm77avrender.cpp:106-109`) and
+line-doubles the former, so **the image dimensions do not identify the mode.**
 
-Only one thing selects it: **`$FD04` bit 3 clear** (`fm77avcrtc.cpp:205-219`
-`WriteFD04`). The same register's bit 4 selects `SCRNMODE_320X200_260KCOL`.
-This core models neither — `AV_MODE_320` is a single bit off `$FD12` bit 6 and
-covers only 640x200 and 320x200/4096, and `$fd04` is decoded here as the FM-7's
-attention register with no CRTC meaning at all.
+What does identify it: in 640x200 the renderer writes `rgba0` and `rgba1` with
+the same pixel, so every even row equals the odd row below it; in a true 640x400
+they differ. Across all 22 640-wide renders in the AV set — Ys, Wizardry IV,
+Psy-O-Blade, Argo, Druaga, Return of Ishtar, In the Dream, Little Box and the
+rest — **0 of 200 row pairs differ in every single one.** No title in hand uses
+640x400, and implementing it would buy nothing.
 
-So these two are not interrupt or FDC faults and chasing them as such will waste
-the time. They need the mode. Note what that costs before starting: 640x400 is
-two pages of 640x400x1bpp per gun, `TransformVRAMAddress` wraps at `0x7FFF` with
-`VRAMOffset*2`, and the renderer picks the offset register by `addr&1`
-(`fm77avrender.cpp:271-273`) — a different addressing scheme from either mode
-in `MB60H010.v`, not a flag.
+So the earlier `BITB $d430` lead on In the Dream stands undisturbed, and those
+two titles remain unexplained.
 
-(Superseded lead: *"In the Dream spins on `BITB $d430 / BEQ` waiting for a flag
-only an interrupt handler can set"* — that observation stands, but it is
-downstream of never having entered the mode the title expects.)
+Keep the register fact, which is real and cited: `$FD04` bit 3 clear selects
+`SCRNMODE_640X400` and bit 4 selects `SCRNMODE_320X200_260KCOL`
+(`fm77avcrtc.cpp:205-219` `WriteFD04`). This core models neither — `AV_MODE_320`
+is one bit off `$FD12` bit 6 — and decodes `$fd04` only as the FM-7's attention
+register. That is a real gap; it is just not the gap these two titles fell into.
 
 ### The next lead: another undelivered interrupt
 
@@ -557,9 +556,7 @@ handler can set**, which is the same shape as the YM2203 fault above:
 * **In the Dream** spins on `BITB $d430 / BEQ` — and note `$d430` there is *not*
   the sub I/O register: main `$Dxxx` maps to the FM-7 page, so it is ordinary
   RAM. It writes `$fd02 <- $40`, which per CSP `fm7_mainio.cpp:459` enables
-  **RXRDY** and nothing else, then takes one interrupt in 900 frames. But see
-  the 640x400 section above first — this title never gets into the display mode
-  it expects, and that comes earlier.
+  **RXRDY** and nothing else, then takes one interrupt in 900 frames.
 
 The other two shapes, for whoever picks this up:
 

@@ -485,6 +485,16 @@ confident wrong answer at least once:
     once — in the port list — is worth re-running after any refactor; it found this plus
     `SADRSEL` into `MB60H010` and `SVDHALT` into `FLAGS`.
 
+32. **77AVEMU's PNG dimensions do not tell you the screen mode.** `BuildImage` sizes the
+    buffer 640x400 for `SCRNMODE_640X200` *and* `SCRNMODE_640X400`, line-doubling the former
+    (`fm77avrender.cpp:102-114`), and 320x200 for both 320-line modes. "This title renders
+    640x400, so it selects the 640x400 mode" is therefore not an inference, and it was made
+    here and written into `TODO.md` before being caught. The test that does work: in 640x200
+    every even row equals the odd row below it, because the renderer writes the same pixel to
+    `rgba0` and `rgba1`. By that test **all 22 640-wide AV renders in the collection are
+    line-doubled 640x200 and none is a true 640x400** — including the two titles the wrong
+    inference had blamed on the missing mode.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
