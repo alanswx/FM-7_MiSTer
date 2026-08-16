@@ -390,6 +390,14 @@ always @* begin
     // which drives $D430 bit 7 -- is HORIZONTAL only, so using it alone
     // produced a machine that was never in vblank and vsync together: the read
     // returned $ff, $fe and $fc but never the $fd the title waits for.
+    //
+    // Do NOT "correct" the horizontal half to SHSYNCn to match the name of
+    // 77AVEMU's InHSYNC(). Despite the name that function is the horizontal
+    // BLANKING interval, not the sync pulse: `intoLine > CRT_HORIZONTAL_DURATION`
+    // with 39.7 us active out of a 63.5 us line (fm77avcrtc.cpp:166-175,
+    // fm77avcrtc.h:84-85), i.e. 62.5% active -- exactly the 640 of 1024 that
+    // HBLANKn gives here. The two already agree; swapping in SHSYNCn would make
+    // the bit read "blanking" for 6% of each line instead of 37.5%.
     8'h12: IODOUT = { 1'b1, av_mode_320, 4'b1111,
                       ~(~VBLANKn | ~SBLANKn), ~SVSYNCn };
     8'h80, 8'h81, 8'h82, 8'h83,
