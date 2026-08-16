@@ -18,9 +18,9 @@ picture has detail, and no single mapping fits. The answer must be dx=0.
 
 Why this rather than a Verilog bench. The screenshot suite cannot see a fault
 that moves the WHOLE picture, because every reference is the core's own output
-and shifts with it -- the core displayed every frame three pixels right of where
-it belonged, in both modes, for the life of the project, with eleven blessed
-screenshots and a 350-title sweep green throughout. A standalone bench over
+and shifts with it -- the core displayed every frame right of where it belonged,
+three pixels in 640 mode and two in 320, for the life of the project, with
+eleven blessed screenshots and a 350-title sweep green throughout. A standalone bench over
 MB60H010 + CRTRAM + PAL was tried and is NOT in the tree: driven with the core's
 own modules and sampled exactly as sim.v samples, it still reported the 640-mode
 picture one column left of where the assembled core actually puts it. Whatever
