@@ -328,6 +328,7 @@ wire SVCASGn;
 wire SVWEn;
 wire HBLANKn;
 wire VBLANKn;
+wire HBLANK_DISP;
 wire fm8_switch;
 wire CLK2_5;
 wire CLK1_2;
@@ -340,7 +341,11 @@ wire RESETn_active = RESETn;
 
 assign HSync = SHSYNCn;
 assign VSync = SVSYNCn;
-assign HBLANK = ~HBLANKn;
+// HBLANK_DISP, not ~HBLANKn: the pixel pipeline runs behind the raster
+// counter -- three pixels in 640 mode, two in 320 -- so the display blanking
+// is delayed to match. MB60H010 carries the measurement and the reasoning;
+// tools/raster_phase.py re-checks it against the core's own VRAM.
+assign HBLANK = HBLANK_DISP;
 assign VBLANK = ~VBLANKn;
 assign ce_pix = SFTCLK;
 assign buzzer = SOUND;
@@ -1170,7 +1175,8 @@ MB60H010 u_MB60H010(
   .SCSYNCn   ( SCSYNCn   ),
   .SCASSEL   ( SCASSEL   ),
   .VBLANKn   ( VBLANKn   ),
-  .HBLANKn   ( HBLANKn   )
+  .HBLANKn   ( HBLANKn   ),
+  .HBLANK_DISP ( HBLANK_DISP )
 );
 
 PAL PAL(

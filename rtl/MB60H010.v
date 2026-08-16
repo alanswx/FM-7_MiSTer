@@ -43,7 +43,8 @@ module MB60H010(
   output SCSYNCn,
   output SCASSEL,
   output VBLANKn,
-  output HBLANKn
+  output HBLANKn,
+  output HBLANK_DISP
 );
 
 wire _16128KHz; // bad name, it's a 16MHz clock
@@ -116,6 +117,43 @@ wire [13:0] SUBRA_320 = {SADDRBUS[13],
 assign SVRADRS = SCASSEL ? (AV_MODE_320 ? SUBRA_320 : SUBRA_640) : SRA;
 assign SVRADRS0 = SCASSEL ? SVRADRS : (AV_MODE_320 ? SRA0 : SRA);
 assign SVRADRS1 = SCASSEL ? SVRADRS : (AV_MODE_320 ? SRA1 : SRA);
+
+// Display blanking, delayed to match the pixel pipeline.
+//
+// HBLANKn above comes straight off xx, but a pixel does not: the raster address
+// leaves this module combinationally, CRTRAM returns the byte one CLKSYS later
+// (a synchronous-read RAM), SFTLODn is deliberately held off another CLKSYS so
+// that byte can settle, and then PAL adds its own registers. The picture that
+// comes out is behind the counter that generates the blanking, so the whole
+// screen sat that many pixels to the right of where it belonged.
+//
+// **640 needs three, 320 needs two**, because the two paths differ by exactly
+// one register: 640 goes SFT -> qh -> grb, two SFTCLK edges, while 320 goes
+// shift-register -> the palette RAM's output register, one. In 320 mode a
+// shift clock is half a logical pixel, so its compensation must also be even --
+// an odd one would split each doubled pixel across two logical ones.
+//
+// Nothing in the screenshot suite could see this, because every reference is
+// the core's own output and shifts with it. Measured three ways, all agreeing:
+// against 77AVEMU the FM-7 F-BASIC banner peaks 99.8% at dx=+3 (97.5% at 0) and
+// Wizardry IV 99.2% at dx=+3; Deep Forest, in 320 mode, 96.8% at dx=0 after
+// compensation against 20.8% without, and the 2019 demo 99.9% against 10.8%;
+// and `tools/raster_phase.py`, which needs no reference at all, put Wizardry
+// IV's own VRAM one column right of its own screenshot until this was 3.
+//
+// Delay the DISPLAY blanking rather than moving HBLANKn: HBLANKn also drives
+// SCASSEL, the VRAM arbitration between the raster and the sub CPU, so moving
+// it would change every CPU-timing counter in the suite to fix a display-only
+// fault. As it is, the eleven-row gate's counters are byte-identical across
+// this change and only the screenshots move. The last pixels of a line survive
+// the extension: SBLANKn clears the shift registers at xx=640, but those pixels
+// are by then already latched in qh/grb, downstream of the clear.
+reg [2:0] hblank_disp_sr;
+always @(posedge _16128KHz) begin
+  if (~SRESETn) hblank_disp_sr <= 3'b111;
+  else          hblank_disp_sr <= { hblank_disp_sr[1:0], ~HBLANKn };
+end
+assign HBLANK_DISP = AV_MODE_320 ? hblank_disp_sr[1] : hblank_disp_sr[2];
 
 assign SHSYNCn = ~(xx >= 10'd800 && xx < 10'd864);
 assign SVSYNCn = ~(yy >= 9'd224 && yy < 9'd233);
