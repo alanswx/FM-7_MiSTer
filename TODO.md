@@ -10,77 +10,94 @@ Reference material: `docs/REFERENCE.md` (read first), `docs/IO_MAP.md`,
 
 ## Start here
 
-**Where it stands.** The nine-row gate is green — `./run_tests.sh` in `vsim/`
-compares screenshots *and* counters against `shots-ref/`. FM-7 boots, Thexder
-runs, the FM77AV demo matches 77AVEMU plane-for-plane, and **Ys (FM77AV) now
-boots and draws its title screen**. The PSG became a `jt03` (jotego/jt12) that
-also supplies the FM77AV's YM2203, so `$FD15`/`$FD16` are decoded for the first
-time and **the combined work now ships as GPLv3** (see `Readme.md`). **None of
-it has run on hardware**; `HARDWARE-HANDOFF.md` is the FPGA side's log and its
-newest section says what to check first.
+**Where it stands.** The **eleven-row** gate is green — `./run_tests.sh` in
+`vsim/` compares screenshots *and* counters against `shots-ref/`. FM-7 boots,
+Thexder runs, OS-9 reaches its shell. On the FM77AV side the 2019 demo matches
+77AVEMU plane-for-plane, Ys boots and draws, and **four titles that rendered
+nothing now render game art** (Deep Forest, both Luxsor disks, Psy-O-Blade).
+
+**It fits and closes timing.** 23,293 / 41,910 ALMs (56%), 516 / 553 M10K
+(93%), positive slack in all five corners, `output_files/FM-7_MiSTer.rbf` built
+with `tools/quartus-build.sh all`. **37 M10K blocks is the whole remaining
+budget** — price any new feature against that, from the map report's RAM
+summary and never in bits (see the FPGA fit section).
+
+**The sound is one chip now.** `jt03` (jotego/jt12) serves both the FM-7's PSG
+and the FM77AV's YM2203, so `$FD15`/`$FD16` are decoded and the joysticks sit on
+the chip's real I/O ports. **The combined work ships as GPLv3** — see
+`Readme.md`. That is a one-way door and it is already through.
 
 **Open, in priority order:**
 
-1. **The FPGA fit is unknown again.** The last successful fit was 54% ALMs and
-   508 of 553 M10K — 92% of the block RAM on the device — and `jt03` has been
-   added since. `tools/quartus-build.sh` has not been run against it. Nothing
-   below matters if it does not fit.
-2. **Re-sweep the FM77AV set.** Every AV figure in this file predates the two
-   fixes below, so the "59 of 68 are blank" table is stale and must not be
-   quoted. `vsim/sweep/av-sweep.sh` at 2000 frames, then `classify.py`.
-3. **The FM sound has never been heard.** `make sound-test` proves registers
-   reach the chip and that the FM-7's SSG pitch is bit-identical to the retired
-   `ym2149_audio`, but nothing proves the notes are right — and the AV's
-   prescaler question in `docs/FM77AV.md` §Sound is open by construction.
-4. Timing closure is unverified — `map` and `fit` pass, `asm`/`sta` have not run.
+1. **Two hardware tests are waiting, and only hardware can settle them.**
+   `HARDWARE-HANDOFF.md` has both procedures verbatim.
+   * *Pitch.* The PSG was an octave flat; measured, not inferred, and fixed. Four
+     typable F-BASIC lines program one known tone: **240 Hz means this build is
+     right, 117 Hz means revert `378fee6`.**
+   * *Joystick.* Dead on hardware, working in simulation — the signature of the
+     glitch-domain class, so `SOUND.v`'s strobes were filtered on that reading.
+     **Test an FM77AV title**, not an FM-7 one: only the AV routes the gameport
+     through `$FD15`/`$FD16`. Twenty AV titles provably poll it; Dragon Buster is
+     the pick because it already rendered before any of this work.
+2. **The AV rendering artifacts.** The four rescued titles draw with banding,
+   stripes and wrong palette. Four suspects are already eliminated — read that
+   list before starting, it will save a day.
+3. **Six AV titles still render nothing**, in four distinct shapes, all recorded
+   below rather than left to be re-derived.
+4. **The FM half of the YM2203 has never been compared to anything**, and its
+   timers/`$FD17` IRQ path is only as good as one title's use of it.
 
-**The 77AVEMU reference is ready to use, no rebuild needed.** It lives in
-`refs/local/` (gitignored, but persistent) rather than `/tmp`:
+**Ask the reference before theorising.** `refs/local/` holds a built 77AVEMU and
+its ROMs, gitignored but persistent, so no rebuild is needed:
 
 ```sh
-refs/local/fm77av_headless refs/local/fm77av-roms \
-    'software/D77/Ys (FM77AV) (Disk A).d77' 20000000 /tmp/ys-ref.png
+refs/local/fm77av_headless refs/local/fm77av-roms game.d77 60000000 out.png --fm7 \
+    --key 700:MID_SPACE:40  --joystick 1200:right+a:600  --shot-every 1500
 ```
 
-`refs/local/av-divergence/` holds its renders of Ys, Argo and Laydock. **Ask the
-reference before theorising.** It settled the last five bugs. On Ys it killed a
-whole line of enquiry in one run: the sub CPU sitting at `$c036` reads as a
-deadlock, and the reference sits at exactly the same address with the title
-screen drawn — that is the program's normal idle loop, not a hang.
+It takes the **same input options as `vsim`**, and a frame means the same thing
+on both (1/60 s of machine time), so a sequence is portable between them. It is
+also about fifty times faster. `FM77AV_MEM_DUMP` dumps its 256 KB physical
+memory and `FM77AV_VRAM_DUMP` its VRAM, which is how most of this session's bugs
+were pinned down — identical code with different data is a lost store, not bad
+logic.
+
+`vsim/sweep/ref-sweep.sh` renders a whole sweep on the reference and
+`compare-ref.py` joins the two into one verdict per title. That is what showed
+**27 of the old "blanks" are blank on the reference too**, i.e. were never our
+bug. Do not quote a blank count that has not been through it.
 
 ## Awaiting hardware
 
-Four commits are on `alanswx/fdc-d77-support` and have **not** been confirmed on
-real hardware. Simulation cannot settle the glitch-domain classes.
+These are on `alanswx/fdc-d77-support` and **cannot be settled in simulation** —
+they are the glitch-domain and listening classes. `HARDWARE-HANDOFF.md` carries
+the FPGA side's own log and the exact procedures.
 
-| commit | what | hardware risk |
+| commit | what | why only hardware |
 |---|---|---|
-| `e699e9d` | `SOUND.v` `$fd0d` off its derived clock | **only hardware can validate this** — the sim test (joystick reads 238) passes, but the bug class is invisible in Verilator |
-| `77c2780` | `$fd02` enable-bit polarity | changes interrupt delivery for every title |
-| `b1aff78` | `$fd03` acknowledge | changes interrupt acknowledge for every title |
-| `777d8d4` | `$fd04` attention acknowledge | as above |
+| `378fee6` | PSG was an octave flat; chip clock now machine-dependent | **the pitch test is the whole point.** 240 Hz = right, 117 Hz = revert this one commit |
+| `71c00e6` | `SOUND.v`'s four strobes filtered to 3 stages | Verilator gives one clean edge per access either way, so sim is byte-identical before and after. The joystick test is the only evidence there is |
+| `648efbd` | YM2203 interrupt delivered, `EXTIRQ` driven | changes interrupt delivery on every AV title |
+| `6356000` | every AV write no longer clobbers the FM-7 page | changes AV memory behaviour wholesale; an FPGA build older than this will not match anything reported here |
+| `bad101e` | sub I/O aperture halt gate un-inverted | as above |
 
-Sharpest checks: **Ys** should reach its town map and be playable; **1942**
-should reach its title menu. Both were completely dead before.
+Earlier commits (`e699e9d`, `77c2780`, `b1aff78`, `777d8d4`) covering the
+`$fd02`/`$fd03`/`$fd04` interrupt paths were confirmed working on hardware —
+Ys reaches its town map, 1942 reaches its title menu, both dead before.
 
-`m77` in `KEYBOARD.v` remains on an async decode strobe. Three hardware attempts
-to convert it all failed (0/8) and a sim experiment showed all four candidate
-designs capture identical values at identical times — see `docs/REFERENCE.md`.
-Leave it async unless there is new evidence.
+`m77` in `KEYBOARD.v` remains on an async decode strobe. Three hardware
+conversion attempts all regressed OS-9 (0/8 each) and a sim experiment showed
+all four candidate designs capture identical values at identical times — see
+`docs/REFERENCE.md`. **Leave it async unless there is new evidence.**
 
-Hardware-side update (2026-08-08): `alanswx/fdc-d77-support` reported that
-`1735adb` fixes an intermittent power-on clock-mux glitch in `CLKCTRL.v` by
-giving `switch` a defined startup value and sampling `SW2` on `CLKSYS`. It is
-integrated locally.
+Hardware-side update (2026-08-08): `1735adb` fixes an intermittent power-on
+clock-mux glitch in `CLKCTRL.v` by giving `switch` a defined startup value and
+sampling `SW2` on `CLKSYS`. Integrated locally.
 
-(Superseded claim: *"the full simulation regression still passes; the reference
-counters moved by the expected startup timing shift... so the references were
-re-blessed"* — none of that held. No bless was ever committed; `shots-ref/` is
-still the one written at `e19cde7`. The counter move was **not** a timing shift,
-it was `ca75bfe` breaking the main-to-sub shared-RAM mailbox, which booted the
-FM-7 to a blank screen. See the SRAM entry below. With that fixed the suite
-reproduces `e19cde7`'s references exactly, counters and screenshots, so the
-references were correct the whole time and needed no bless.)
+(Superseded claim: *"the reference counters moved by the expected startup timing
+shift, so the references were re-blessed"* — none of that held. The counter move
+was `ca75bfe` breaking the main-to-sub shared-RAM mailbox; with that fixed the
+suite reproduces `e19cde7`'s references exactly. `docs/REFERENCE.md` trap 18.)
 
 ---
 
