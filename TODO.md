@@ -359,6 +359,48 @@ the VRAM against the reference (`docs/TESTING.md`) rather than guessing at it.
 Six remain blank: Woody Poco, Shounen Mike, Pro Yakyuu Fan, FM77AV demo, In the
 Dream, Little Box.
 
+### The rendering artifacts are in the sub-CPU VRAM write path
+
+The four rescued titles draw, but with banding, stripes and wrong palette. A
+VRAM diff against the reference (`FM77AV_VRAM_DUMP` / `FM7_VRAM_DUMP`, method in
+`docs/TESTING.md`) on Deep Forest, **with both machines on the same title screen
+so the comparison is legitimate** (trap 20):
+
+* all twelve 8 KB slices differ
+* ours has consistently **more** non-zero bytes than the reference — bank0 B0
+  3504 vs 2548, bank1 R1 7444 vs 6360, ~15% more throughout
+
+So we are setting pixels that should not be set, in every plane and both banks.
+
+`--trace-av-video` says where they come from, and it rules out most of the video
+back end: over 200 frames Deep Forest issues **9356 `SUBVRAM` writes, 0 `ALUW`,
+0 `AVVRAM`**. It draws entirely through the sub CPU's own VRAM writes — no
+drawing ALU, no main-CPU MMR aperture. So the fault is in the sub-CPU VRAM write
+path: the 320-mode address transform, the `$FD37` plane-access mask, or the
+scroll offset. It is **not** the MB61VH010, which is where the eye is drawn.
+
+### $FD1E is a drive-mapping register and we do not implement it
+
+77AVEMU `fm77avfdc.cpp:817-831`: `$FD1D` bits 1:0 select a drive *through*
+`mapDrive()`, and `$FD1E` bit 4 enables a logical-to-physical drive map whose
+entry is `(data>>2)&3 -> data&3`. Bit 6 is the 2D/2DD drive mode. Our core
+decodes neither — `$fd1e` shows up in the sim's undecoded-port list.
+
+Pro Yakyuu Fan is not explained by it (it writes `$fd1e <- $40`, i.e. drive mode
+only), but the register is real and cited, and a title that remaps drives will
+misbehave until it exists.
+
+### Pro Yakyuu Fan: selects an unmounted drive and waits for it
+
+It polls `LDA $fd18 / BITA #$81` — bit 7 is drive-not-ready — and reads `$b4`
+586,859 times. The last `$fd1d` write is `$81`, i.e. **drive 1**, which the
+sweep never mounts, so `ready1` is low forever. The reference renders its title
+screen from the same single-disk setup, so it gets past this somehow. Find out
+what 77AVEMU reports for an absent drive before changing `FDC.v` — its
+`DriveReady()` lives in the shared TOWNS FDC
+(`refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1346`) and returns false for an
+unloaded drive, which does *not* obviously explain it.
+
 ### The next lead: another undelivered interrupt
 
 Two of the remaining blanks wait on a **main-RAM flag that only an interrupt
