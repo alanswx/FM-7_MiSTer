@@ -398,25 +398,55 @@ executing 604 instructions a frame -- a screen flooded with one colour by a
 palette that was never written. PNG byte size is worse than useless now, since a
 more correct render often compresses smaller.
 
-### Argo is the best-isolated remaining bug
+### The drawing ALU cannot be reached from the main CPU, and Argo proves it
 
-Same title screen as the reference, **every sprite in the right place**, and the
-colours wrong: the reference's red-haired portrait renders with yellow and cyan
-here. Both machines use the same eight primaries, so the digital palette's
-*entries* are not the problem -- the proportions are. Ours is 16% yellow and 16%
-white against the reference's 8% and 5%, with correspondingly less black, i.e.
-**our green plane carries bits the reference's does not.**
+**Argo paints every sprite's bounding rectangle opaque.** A difference map
+against 77AVEMU makes it unmistakable: the six figures and both portraits are
+solid rectangles of disagreement, while the gaps between them, the logo letters
+and the black logo box agree exactly. That is a lost transparency mask, not a
+palette fault -- 34.5% of pixels agree overall but only 0.5% inside the left
+portrait's box.
 
-Two suspects already eliminated: it is not the `$FD37` access mask (Argo never
-touches `$fd37` in 800 frames), and it is not the raster phase (the geometry is
-exact). Next step is the VRAM diff, `FM7_VRAM_DUMP` against `FM77AV_VRAM_DUMP`
-with both machines on that title screen -- if the green plane differs and blue
-and red match, the fault is in what writes it.
+(Superseded claim: *"our green plane carries bits the reference's does not"* --
+inferred from colour proportions and wrong. No permutation or inversion of the
+three planes explains our render better than 39.7%, and no byte rotation
+explains the VRAM either. The difference is spatial, not per-plane.)
 
-This one is worth doing before the others: it is a 640-mode digital-palette
-title, so whatever is wrong may well be wrong on the FM-7 too, and **nothing in
-the gate would see it** -- the FM-7 rows are a white-on-black F-BASIC banner and
-Thexder against our own blessed output.
+The cause, from `--trace-av-video` over 400 frames:
+
+| path | count |
+|---|---|
+| `MMRSUBIO` (main CPU writing sub `$D4xx` through MMR) | 62591 |
+| `AVVRAM` (main-CPU aperture VRAM writes) | 58656 |
+| `SUBVRAM` (sub-CPU VRAM writes) | 27599 |
+| `SUBDRAW` (sub CPU writing `$D410-$D42B`) | 26 |
+| **`ALUW` (drawing ALU read-modify-writes)** | **0** |
+
+Argo halts the sub CPU and drives the MB61VH010 from the main side: 2839 writes
+to `$D410`, 1468 to `$D411`, **53023 to `$D412`**, all with `halt=1`. The ALU is
+programmed thoroughly and **never performs a single operation**, so the sprite
+data arrives as 58656 plain aperture stores instead of masked read-modify-writes.
+
+`AVHDRAW.v` triggers on `alu_access = enabled & SUB_VRAM_SEL & SCASSEL & SEB` --
+the **sub CPU's** VRAM decode. The file contains no reference to `AV_VRAM_SEL`,
+`AV_VRAM_ADDR` or `AV_VRAM_WRITE`, so a main-CPU aperture access cannot reach it
+by construction.
+
+77AVEMU keys on the *address*, not the accessor: `StoreByte`'s
+`MEMTYPE_SUBSYS_VRAM` case does the dummy read and returns whenever
+`hardDraw.enabled`, after a halt check that lets the main CPU through precisely
+because the sub is halted (`fm77avmemory.cpp:818-828`, and the same in
+`FetchByte` at `:749`).
+
+**Fix shape.** Give `AVHDRAW` the aperture as a second trigger, and suppress the
+plain aperture store while the ALU is enabled -- `CRTRAM.v`'s `cpu_write` has no
+`DRAW_INHIBIT_SUB` term, while `sub_write` does. Both directions count: the
+reference's own comment says a dummy **write** works as well as a dummy read,
+and names the title that needs it.
+
+**That title is Pro Baseball Fan -- our Pro Yakyuu Fan, which is on the blank
+list.** So this one gap plausibly covers two of the open titles. Check it
+against the reference before assuming, but it is the first thing to try there.
 
 ### The rendering artifacts were the display phase and a dead palette
 
