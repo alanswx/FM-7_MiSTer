@@ -30,6 +30,7 @@ module PAL(
   output reg [7:0] PALDATA,
   input [15:0] MADDRBUS,
   input PLTREGn,
+  input AV_PALREGn,
   input RDQEn,
   input WTQEn,
   input RESETBn,
@@ -64,12 +65,16 @@ always @(posedge CLKSYS) begin
     pal[MADDRBUS[2:0]] <= MDATA[2:0];
   end
 
-  // FM77AV's analog palette shares the $FD30-$FD3F decode with the FM-7
-  // digital palette.  The low half is the 12-bit indexed palette; the high
-  // half remains the eight-entry digital palette at $FD38-$FD3F.  Only the
-  // index registers are kept here -- the entries themselves live in the three
-  // PAL_RAM blocks below.
-  if (machine_av && ~PLTREGn && ~WTQEn && ~MADDRBUS[3]) begin
+  // FM77AV's analog palette shares the $FD30-$FD3F block with the FM-7 digital
+  // palette.  The low half is the 12-bit indexed palette; the high half remains
+  // the eight-entry digital palette at $FD38-$FD3F.  Only the index registers
+  // are kept here -- the entries themselves live in the three PAL_RAM blocks
+  // below.
+  //
+  // AV_PALREGn, not PLTREGn: PLTREGn is the $fd38-$fd3f half only, so the
+  // `~PLTREGn && ~MADDRBUS[3]` this used to ask for could never be true and the
+  // whole register file was dead.  core.v carries the measurement.
+  if (~AV_PALREGn && ~WTQEn) begin
     case (MADDRBUS[2:0])
       3'd0: analog_index[11:8] <= MDATA[3:0];
       3'd1: analog_index[7:0]  <= MDATA;
@@ -97,7 +102,7 @@ end
 //     exactly the latency it had -- this is not a pipeline stage.
 // ---------------------------------------------------------------------------
 wire        analog_rst   = ~RESETBn;
-wire        analog_wr    = machine_av && ~PLTREGn && ~WTQEn && ~MADDRBUS[3];
+wire        analog_wr    = ~AV_PALREGn && ~WTQEn;
 wire [11:0] analog_waddr = analog_rst ? analog_reset_idx : analog_index;
 wire        analog_we_b  = analog_rst | (analog_wr && (MADDRBUS[2:0] == 3'd2));
 wire        analog_we_r  = analog_rst | (analog_wr && (MADDRBUS[2:0] == 3'd3));

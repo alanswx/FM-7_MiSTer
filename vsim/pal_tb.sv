@@ -8,7 +8,20 @@ module PAL_tb;
   wire [11:0] code;
   reg [15:0] addr = 16'hfd30;
   reg [7:0] data = 8'h00;
-  reg pltreg_n = 1'b1;
+  // The $fd30-$fd3f block select. The two strobes below are DERIVED from it and
+  // from the address, exactly as MDECODE.v and core.v derive them, rather than
+  // driven independently.
+  //
+  // That is not tidiness. This bench used to drive PLTREGn itself and hold it
+  // low while writing $fd30-$fd34 -- a combination the real machine cannot
+  // produce, because PLTREGn is `... & MADDRBUS[3]`. PAL's analog write asked
+  // for `~PLTREGn && ~MADDRBUS[3]`, unsatisfiable in the core and satisfiable
+  // only here, so this test passed for the whole life of an analog palette that
+  // never accepted a single write from real software. A directed bench that can
+  // assert impossible stimulus is not testing the module the core instantiates.
+  reg blk_sel = 1'b0;
+  wire pltreg_n    = ~(blk_sel && addr[3]);
+  wire av_palreg_n = ~(blk_sel && machine_av && ~addr[3]);
   reg wtqe_n = 1'b1;
   reg sftclk = 1'b0;
   reg sftlod_n = 1'b1;
@@ -36,7 +49,8 @@ module PAL_tb;
     .SFTCLK(sftclk), .machine_av(machine_av), .AV_MODE_320(mode_320),
     .SFTSTEP(1'b1), .SFTLODn(sftlod_n), .DPAGE1(dp1), .DPAGE2(dp2),
     .DPAGE3(dp3), .MDATA(mdata), .PALDATA(paldata), .MADDRBUS(addr),
-    .PLTREGn(pltreg_n), .RDQEn(1'b1), .WTQEn(wtqe_n), .RESETBn(resetn),
+    .PLTREGn(pltreg_n), .AV_PALREGn(av_palreg_n),
+    .RDQEn(1'b1), .WTQEn(wtqe_n), .RESETBn(resetn),
     .grb(grb), .ANALOG_CODE(code), .ANALOG_RGB(analog_rgb)
   );
 
@@ -45,10 +59,10 @@ module PAL_tb;
       @(negedge clk);
       addr = 16'hfd30 + {13'd0, regno};
       mdata = value;
-      pltreg_n = 1'b0;
+      blk_sel = 1'b1;
       wtqe_n = 1'b0;
       @(posedge clk); #1;
-      pltreg_n = 1'b1;
+      blk_sel = 1'b0;
       wtqe_n = 1'b1;
     end
   endtask
@@ -102,10 +116,10 @@ module PAL_tb;
     @(negedge clk);
     addr = 16'hfd38;
     mdata = 8'h05;
-    pltreg_n = 1'b0;
+    blk_sel = 1'b1;
     wtqe_n = 1'b0;
     @(posedge clk); #1;
-    pltreg_n = 1'b1;
+    blk_sel = 1'b0;
     wtqe_n = 1'b1;
     machine_av = 1'b1;
     drive_code(12'h123);

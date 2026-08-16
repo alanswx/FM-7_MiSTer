@@ -694,6 +694,33 @@ static void dump_av_vram(int frame) {
 	fprintf(stderr, "vram dump: %s at frame %d\n", vramOut, frame);
 }
 
+// The FM77AV analog palette, as three 4096-entry gun tables.
+//
+// The counterpart of the VRAM dump, and needed for the same reason: with VRAM
+// matching 77AVEMU byte for byte and the $FD30-$FD34 write stream matching too,
+// a wrong picture has to be the table between them, and arguing about which
+// register writes which gun is exactly the kind of inspection that has been
+// wrong before here. Writes one line per differing-from-default entry is not
+// worth it -- dump all 4096 as `index blue red green`, one per line, and diff
+// it against a replay of the trace.
+static void dump_av_palette(int frame) {
+	const char *palOut = getenv("FM7_PAL_DUMP");
+	if (!palOut) return;
+	const auto *r = top->rootp;
+	FILE *fp = fopen(palOut, "w");
+	if (!fp) {
+		fprintf(stderr, "palette dump failed: %s\n", palOut);
+		return;
+	}
+	for (int i = 0; i < 4096; ++i)
+		fprintf(fp, "%03x %x %x %x\n", i,
+		        r->emu__DOT__u_core__DOT__PAL__DOT__pal_blue__DOT__mem[i],
+		        r->emu__DOT__u_core__DOT__PAL__DOT__pal_red__DOT__mem[i],
+		        r->emu__DOT__u_core__DOT__PAL__DOT__pal_green__DOT__mem[i]);
+	fclose(fp);
+	fprintf(stderr, "palette dump: %s at frame %d\n", palOut, frame);
+}
+
 //----------------------------------------------------------------------------
 // Colour helper
 //
@@ -1389,6 +1416,7 @@ static void sim_cycle() {
 		}
 		if (!av_dumped && video.count_frame >= av_dump_frame) {
 			dump_av_vram(video.count_frame);
+			dump_av_palette(video.count_frame);
 			av_dumped = true;
 		}
 	}

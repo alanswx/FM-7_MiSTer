@@ -470,6 +470,27 @@ ROMS u_ROMS(
 // of backing it a second time -- 64 M10K on a device the design overflows.
 // FM-7 mode is untouched.
 wire [15:0] MRAM_addr = AV_FM7PAGE_SEL ? AV_FM7PAGE_ADDR : MADDRBUS;
+
+// $FD30-$FD37, the FM77AV analog palette's index and three gun registers.
+//
+// PLTREGn is the schematic signal and it is `m22_q8 & MADDRBUS[3]` -- the
+// $fd38-$fd3f half of the block, i.e. the FM-7's eight-entry digital palette.
+// PAL.v's analog-palette writes asked for `~PLTREGn && ~MADDRBUS[3]`, which
+// wants MADDRBUS[3] to be 1 and 0 at once. The condition is unsatisfiable, so
+// not one analog palette write ever reached the table: it sat at its power-on
+// identity ramp for the life of the AV support. `FM7_PAL_DUMP` reads back 4096
+// of 4096 ramp entries after the AV demo has written the registers 12,288
+// times, and the demo's colour chart renders as the raw plane code.
+//
+// It hid because a 4096-colour photograph is normally shown through very nearly
+// that ramp -- Deep Forest matches 77AVEMU on 96.8% of pixels with the table
+// never written -- so only software that programs a DIFFERENT map shows it.
+//
+// Decoded here rather than by widening PLTREGn, because PLTREGn also drives the
+// palette read-back in MDATABUS_in and widening it would make $fd30-$fd37 read
+// back digital palette entries instead of the $ff they return now. Decoded on
+// MRAM_addr because that, not MADDRBUS, is the address PAL itself sees.
+wire AV_PALREGn = ~(machine_av && (MRAM_addr[15:4] == 12'hfd3) && ~MRAM_addr[3]);
 // AV MODE MUST NOT FALL BACK TO THE RAW WRITE STROBE. The old expression was
 //
 //     AV_FM7PAGE_SEL ? AV_FM7PAGE_WRITE : RWBn
@@ -1183,6 +1204,7 @@ PAL PAL(
   .PALDATA  ( PALDATA      ),
   .MADDRBUS ( MRAM_addr    ),
   .PLTREGn  ( PLTREGn      ),
+  .AV_PALREGn ( AV_PALREGn ),
   .RDQEn    ( RDQEn        ),
   .WTQEn    ( WTQEn        ),
   .RESETBn  ( RESETBn      ),
