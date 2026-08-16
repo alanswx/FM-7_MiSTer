@@ -61,6 +61,7 @@ in Quartus. Simulation cannot see that class at all.
 | `rtl/` | the core |
 | `vsim/` | Verilator simulation harness, regression suite, sweep tooling |
 | `vsim/sweep/` | breadth-sweep scripts and recorded results (`.tsv`) |
+| `tools/hw/` | hardware test harness — drive a real MiSTer headlessly (see its README) |
 | `docs/` | reference documentation — see below |
 | `refs/` | reference emulator sources, vendored for citation |
 | `software/` | disk and tape images (not distributed) |
@@ -73,6 +74,7 @@ in Quartus. Simulation cannot see that class at all.
 | [docs/REFERENCE.md](docs/REFERENCE.md) | how to work on this core without repeating known mistakes |
 | [docs/IO_MAP.md](docs/IO_MAP.md) | `$fdxx` register facts, with citations |
 | [docs/TESTING.md](docs/TESTING.md) | the regression suite and the breadth sweep |
+| [tools/hw/README.md](tools/hw/README.md) | hardware harness: keys/screenshots/joystick against the real MiSTer |
 | `vsim/README.md` | simulation harness detail |
 
 **Read `docs/REFERENCE.md` before starting.** Its measurement-traps section is a

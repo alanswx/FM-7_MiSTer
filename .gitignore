@@ -55,3 +55,6 @@ vsim/obj_dir/
 
 # Python bytecode from the sweep scripts
 __pycache__/
+
+# Hardware-harness screenshot output
+tools/hw/shots/
