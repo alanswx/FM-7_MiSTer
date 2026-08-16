@@ -365,25 +365,58 @@ than anything title-specific:
 6. **The aperture's halt gate was inverted**, returning `$FF` exactly when the
    sub was halted. Woody Poco survived it by luck — `$FF` has the ACK bit set.
 
-**Four titles went from rendering nothing to rendering game art**, measured at
-2000 frames:
+**The AV set has been re-swept since**, against a fresh 77AVEMU render of every
+title, and that supersedes the old per-title tables. See below.
 
-| title | before | after |
-|---|---|---|
-| Deep Forest | 3790 | **98940** — landscape with title logo |
-| Luxsor (Disk 1) | 3790 | **40843** — pyramid scene |
-| Psy-O-Blade | 3841 | **24536** — character portraits |
-| Luxsor (Disk 2) | 3790 | **17023** |
+### The AV set, re-swept after the display and palette fixes
 
-with Daiva Story 2 (7510) and Silpheed (7410) newly partial.
+`results-av-f2000-postfix.tsv`, joined against 77AVEMU by
+`sweep/gallery.py renders` -> `renders/gallery.html`. Of 67 titles paired:
+**10 match, 5 close, 22 differ, 30 blank on both machines.**
 
-(Those byte counts predate the display-phase and palette fixes below. All four
-still render; Deep Forest's shot at a fixed 2000 frames now depends on where its
-palette fade has got to, so compare against the reference rather than against
-this table. The sweep has not been re-run since.)
+**Read "differs" as "look at it", not "broken".** The two machines stop at
+independently chosen points, so most of that 22 is scene mismatch. Tetris is the
+proof: it scores 21% agreement and is a **gain** -- we render the full
+4096-colour BPS title screen with St Basil's Cathedral while the reference, at
+20 M instructions, is still on its copyright text. Dragon Buster scores 72% and
+is also fine (trap 28). Judge these by eye on the page, not by the number.
 
-Six remain blank: Woody Poco, Shounen Mike, Pro Yakyuu Fan, FM77AV demo, In the
-Dream, Little Box.
+**Genuine gains** over the pre-fix sweep: Tetris (blank -> full title screen),
+Deep Forest, both Luxsor disks, Psy-O-Blade, Daiva Story 2, Digital Devil Story.
+
+**We render nothing where the reference renders something** -- the real blank
+list, and it is longer than the old "six" because that list predates this
+comparison: Shounen Mike, the FM77AV demo disk (both copies), FM Sound Editor,
+Mahjong Kyou Jidai Special 1, Woody Poco 1, Pro Yakyuu Fan, In the Dream, Little
+Box, Ys II program disk, Yami no Iyo Densetsu 1. The last few are marginal --
+the reference itself draws only 1-10% coverage on them.
+
+**Do not use the old sweep as a baseline.** `results-av-f2000-jt03.tsv` was
+taken with a displaced raster and a dead palette, and several of its "renders"
+were artifacts of exactly that: FM Sound Editor scored 100% coverage there while
+executing 604 instructions a frame -- a screen flooded with one colour by a
+palette that was never written. PNG byte size is worse than useless now, since a
+more correct render often compresses smaller.
+
+### Argo is the best-isolated remaining bug
+
+Same title screen as the reference, **every sprite in the right place**, and the
+colours wrong: the reference's red-haired portrait renders with yellow and cyan
+here. Both machines use the same eight primaries, so the digital palette's
+*entries* are not the problem -- the proportions are. Ours is 16% yellow and 16%
+white against the reference's 8% and 5%, with correspondingly less black, i.e.
+**our green plane carries bits the reference's does not.**
+
+Two suspects already eliminated: it is not the `$FD37` access mask (Argo never
+touches `$fd37` in 800 frames), and it is not the raster phase (the geometry is
+exact). Next step is the VRAM diff, `FM7_VRAM_DUMP` against `FM77AV_VRAM_DUMP`
+with both machines on that title screen -- if the green plane differs and blue
+and red match, the fault is in what writes it.
+
+This one is worth doing before the others: it is a 640-mode digital-palette
+title, so whatever is wrong may well be wrong on the FM-7 too, and **nothing in
+the gate would see it** -- the FM-7 rows are a white-on-black F-BASIC banner and
+Thexder against our own blessed output.
 
 ### The rendering artifacts were the display phase and a dead palette
 
