@@ -431,6 +431,60 @@ confident wrong answer at least once:
     interrupt can make a title look *worse* (it ran away where it used to hang), which is
     progress, not regression.
 
+25. **A screenshot suite whose references are its own output is blind to anything that moves
+    the WHOLE picture.** The core displayed every frame right of where it belonged — three
+    pixels in 640 mode, two in 320 — for the life of the project. Eleven blessed screenshots and a
+    350-title sweep could not see it, because the reference shifted with the core. It took a
+    pixel comparison against 77AVEMU to surface, and it showed up as "colour banding" and
+    "vertical stripes" on dithered 4096-colour art — i.e. as a *palette* complaint, which is
+    where the eye goes and where two sessions of investigation went. **A suite can only catch
+    what it compares against something it did not produce.** `tools/raster_phase.py` now asks
+    the question directly, and without a reference emulator: predict each pixel's code from the
+    core's own VRAM dump and find the offset at which one palette explains its own screenshot.
+    A corollary worth its own line: **a bench over the modules is not the assembled core.** A
+    standalone bench over MB60H010 + CRTRAM + PAL — the real modules, wired as `core.v` wires
+    them, sampled as `sim.v` samples — agreed with 77AVEMU in 320 mode and was one pixel out in
+    640, i.e. it would have shipped the bug it was written to catch. Three measurements of the
+    assembled core agreed with each other and against it.
+26. **A search window that ends where the answer is reports the edge of the window.** The
+    offset sweep that found the display shift ran dx from -2 to +2 and returned "+2, 94%",
+    which looks like a clean peak. It is not: at ±5 the real peak is +3 at 99%, and +2 was
+    simply the largest value the sweep was allowed to return. Two other measurements were
+    already built on that wrong constant before the widened sweep caught it. Always sweep past
+    the apparent maximum and check the curve falls off on BOTH sides.
+27. **Comparing pixels between two emulators requires agreeing on the DAC first.** `PAL.v`
+    expands a 4-bit gun level with CSP's `{n,$F}` (1 -> `$1F`); 77AVEMU replicates the nibble
+    (1 -> `$11`). Neither is wrong, but every non-black pixel differs, so a byte-exact
+    comparison reports 100% mismatch and carries no information — which reads exactly like a
+    catastrophic video fault. Both keep the level in the HIGH nibble, so compare `>>4` on each
+    side. In nibble space the same pair of images went from "100% different" to 96.8% identical.
+28. **"Ours has more non-zero bytes than the reference" is a claim about alignment until you
+    have excluded it.** A Deep Forest VRAM diff showed ~15% more non-zero bytes in all twelve
+    planes and was written up as "we set pixels that should not be set". It was the title
+    logo: the reference had drawn a black box over the landscape and this core had not yet.
+    The reference's own screenshots settle it for free — `--shot-every` on 77AVEMU takes
+    seconds and shows whether the picture is still changing at the frame you dumped.
+29. **A blessed screenshot can be a picture of the bug, and the prettier it is the more it
+    looks like coverage.** `av-kohakuiro` earned its place in the gate as "81% coverage, 18
+    colours — the strongest exercise of the 320-mode plane path outside the demo". The scene
+    was an artifact of a palette stuck at the identity ramp; 77AVEMU renders that disk BLACK
+    from its frame 500 onward, and the corrected core matches it on 100.0% of pixels with zero
+    non-black pixels. A reference nobody has compared against a second implementation is a
+    record of what the core did, not of what the machine does — and a rich-looking one buys
+    false confidence in exactly the path it fails to test.
+30. **A register file can be write-only by construction and nothing complains.** The FM77AV
+    analog palette at `$FD30-$FD34` never took a single write: `PAL.v` asked for
+    `~PLTREGn && ~MADDRBUS[3]` where `PLTREGn` is itself `... & MADDRBUS[3]`, so the condition
+    was unsatisfiable. 12,288 writes from one title landed nowhere and the table stayed at its
+    power-on ramp. Verilator does not warn about an unsatisfiable condition any more than it
+    warns about an undriven wire (trap 23). **Read the table back.** `FM7_PAL_DUMP` did it in
+    one run: 4096 of 4096 entries still at the reset value.
+31. **A declared, DRIVEN signal that nothing consumes is the same bug as trap 23.** `CRTRAM.v`
+    takes `SVCASBn/SVCASRn/SVCASGn` as inputs and never mentions them again, so `$FD37`'s CPU
+    access mask gates no VRAM access at all. An audit for module inputs that appear exactly
+    once — in the port list — is worth re-running after any refactor; it found this plus
+    `SADRSEL` into `MB60H010` and `SVDHALT` into `FLAGS`.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

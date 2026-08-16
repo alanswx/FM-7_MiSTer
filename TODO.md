@@ -12,9 +12,13 @@ Reference material: `docs/REFERENCE.md` (read first), `docs/IO_MAP.md`,
 
 **Where it stands.** The **eleven-row** gate is green — `./run_tests.sh` in
 `vsim/` compares screenshots *and* counters against `shots-ref/`. FM-7 boots,
-Thexder runs, OS-9 reaches its shell. On the FM77AV side the 2019 demo matches
-77AVEMU plane-for-plane, Ys boots and draws, and **four titles that rendered
-nothing now render game art** (Deep Forest, both Luxsor disks, Psy-O-Blade).
+Thexder runs, OS-9 reaches its shell. On the FM77AV side **Deep Forest now
+matches 77AVEMU on 100.0% of pixels and the 2019 demo on 99.9%**, measured
+rather than eyeballed, after correcting a display phase that had the whole
+picture sitting three pixels right of where it belonged and finding that the
+analog palette had never accepted a write in its life. Ys boots and draws, and
+four titles that rendered nothing now render game art (Deep Forest, both Luxsor
+disks, Psy-O-Blade).
 
 **It fits and closes timing.** 23,293 / 41,910 ALMs (56%), 516 / 553 M10K
 (93%), positive slack in all five corners, `output_files/FM-7_MiSTer.rbf` built
@@ -39,13 +43,16 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
      **Test an FM77AV title**, not an FM-7 one: only the AV routes the gameport
      through `$FD15`/`$FD16`. Twenty AV titles provably poll it; Dragon Buster is
      the pick because it already rendered before any of this work.
-2. **The AV rendering artifacts.** The four rescued titles draw with banding,
-   stripes and wrong palette. Four suspects are already eliminated — read that
-   list before starting, it will save a day.
+2. **The gate lost an AV row's worth of coverage.** `av-kohakuiro`'s reference
+   was a picture of the dead palette; the corrected render is a black screen
+   that matches 77AVEMU exactly and tests almost nothing. Replace it with a
+   title that genuinely renders — see below.
 3. **Six AV titles still render nothing**, in four distinct shapes, all recorded
    below rather than left to be re-derived.
 4. **The FM half of the YM2203 has never been compared to anything**, and its
    timers/`$FD17` IRQ path is only as good as one title's use of it.
+5. **The `$FD37` CPU access mask does not gate VRAM at all** — see below. No
+   title in hand has been shown to need it, but it is a real hole.
 
 **Ask the reference before theorising.** `refs/local/` holds a built 77AVEMU and
 its ROMs, gitignored but persistent, so no rebuild is needed:
@@ -368,51 +375,130 @@ than anything title-specific:
 | Psy-O-Blade | 3841 | **24536** — character portraits |
 | Luxsor (Disk 2) | 3790 | **17023** |
 
-with Daiva Story 2 (7510) and Silpheed (7410) newly partial. **The renders are
-not clean** — colour banding on Deep Forest, vertical stripes on Psy-O-Blade,
-wrong palette on Luxsor — so there is at least one video-path fault left. Diff
-the VRAM against the reference (`docs/TESTING.md`) rather than guessing at it.
+with Daiva Story 2 (7510) and Silpheed (7410) newly partial.
+
+(Those byte counts predate the display-phase and palette fixes below. All four
+still render; Deep Forest's shot at a fixed 2000 frames now depends on where its
+palette fade has got to, so compare against the reference rather than against
+this table. The sweep has not been re-run since.)
 
 Six remain blank: Woody Poco, Shounen Mike, Pro Yakyuu Fan, FM77AV demo, In the
 Dream, Little Box.
 
-### The rendering artifacts are in the sub-CPU VRAM write path
+### The rendering artifacts were the display phase and a dead palette
 
-The four rescued titles draw, but with banding, stripes and wrong palette. A
-VRAM diff against the reference (`FM77AV_VRAM_DUMP` / `FM7_VRAM_DUMP`, method in
-`docs/TESTING.md`) on Deep Forest, **with both machines on the same title screen
-so the comparison is legitimate** (trap 20):
+Two faults, both found by comparing against 77AVEMU in **palette-nibble space**
+rather than by eye. (Byte-exact pixel comparison is useless between the two:
+`PAL.v` expands a 4-bit gun level with CSP's `{n,$F}` and 77AVEMU replicates the
+nibble, so every non-black pixel differs. Both keep the level in the high
+nibble, so `>>4` on each side makes the comparison meaningful.)
 
-* all twelve 8 KB slices differ
-* ours has consistently **more** non-zero bytes than the reference — bank0 B0
-  3504 vs 2548, bank1 R1 7444 vs 6360, ~15% more throughout
+1. **The whole picture sat to the right of where it belonged** — three pixels in
+   640 mode, two in 320. `HBLANK` came straight off MB60H010's `xx`, but a pixel
+   arrives several stages later: raster address, CRTRAM's synchronous read,
+   `SFTLODn`'s deliberate settle delay, then PAL. The two modes differ by one
+   because their paths do: 640 goes `SFT -> qh -> grb`, 320 goes
+   `shift-register -> palette RAM output`. Fixed by delaying the display
+   blanking to match, which leaves `HBLANKn` (and so `SCASSEL`, the VRAM
+   arbitration) untouched: **every counter in the eleven-row gate is byte-
+   identical across the change and only screenshots moved.**
+2. **The FM77AV analog palette never took a single write.** `PLTREGn` is the
+   schematic decode for `$fd38-$fd3f`, and `PAL.v` asked for
+   `~PLTREGn && ~MADDRBUS[3]` — `MADDRBUS[3]` high and low at once. The table
+   stayed at its power-on identity ramp for the life of the AV support.
 
-So we are setting pixels that should not be set, in every plane and both banks.
+Measured, not inferred. Pixels matching 77AVEMU, before → after, comparing at
+points where both machines are showing the same thing:
 
-**Four suspects are already eliminated — do not re-check them:**
+| title | mode | before | after |
+|---|---|---|---|
+| Deep Forest | 320 | 20.8% | **100.0%** (63991 / 64000) |
+| 2019 demo | 320 | 10.8% | **99.9%** |
+| Wizardry IV | 640 | 90.7% | **99.1%** |
+| F-BASIC banner (FM-7) | 640 | 97.5% | **99.8%** |
+| Psy-O-Blade | 640 | — | **96.6%** |
+
+and, for the phase alone, a third measurement that involves no reference at all:
+`tools/raster_phase.py` reconciles the core's own VRAM with its own screenshot,
+and went from peaking one column out to 99.1% at zero offset.
+
+**The constant was nearly wrong by one.** The first offset sweep ran ±2 and
+reported the 640-mode error as 2, because the search window ended exactly where
+the answer was. Widening it to ±5 showed a sharp peak at 3. Size the window
+from what you are willing to be wrong about.
+
+Why the palette bug survived so long is worth keeping: a 4096-colour photograph
+is normally displayed through very nearly the identity ramp, so Deep Forest,
+Luxsor and Psy-O-Blade all looked *plausible* with the table dead. Only software
+that programs a genuinely different map exposes it — the demo's colour chart
+does, and it rendered as the raw plane code.
+
+**The earlier "we set pixels that should not be set, ~15% more non-zero bytes in
+every plane" was wrong**, and worth recording as the trap it was: our VRAM dump
+was taken at a point where the reference had already drawn the "DEEP FOREST"
+logo — a black box over the landscape — and we had not. The extra bytes were the
+landscape the reference had painted over. The giveaway was that the mismatching
+rows were 101-138 and nothing else: exactly the logo box, not the "every plane
+and both banks" the byte counts suggested.
+
+**Still eliminated, do not re-check:**
 
 * **The MB61VH010 drawing ALU.** `--trace-av-video` over 200 frames: 9356
   `SUBVRAM`, **0 `ALUW`, 0 `AVVRAM`**. Deep Forest never uses it.
-* **The 320-mode sub-CPU address transform.** `MB60H010.v:112` `SUBRA_320`
-  preserves bit 13 and wraps the low 13 bits, which is the same shape as
-  `AVMEM.v`'s `vram_addr_320` for the main aperture. Correct as written.
+* **The 320-mode sub-CPU address transform.** `MB60H010.v` `SUBRA_320` preserves
+  bit 13 and wraps the low 13 bits, matching 77AVEMU's `TransformVRAMAddress`
+  (`fm77avcrtc.h:219`) case by case.
 * **The picture width.** The reference emits 320x200 PNGs in 320 mode; this core
-  renders the same mode pixel-doubled to 640x200 by design. Not a fault.
-* **"The title never sets 320 mode".** It does — `$fd12 <- $40` at frame 202,
-  `$00` at 338, `$40` again at 344, so 320 mode is on at the end. A 200-frame
-  sample showed zero writes and was simply too short a window (trap 20 again).
+  renders the same mode pixel-doubled to 640x200 by design. Not a fault, and the
+  doubled pair provably never disagrees.
 
-What is left: the scroll offset (`VOFFSET`), the plane/bank selection, or the
-possibility that the two dumps are at different points of an animated title —
-which has to be excluded first, since "more bytes" is also what "further along"
-looks like.
+**Deep Forest was never "stuck", either.** With the palette dead it snapped to
+full brightness the instant VRAM was drawn and then sat unchanged from frame 900
+to 1500, which read as a stall. It is in fact fading in through the palette,
+synchronised to `$fd12` vblank polls at `pc=$622a`: black at 900, half up at
+1200, complete at 1500, and that frame is the 100.0% row above. What remains
+open is only the title logo, which the reference draws between its frames 1200
+and 2100 and we do not.
 
-`--trace-av-video` says where they come from, and it rules out most of the video
-back end: over 200 frames Deep Forest issues **9356 `SUBVRAM` writes, 0 `ALUW`,
-0 `AVVRAM`**. It draws entirely through the sub CPU's own VRAM writes — no
-drawing ALU, no main-CPU MMR aperture. So the fault is in the sub-CPU VRAM write
-path: the 320-mode address transform, the `$FD37` plane-access mask, or the
-scroll offset. It is **not** the MB61VH010, which is where the eye is drawn.
+**`av-kohakuiro`'s blessed screenshot was a picture of the bug, and its
+replacement is a black screen.** It was picked for the gate on "81% coverage, 18
+colours — the strongest exercise of the 320-mode plane path outside the demo".
+That picture only existed because the palette was stuck at the identity ramp:
+77AVEMU renders this disk black from its frame 500 to the end of a 30 M-step
+run, and our new shot matches it on **100.0%** of pixels with zero non-black
+pixels, where the old blessed one had 104,246 against the reference's none.
+
+So the row is now correct and nearly worthless as a test. **The gate needs a
+different second AV title** — one that renders real graphics *and* is stable at
+the shot frame with a live palette. Deep Forest around frame 1500 and
+Psy-O-Blade are the candidates; both were measured against 77AVEMU above. Pick
+one by re-checking it at two frame counts first, which is the rule that put
+Kohakuiro here in the first place.
+
+**Luxsor is the one still visibly wrong.** It renders its pyramid scene in
+garish green and red at frame 1980, and no reference frame in a 30 M-step run
+matches it above 5.6%. Treat that number with care, though — the reference is on
+a completely different scene (a dialogue screen) by then, so the two are not
+aligned and the comparison is not yet evidence of a video fault (trap 20). Get
+them onto the same screen first.
+
+### `$FD37`'s CPU access mask reaches nothing
+
+`FLAGS.v` decodes it correctly (`VPAGE1n/2n/3n` = bits 0-2) and `SUBCRTADDR.v`
+folds it into `SVCASBn/SVCASRn/SVCASGn` — **which `CRTRAM.v` declares as inputs
+and never uses.** The sub CPU's VRAM writes are gated by `SVWEn`, which carries
+no mask at all, and reads are unmasked too. 77AVEMU suppresses the write and
+returns `$FF` on the read (`fm77avmemory.cpp:830-878` and `:539-575`).
+
+Three things to know before fixing it. `SVCASBn` as written is
+`SBLANKn & SDRAMV1n & SCASSEL`, and `SBLANKn` *is* `~SCASSEL`, so all three are
+identically zero — wiring them up as they stand would be wrong; pass the three
+mask bits into `CRTRAM` instead, the way `core.v` already passes
+`VPAGE_MASK` to `AVHDRAW`, which does honour it (`plane_mask = bank_mask |
+VPAGE_MASK`, matching 77AVEMU `fm77avcrtc.cpp:411`). The sub CPU addresses one
+gun at a time, so the mask can only ever suppress, never redirect. And no title
+in hand is known to need this: Deep Forest never touches `$fd37` in 428 frames.
+It is a real hole with a citation, not a lead.
 
 ### $FD1E is a drive-mapping register and we do not implement it
 

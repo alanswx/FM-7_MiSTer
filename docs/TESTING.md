@@ -384,6 +384,57 @@ upper-case names (`FBASIC30.ROM`, `INITIATE.ROM`, `SUBSYS_A/B/C.ROM`,
 20 M instructions. Diffing at mismatched points shows the untyped text as a
 whole-plane difference.
 
+`FM7_PAL_DUMP` writes the FM77AV analog palette as 4096 lines of
+`index blue red green`, taken at the same `--av-dump-frame`. It is the read-back
+that catches a palette which is accepting no writes at all — replay the
+`$fd30-$fd34` writes out of a `--trace-io` log and diff the two tables. That is
+how the dead `$FD30` decode was found, and "every entry still equals its index"
+is what a write-only register file looks like.
+
+### Comparing pixels with 77AVEMU: use nibbles, not bytes
+
+The two disagree on the DAC. `PAL.v` expands a 4-bit gun level with CSP's
+`{n,$F}`, 77AVEMU replicates the nibble; every non-black pixel therefore differs
+and a byte-exact comparison reports 100% mismatch whatever the truth is. Both
+keep the level in the **high** nibble, so shift each side right by 4 first.
+
+Sweep a horizontal offset while you are at it. A whole-picture shift is
+invisible to this project's own screenshots — they are the core's output, so
+they shift with it — and it presents as colour noise on dithered art, not as a
+displacement.
+
+### Checking the raster phase without a reference at all
+
+```sh
+cd vsim
+FM7_VRAM_DUMP=/tmp/v.bin ./obj_dir/Vemu --headless --machine fm77av \
+    --disk '../software/D77/Wizardry IV (FM77AV) (Disk A).d77' \
+    --stop-at-frame 620 --av-dump-frame 600 \
+    --screenshot 600 --screenshot-name /tmp/s.png
+../tools/raster_phase.py /tmp/v.bin /tmp/s.png          # add --320 for 320 mode
+```
+
+It predicts each pixel's palette code from the core's own VRAM and asks which
+horizontal offset lets a single palette explain the screen. The answer must be
+`dx=0`; anything else is a displaced picture. Use a title that is *static* at
+the dump frame and does not scroll (Wizardry IV for 640, Deep Forest for 320).
+
+**It only discriminates well in 640 mode.** Eight colour codes over a whole
+screen means a wrong offset has to reuse a code on a differently-coloured pixel,
+and it does, constantly — the spread is 99% at the right offset against 89-94%
+either side. In 320 mode there are thousands of codes, most of them nearly
+unique to one pixel, so *every* offset scores about 99.97% and the peak means
+little. Check 320 alignment against 77AVEMU instead, and note that a one-pixel
+error there is visible as the doubled pair disagreeing with itself rather than
+as a displacement.
+
+**Measure the assembled core, not a bench over its modules.** A standalone
+Verilog bench instantiating MB60H010 + CRTRAM + PAL, wired as `core.v` wires
+them and sampled as `sim.v` samples, still reported the 640-mode picture one
+column left of where the assembled core actually put it — it agreed with the
+reference on 320 and disagreed on 640, and would have baked in a one-pixel
+error. It is deliberately not in the tree.
+
 `--trace-av-video [file]` adds the AV video write log: main-CPU aperture writes
 (`AVVRAM`), sub-CPU VRAM writes (`SUBVRAM`), drawing-ALU read-modify-writes
 (`ALUW`, with the bytes read and written), main-CPU MMR writes into the sub I/O
