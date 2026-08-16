@@ -25,7 +25,7 @@ module AVCRTRAM_COLOR(
   input [1:0] COLOR_SEL,
   input [7:0] AV_VRAM_DIN,
   input DRAW_PORT_EN,
-  input DRAW_INHIBIT_SUB,
+  input DRAW_INHIBIT,
   input [1:0] DRAW_BLOCK,
   input [12:0] DRAW_ADDR,
   input DRAW_WRITE,
@@ -58,10 +58,19 @@ wire [12:0] addr1 = AV_MODE_320 ? raster_offset0 : video_offset;
 wire [12:0] addr2 = AV_MODE_320 ? raster_offset1 : video_offset;
 wire [12:0] addr3 = AV_MODE_320 ? raster_offset1 : video_offset;
 
-wire cpu_write = AV_VRAM_WRITE && AV_VRAM_SEL && (AV_VRAM_PLANE == COLOR_SEL);
-// While the AV drawing ALU is enabled it swallows the sub CPU's data byte and
-// substitutes its own read-modify-write, so the plain store must not land.
-wire sub_write = ~SVWEn && ~SDRAMn && ~DRAW_INHIBIT_SUB;
+// While the AV drawing ALU is enabled it swallows the CPU's data byte and
+// substitutes its own read-modify-write, so the plain store must not land --
+// and that is true of BOTH ways into VRAM, not just the sub CPU's. 77AVEMU
+// returns from the MEMTYPE_SUBSYS_VRAM store as soon as hardDraw is enabled
+// (`fm77avmemory.cpp:818-828`), whichever CPU is accessing.
+//
+// The aperture half of this was missing: Argo halts the sub CPU, drives the ALU
+// from the main side and blits through the aperture, so every one of its 58656
+// aperture writes landed as an opaque store on top of the masked draw that
+// should have replaced it, and each sprite painted its bounding box.
+wire cpu_write = AV_VRAM_WRITE && AV_VRAM_SEL && (AV_VRAM_PLANE == COLOR_SEL) &&
+                 ~DRAW_INHIBIT;
+wire sub_write = ~SVWEn && ~SDRAMn && ~DRAW_INHIBIT;
 // The drawing ALU borrows the main-CPU aperture port because it is the only
 // one that reaches all three guns at a single address.  It holds the port for
 // two clocks per byte, so a main-CPU aperture access landing in exactly those
@@ -137,7 +146,7 @@ module CRTRAM(
   input AV_VRAM_WRITE,
   input [7:0] AV_VRAM_DIN,
   input DRAW_PORT_EN,
-  input DRAW_INHIBIT_SUB,
+  input DRAW_INHIBIT,
   input [1:0] DRAW_BLOCK,
   input [12:0] DRAW_ADDR,
   input DRAW_WRITE_B,
@@ -181,7 +190,7 @@ AVCRTRAM_COLOR blue(
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
   .COLOR_SEL(2'd0), .AV_VRAM_DIN(AV_VRAM_DIN),
-  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT_SUB(DRAW_INHIBIT_SUB),
+  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT(DRAW_INHIBIT),
   .DRAW_BLOCK(DRAW_BLOCK), .DRAW_ADDR(DRAW_ADDR),
   .DRAW_WRITE(DRAW_WRITE_B), .DRAW_DIN(DRAW_DIN_B), .CPU_Q(blue_cpu), .DRAW_Q(DRAW_Q_B),
   .Q640(blue_640), .Q3(blue3), .Q2(blue2), .Q1(blue1), .Q0(blue0)
@@ -194,7 +203,7 @@ AVCRTRAM_COLOR red(
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
   .COLOR_SEL(2'd1), .AV_VRAM_DIN(AV_VRAM_DIN),
-  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT_SUB(DRAW_INHIBIT_SUB),
+  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT(DRAW_INHIBIT),
   .DRAW_BLOCK(DRAW_BLOCK), .DRAW_ADDR(DRAW_ADDR),
   .DRAW_WRITE(DRAW_WRITE_R), .DRAW_DIN(DRAW_DIN_R), .CPU_Q(red_cpu), .DRAW_Q(DRAW_Q_R),
   .Q640(red_640), .Q3(red3), .Q2(red2), .Q1(red1), .Q0(red0)
@@ -207,7 +216,7 @@ AVCRTRAM_COLOR green(
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
   .COLOR_SEL(2'd2), .AV_VRAM_DIN(AV_VRAM_DIN),
-  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT_SUB(DRAW_INHIBIT_SUB),
+  .DRAW_PORT_EN(DRAW_PORT_EN), .DRAW_INHIBIT(DRAW_INHIBIT),
   .DRAW_BLOCK(DRAW_BLOCK), .DRAW_ADDR(DRAW_ADDR),
   .DRAW_WRITE(DRAW_WRITE_G), .DRAW_DIN(DRAW_DIN_G), .CPU_Q(green_cpu), .DRAW_Q(DRAW_Q_G),
   .Q640(green_640), .Q3(green3), .Q2(green2), .Q1(green1), .Q0(green0)

@@ -31,6 +31,11 @@ module AVHDRAW(
   input         SCASSEL,         // VRAM address bus belongs to the sub CPU
   input         SUB_VRAM_SEL,    // sub CPU is addressing one of the three planes
   input  [13:0] SVRADRS,         // translated sub-CPU VRAM address
+  // The main CPU's MMR aperture into the same VRAM. A title that halts the sub
+  // CPU and drives this chip from the main side reaches the planes only here.
+  input         AV_VRAM_WRITE,   // main-CPU aperture write, held for the cycle
+  input  [13:0] AV_VRAM_ADDR,    // translated aperture address
+  input         AV_VRAM_BANK,
   input         AV_MODE_320,
   input         AV_ACTIVE_PAGE,
   input  [13:0] AV_VRAM_OFFSET,  // active-page scroll offset
@@ -47,7 +52,7 @@ module AVHDRAW(
   output  [7:0] DRAW_DIN_B,
   output  [7:0] DRAW_DIN_R,
   output  [7:0] DRAW_DIN_G,
-  output        DRAW_INHIBIT_SUB, // the plain sub-CPU VRAM write is discarded
+  output        DRAW_INHIBIT,    // the plain VRAM store is discarded, either CPU
   output        DRAW_BUSY,
   output  [7:0] DRAW_DOUT         // $D410-$D41B readback
 );
@@ -132,6 +137,30 @@ wire reg_write = reg_wr_sr[2] & ~reg_wr_sr[1];
 wire alu_access = enabled & SUB_VRAM_SEL & SCASSEL & SEB;
 reg  alu_access_d;
 wire alu_access_edge = alu_access & ~alu_access_d;
+
+// The same interception, for the main CPU reaching VRAM through the MMR
+// aperture. 77AVEMU keys hardware drawing on the ADDRESS, not on which CPU is
+// accessing (`fm77avmemory.cpp:818-828`): the MEMTYPE_SUBSYS_VRAM store does the
+// dummy read and returns whenever hardDraw is enabled, and the halt check just
+// above it lets the main CPU through precisely because the sub is halted.
+//
+// This was missing, and it cost Argo its sprite transparency. It halts the sub
+// CPU and programs this chip entirely from the main side -- over 400 frames,
+// 2839 writes to $D410, 1468 to $D411 and 53023 to $D412, every one with the sub
+// halted -- and then blits through the aperture. With no trigger here the ALU
+// performed ZERO operations for the whole run and all 58656 aperture writes
+// landed as plain opaque stores, so every sprite painted its bounding box
+// instead of its masked shape.
+//
+// AV_VRAM_WRITE is `av_write && vram_sel`, a level held for the main CPU's write
+// cycle, so the edge gives one trigger per access -- the same shape as the sub
+// path above. Reads are NOT a trigger here: the reference takes the same path on
+// a dummy read (`:749`) but the aperture has no read strobe to edge-detect, and
+// no title in hand needs it. 77AVEMU's own note says both work, and names Pro
+// Baseball Fan as the title that uses the write form.
+wire main_access = enabled & AV_VRAM_WRITE;
+reg  main_access_d;
+wire main_access_edge = main_access & ~main_access_d;
 
 // ---------------------------------------------------------------------------
 // Address of the byte being combined
@@ -220,7 +249,7 @@ assign DRAW_DIN_B = combine(DRAW_Q_B, color[0], tile_b, write_bits);
 assign DRAW_DIN_R = combine(DRAW_Q_R, color[1], tile_r, write_bits);
 assign DRAW_DIN_G = combine(DRAW_Q_G, color[2], tile_g, write_bits);
 
-assign DRAW_INHIBIT_SUB = MACHINE_AV & enabled;
+assign DRAW_INHIBIT = MACHINE_AV & enabled;
 assign DRAW_BUSY = line_active;
 
 assign DRAW_DOUT =
@@ -263,6 +292,7 @@ always @(posedge CLKSYS) begin
   if (~RESETBn) begin
     reg_wr_sr <= 3'b111;
     alu_access_d <= 1'b0;
+    main_access_d <= 1'b0;
     state <= ST_IDLE;
     enabled <= 1'b0;
     condition <= 2'd0;
@@ -289,6 +319,7 @@ always @(posedge CLKSYS) begin
   else begin
     reg_wr_sr <= { reg_wr_sr[1:0], reg_wrn };
     alu_access_d <= alu_access;
+    main_access_d <= main_access;
 
     if (reg_write) begin
       case (SADDRBUS[7:0])
@@ -333,9 +364,18 @@ always @(posedge CLKSYS) begin
 
     case (state)
       ST_IDLE: begin
+        // Sub CPU first if both land on the same clock; the aperture write is
+        // held for a whole main bus cycle and will still be there next time.
         if (alu_access_edge) begin
           acc_block  <= {AV_ACTIVE_PAGE, SVRADRS[13]};
           acc_offset <= SVRADRS[12:0];
+          state <= ST_READ;
+        end
+        else if (main_access_edge) begin
+          // CRTRAM's own cpu_block/cpu_offset, so the ALU combines exactly the
+          // byte the plain store would have written.
+          acc_block  <= {AV_VRAM_BANK, AV_VRAM_ADDR[13]};
+          acc_offset <= AV_VRAM_ADDR[12:0];
           state <= ST_READ;
         end
       end

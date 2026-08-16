@@ -39,7 +39,7 @@ module crtram_tb;
     .AV_VRAM_DIN(av_din), .AV_VRAM_DOUT(av_dout),
     // The drawing-ALU port is exercised by avhdraw-test; hold it idle here so
     // this bench measures the raster/CPU paths on their own.
-    .DRAW_PORT_EN(1'b0), .DRAW_INHIBIT_SUB(1'b0), .DRAW_BLOCK(2'd0),
+    .DRAW_PORT_EN(1'b0), .DRAW_INHIBIT(1'b0), .DRAW_BLOCK(2'd0),
     .DRAW_ADDR(13'd0), .DRAW_WRITE_B(1'b0), .DRAW_WRITE_R(1'b0),
     .DRAW_WRITE_G(1'b0), .DRAW_DIN_B(8'h00), .DRAW_DIN_R(8'h00),
     .DRAW_DIN_G(8'h00), .DRAW_Q_B(), .DRAW_Q_R(), .DRAW_Q_G(),

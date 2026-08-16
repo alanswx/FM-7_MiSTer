@@ -62,7 +62,7 @@ module avhdraw_tb;
     .DRAW_PORT_EN(port_en), .DRAW_BLOCK(blk), .DRAW_ADDR(addr),
     .DRAW_WRITE_B(wr_b), .DRAW_WRITE_R(wr_r), .DRAW_WRITE_G(wr_g),
     .DRAW_DIN_B(din_b), .DRAW_DIN_R(din_r), .DRAW_DIN_G(din_g),
-    .DRAW_INHIBIT_SUB(inhibit), .DRAW_BUSY(busy), .DRAW_DOUT(dout)
+    .DRAW_INHIBIT(inhibit), .DRAW_BUSY(busy), .DRAW_DOUT(dout)
   );
 
   integer fails = 0;
