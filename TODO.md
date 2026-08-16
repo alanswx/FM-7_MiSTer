@@ -522,6 +522,31 @@ what 77AVEMU reports for an absent drive before changing `FDC.v` — its
 (`refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1346`) and returns false for an
 unloaded drive, which does *not* obviously explain it.
 
+### Two of the six blanks want a display mode this core does not have
+
+**In the Dream and Little Box both render 640x400 on the reference.** That is
+not an inference from a register trace — 77AVEMU sizes its output buffer from
+`scrnMode` (`fm77avrender.cpp:102-114`), so a 640x400 PNG *is* the mode. Both
+come out 640x400 with ~24.5 k non-black pixels; In the Dream reaches a
+"PUSH ANY KEY" screen with a framed paragraph of Japanese text.
+
+Only one thing selects it: **`$FD04` bit 3 clear** (`fm77avcrtc.cpp:205-219`
+`WriteFD04`). The same register's bit 4 selects `SCRNMODE_320X200_260KCOL`.
+This core models neither — `AV_MODE_320` is a single bit off `$FD12` bit 6 and
+covers only 640x200 and 320x200/4096, and `$fd04` is decoded here as the FM-7's
+attention register with no CRTC meaning at all.
+
+So these two are not interrupt or FDC faults and chasing them as such will waste
+the time. They need the mode. Note what that costs before starting: 640x400 is
+two pages of 640x400x1bpp per gun, `TransformVRAMAddress` wraps at `0x7FFF` with
+`VRAMOffset*2`, and the renderer picks the offset register by `addr&1`
+(`fm77avrender.cpp:271-273`) — a different addressing scheme from either mode
+in `MB60H010.v`, not a flag.
+
+(Superseded lead: *"In the Dream spins on `BITB $d430 / BEQ` waiting for a flag
+only an interrupt handler can set"* — that observation stands, but it is
+downstream of never having entered the mode the title expects.)
+
 ### The next lead: another undelivered interrupt
 
 Two of the remaining blanks wait on a **main-RAM flag that only an interrupt
@@ -532,7 +557,9 @@ handler can set**, which is the same shape as the YM2203 fault above:
 * **In the Dream** spins on `BITB $d430 / BEQ` — and note `$d430` there is *not*
   the sub I/O register: main `$Dxxx` maps to the FM-7 page, so it is ordinary
   RAM. It writes `$fd02 <- $40`, which per CSP `fm7_mainio.cpp:459` enables
-  **RXRDY** and nothing else, then takes one interrupt in 900 frames.
+  **RXRDY** and nothing else, then takes one interrupt in 900 frames. But see
+  the 640x400 section above first — this title never gets into the display mode
+  it expects, and that comes earlier.
 
 The other two shapes, for whoever picks this up:
 
