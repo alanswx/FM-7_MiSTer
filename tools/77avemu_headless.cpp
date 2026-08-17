@@ -130,6 +130,10 @@ static void Usage(const char *argv0)
     std::cerr << "  --joystick F:B[:HOLD]  press stick 1 at frame F. B is\n";
     std::cerr << "                         '+'-separated: up down left right a b\n";
     std::cerr << "  --shot-every N         also write screenshot.NNNN.png every N frames\n";
+    std::cerr << "  --trace-io             log every main-CPU $FDxx access, and every\n";
+    std::cerr << "                         sub-CPU $D4xx one, as IOWRITE/IOREAD lines.\n";
+    std::cerr << "                         Feed both sides to tools/iodiff.py to find\n";
+    std::cerr << "                         where this core and the reference part company.\n";
     std::cerr << "  A frame is 1/60 s of MACHINE time, so the numbers mean the same\n";
     std::cerr << "  thing here and in vsim.\n";
 }
@@ -158,6 +162,7 @@ int main(int argc, char **argv)
     std::vector<InputEvent> events;
     unsigned long long shotEvery = 0;
 
+    bool traceIO = false;
     int positional = 0;
     for (int i = 3; i < argc; ++i)
     {
@@ -209,6 +214,10 @@ int main(int argc, char **argv)
         {
             shotEvery = std::strtoull(argv[++i], nullptr, 10);
         }
+        else if (arg == "--trace-io")
+        {
+            traceIO = true;
+        }
         else if (positional == 0)
         {
             steps = std::strtoull(arg.c_str(), nullptr, 0);
@@ -244,6 +253,25 @@ int main(int argc, char **argv)
     NullWorld world;
     NullWindow window;
     std::unique_ptr<FM77AV> vm(new FM77AV);
+
+    // 77AVEMU already logs any I/O access we ask it to -- FM77AV::IOWrite and
+    // ::IORead each open with a monitor check (fm77avio.cpp:9 and :636) and
+    // print `IOWRITE MAIN:pc IO:fdxx VALUE:vv`. Switching every port on turns
+    // that into a full bus trace, with no change to the upstream tree: refs/ is
+    // gitignored, so a patch there would not survive a rebuild.
+    //
+    // This is the reference half of the differential tracer. Ours comes from
+    // `vsim --trace-io`, which already prints the same four fields.
+    if (traceIO)
+    {
+        for (int i = 0; i < 256; ++i)
+        {
+            vm->var.monitorIOReadMain[i]  = true;
+            vm->var.monitorIOWriteMain[i] = true;
+            vm->var.monitorIOReadSub[i]   = true;
+            vm->var.monitorIOWriteSub[i]  = true;
+        }
+    }
     if (!vm->SetUp(param, &world, &window))
     {
         std::cerr << "77AVEMU setup failed\n";
