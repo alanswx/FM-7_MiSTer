@@ -122,7 +122,27 @@ wire sel      = ~FD_CSn;
 wire core_sel = sel & ~FD_RS[2];          // $fd18-$fd1b
 wire aux_sel  = sel &  FD_RS[2];          // $fd1c-$fd1f
 wire wr_stb   = ~FD_WEn & wen_d;          // falling edge of FD_WEn
-wire rd_stb   = ~FD_REn & ren_d;          // falling edge of FD_REn
+// The controller must be told about a read at the CLOSE of the E-phase pulse,
+// not at its opening.
+//
+// FD_REn is `~(ERW & EE)` (MFD.v): it falls when E RISES and rises when E FALLS
+// -- and E falling is the exact edge mc6809i latches the data bus on. Taking the
+// falling edge of FD_REn told the controller at the START of the cycle, so
+// wd1793 saw the read, set read_data and advanced byte_addr while the CPU had
+// not yet taken the byte. Measured with `make DEBUG_FDC_READ=1`: the CPU latched
+// $03, and only afterwards did the controller present byte 192 as $20; from then
+// on the CPU latched the byte AFTER the one the controller was on -- `03 08 0a
+// 00` against an image that reads `20 08 0a 00`. One byte of every sector was
+// consumed without ever being delivered.
+//
+// This is docs/REFERENCE.md section 2, the RDQEn two-strobe hazard, in its
+// simplest form: acknowledge at the close of the E-phase pulse. Same remedy as
+// CLKCTRL.v's fd03_ephase and TIMER.v's fd04_ephase.
+//
+// Writes keep the leading edge deliberately -- the CPU drives the bus for the
+// whole of E high, and sampling on release races it letting go (the $fd37 / P1-4
+// hazard in that same section).
+wire rd_stb   = FD_REn & ~ren_d;          // rising edge of FD_REn = E falling
 
 //----------------------------------------------------------------------------
 // Crossing from the bus into the controller's clock enable
@@ -241,6 +261,27 @@ end
 `ifdef DEBUG_FDC_SCAN
 always @(posedge CLKSYS) begin
   if (core_sel & wr_stb) $display("FDCW reg%0d <- %02x", FD_RS[1:0], FD_Din);
+end
+`endif
+
+`ifdef DEBUG_FDC_READ
+// What is actually on the bus at the two edges of a $fd1b read?
+//
+// rd_stb is the FALLING edge of FD_REn, and FD_REn is ~(ERW & EE): it falls when
+// E RISES and rises when E FALLS -- the exact edge mc6809i latches on. So the
+// controller is told about the read at the START of the cycle and the CPU takes
+// the byte at the END, and anything the controller does in between lands on the
+// wrong side of the latch. This prints both edges with the byte the mux is
+// presenting, which is the only way to see which side of it each byte falls on.
+reg ren_dd = 1'b1;
+always @(posedge CLKSYS) begin
+  ren_dd <= FD_REn;
+  if (core_sel & (FD_RS[1:0] == 2'd3)) begin
+    if (~FD_REn & ren_dd)
+      $display("FDCBUS open  (E rise) FD_Dout=%02x", FD_Dout);
+    if (FD_REn & ~ren_dd)
+      $display("FDCBUS latch (E fall) FD_Dout=%02x   <-- the CPU takes this", FD_Dout);
+  end
 end
 `endif
 
