@@ -340,7 +340,15 @@ wire [7:0] aux_dout =
   // { motor&ready, 0, 1111, drive } == CSP's 0x3c | drive | (motor ? 0x80 : 0)
   (FD_RS[1:0] == 2'd1) ? { fdc_motor & ready_sel, 1'b0, 4'b1111, fdc_drv } :
   (FD_RS[1:0] == 2'd2) ? 8'hff :                 // mode: FM-7 always $ff
-                         { drq_sel, intrq_sel, 6'd0 }; // status flags
+                         // $fd1f: DRQ in b7, IRQ in b6, and the six unused bits
+                         // read back as ONES, not zeros. 77AVEMU builds the
+                         // same byte from a $3F base
+                         // (fm77avfdc.cpp:955-965: `data=0x3F` then `|=0x80`
+                         // for DRQ and `|=0x40` for IRQ). Software that waits
+                         // on this register with a test other than a bit mask
+                         // -- comparing the whole byte, or branching on zero --
+                         // sees a value this core never produced.
+                         { drq_sel, intrq_sel, 6'h3f };
 
 //----------------------------------------------------------------------------
 // The controller
@@ -510,7 +518,14 @@ assign sd_wr[1]       = sd_wr1;
 assign sd_buff_din[0] = sd_buff_din0;
 assign sd_buff_din[1] = sd_buff_din1;
 
-wire [7:0] empty_core_dout = (FD_RS[1:0] == 2'd0) ? 8'h94 :
+// An absent drive answers "not ready, track 0" and nothing else: $84.
+//
+// This was $94, which adds bit 4 -- a seek error. The reference reports $84 for
+// every empty drive during the boot ROM's four-drive probe, and its SeekError()
+// is unconditionally false (refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1372).
+// An empty drive has not failed a seek; it is simply empty, and the two are
+// different answers to a loader asking what hardware it has.
+wire [7:0] empty_core_dout = (FD_RS[1:0] == 2'd0) ? 8'h84 :
                              (FD_RS[1:0] == 2'd1) ? 8'h00 :
                              (FD_RS[1:0] == 2'd2) ? 8'h00 : 8'h00;
 wire [7:0] core_dout = drive0_sel ? core_dout0 :

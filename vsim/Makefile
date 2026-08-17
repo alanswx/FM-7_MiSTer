@@ -121,6 +121,21 @@ ifeq ($(DEBUG_FDC),1)
 V_DEFINE += +define+DEBUG_FDC_SCAN
 endif
 
+# `make DEBUG_FDC_READ=1` prints one line per byte the controller hands the CPU
+# during a sector read, plus the buffer base chosen for each sector:
+#
+#   FDCSEC start: buff_a=<addr> base=<offset in the fetched blocks> ...
+#   FDCRD byte_addr=<n> buff_dout=<byte> ...
+#
+# Written to settle whether the FIRST byte of every sector is lost because the
+# read pointer is wrong or because the SD block fetch has not landed in the
+# buffer when DRQ is first raised -- reading the RTL eliminated the obvious
+# candidates for both. Touch ../rtl/wd1793.sv before building or the define does
+# not reach Verilator (trap 3).
+ifeq ($(DEBUG_FDC_READ),1)
+V_DEFINE += +define+DEBUG_FDC_READ
+endif
+
 # `make DEBUG_SRAM=1` instruments the main/sub shared-RAM aperture in rtl/SRAM.v:
 #
 #   SRAMBAD main write $<addr> <- $<byte> with SHALTACn HIGH ...

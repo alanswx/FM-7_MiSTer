@@ -206,7 +206,12 @@ typedef enum
 
 
 // common status bits
-wire        s_readonly = (wp | !RWMODE);
+// An empty drive reports NOT write-protected. 77AVEMU's WriteProtected() reads
+// the mounted image's flag and returns false when the drive holds no image
+// (refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1363-1371), so `ready` gates it
+// here. Without that an unmounted slot came back $d4 instead of $84, because
+// FDC.v starts wp_r at 2'b11.
+wire        s_readonly = ready & (wp | !RWMODE);
 reg			s_crcerr;
 reg			s_headloaded, s_seekerr, s_index;  // mode 1
 reg			s_lostdata, s_wrfault; 			     // mode 2,3
@@ -226,9 +231,26 @@ reg         s_intrq;
 reg   [7:0] wdreg_track;
 reg   [7:0] wdreg_sector;
 reg   [7:0] wdreg_data;
+// Type I status bit 5, head-engaged, is ALWAYS ZERO on this machine, and bit 4
+// is the seek error alone -- not "seek error or not ready".
+//
+// Both come from 77AVEMU's shared FDC (`refs/TOWNSEMU/src/diskdrive/
+// diskdrive.cpp:1213-1243`), and the first carries an experiment on real
+// hardware in CaptainYS's own words: "Observation from real FM77AV tells that
+// head-engaged flag will not be set even if head-load flag is set in the
+// command. Murder Club checks head-engaged flag and if set, it fails to start."
+// Its `SeekError()` returns false unconditionally (`:1372`), so bit 4 never
+// sets either.
+//
+// This core reported both. Against the reference, the boot ROM's four-drive
+// probe -- RESTORE on each of $fd1d = $80/$81/$82/$83 -- came back $24/$f4/$94/
+// $94 here where 77AVEMU answers $44/$84/$84/$04: head-engaged on every drive,
+// and a seek error on every EMPTY one, because `~ready` was folded into bit 4.
+// An empty drive is not a seek failure, and software that probes drives before
+// deciding what it can load reads the difference.
 wire  [7:0] wdreg_status = cmd_mode == 0 ?
-	{~ready, s_readonly & s_wpe, s_headloaded, s_seekerr | ~ready, s_crcerr, !disk_track, s_index, s_busy}:
-	{~ready, s_readonly & s_wpe, s_wrfault,    s_seekerr | ~ready, s_crcerr, s_lostdata,  s_drq,   s_busy};
+	{~ready, s_readonly & s_wpe, 1'b0,      s_seekerr, s_crcerr, !disk_track, s_index, s_busy}:
+	{~ready, s_readonly & s_wpe, s_wrfault, s_seekerr, s_crcerr, s_lostdata,  s_drq,   s_busy};
 
 reg   [7:0] read_addr[6];
 reg   [7:0] q;
@@ -404,8 +426,11 @@ always @(posedge clk_sys) begin
 
 			STATE_SEARCH:
 				begin
+					// Not ready ends the command, but it is NOT a seek error --
+					// see the status comment above. Bit 7 already says "not
+					// ready"; adding bit 4 tells software the head failed to
+					// find its track, which is a different and worse answer.
 					if(!ready) begin
-						s_seekerr <= 1;
 						state <= STATE_ENDCOMMAND;
 					end else begin
 						seektimer <= seektimer - 1'b1;
@@ -478,6 +503,10 @@ always @(posedge clk_sys) begin
 			// read before write in case if sector not aligned or smaller than 512b
 			STATE_WAIT_READ:
 				begin
+`ifdef DEBUG_FDC_READ
+					$display("FDCSEC start: buff_a=%05x base=%0d sector_size=%0d blk_size=%0d",
+					         buff_a, buff_a[8:0], sector_size, blk_size);
+`endif
 					data_length <= sector_size;
 					byte_addr   <= buff_a[8:0];
 					blk_max     <= blk_size;
@@ -518,6 +547,15 @@ always @(posedge clk_sys) begin
 				end
 			STATE_READ_2:
 				begin
+`ifdef DEBUG_FDC_READ
+					// One line per byte handed to the CPU. `make DEBUG_FDC_READ=1`,
+					// and touch this file first -- Verilator bakes +define+ in when
+					// it runs, so a plain rebuild keeps the old defines and prints
+					// nothing (docs/REFERENCE.md trap 3).
+					if(read_data & s_drq)
+						$display("FDCRD byte_addr=%0d buff_dout=%02x buff_a=%05x sd_block=%0d data_length=%0d",
+						         byte_addr, buff_dout, buff_a, sd_block, data_length);
+`endif
 					if(watchdog_bark | (read_data & s_drq)) begin
 						// reset drq until next byte is read, nothing is lost
 						s_drq_busy <= 2'b01;
@@ -620,13 +658,15 @@ always @(posedge clk_sys) begin
 				end
 			STATE_WAIT_2:
 				begin
-					// A command issued to an empty drive must still terminate. The
-					// Fujitsu controller reports not-ready/seek-error and raises INTRQ;
-					// 77AVEMU's RESTORE path does the same immediately. Waiting for the
-					// normal media timing here leaves software polling $FD1F forever
-					// after it probes an empty mounted slot.
+					// A command issued to an empty drive must still terminate and
+					// raise INTRQ, or software polling $FD1F after probing an
+					// empty slot waits for ever. But it reports NOT READY only:
+					// 77AVEMU's SeekError() is unconditionally false
+					// (refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1372), and the
+					// boot ROM's four-drive probe expects $84 from an empty
+					// drive, not $94. (The superseded claim here was that the
+					// Fujitsu controller reports not-ready AND seek-error.)
 					if(!ready) begin
-						s_seekerr <= 1;
 						state <= STATE_ENDCOMMAND;
 					end
 					else if(wait_time) wait_time <= wait_time - 1;
