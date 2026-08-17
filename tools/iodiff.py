@@ -100,13 +100,31 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     use_pc = '--no-pc' not in sys.argv
     keep_sub = '--sub' in sys.argv
+    # --ports 18-1f narrows both traces to one device before diffing. A whole
+    # trace is dominated by whatever polls hardest, and the divergence that
+    # matters is often a handful of accesses to one register underneath it.
+    want = None
+    for a in sys.argv[1:]:
+        if a.startswith('--ports='):
+            want = set()
+            for part in a.split('=', 1)[1].split(','):
+                if '-' in part:
+                    lo, hi = part.split('-')
+                    want |= set(range(int(lo, 16), int(hi, 16) + 1))
+                else:
+                    want.add(int(part, 16))
     context = 6
     if len(args) != 2:
         print(__doc__)
         return 2
 
-    ours = collapse(load_ours(args[0]), use_pc)
-    ref = collapse(load_ref(args[1], keep_sub), use_pc)
+    oe, re_ = load_ours(args[0]), load_ref(args[1], keep_sub)
+    if want is not None:
+        oe = [e for e in oe if e[1] in want]
+        re_ = [e for e in re_ if e[1] in want]
+        print(f"narrowed to ports {' '.join(f'${p:02x}' for p in sorted(want))}\n")
+    ours = collapse(oe, use_pc)
+    ref = collapse(re_, use_pc)
     if not ours or not ref:
         print(f"empty trace: ours {len(ours)} entries, reference {len(ref)}", file=sys.stderr)
         return 1
