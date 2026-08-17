@@ -519,6 +519,43 @@ incapable of covering this and `make crtram-test` is the only evidence there is 
 six directed assertions on the write and the `$FF` read, both paths. Do not try
 to "confirm" it from a title.
 
+### The first byte of every sector is lost at the bus boundary, not in the FDC
+
+Measured, not inferred, and the measurement overturned both of the obvious
+theories. `make DEBUG_FDC_READ=1` prints the buffer base per sector and one line
+per byte the controller hands over. On Thexder's first sector:
+
+```
+FDCSEC start: buff_a=002c0 base=192 sector_size=256 blk_size=0
+FDCRD byte_addr=192 buff_dout=20 ...
+FDCRD byte_addr=193 buff_dout=08 ...
+FDCRD byte_addr=194 buff_dout=0a ...
+```
+
+The image really does begin `20 08 0a 00 10 00 00 04`, so **`wd1793` presents the
+right byte, at the right pointer, from the right buffer base, on time.** The read
+pointer is not off by one and the SD block fetch is not late -- both were
+plausible and both are wrong.
+
+The CPU nevertheless reads `03 08 0a ...` (`tools/iodiff.py` against 77AVEMU,
+which reads `ff 1a 50 32` on Shounen Mike and `20 08 0a` here). From the SECOND
+read onward the CPU sees exactly what the controller emits. So the first read
+samples stale data *and still advances the controller*: one byte is consumed
+without being delivered.
+
+**That puts it in `FDC.v`'s bus boundary -- the `FD_Dout` mux and the read strobe
+that sets `read_data` -- not in the controller.** The obvious suspect is the
+RDQEn two-strobe mechanism (`docs/REFERENCE.md` section 2): every `$fdxx` read
+decodes as a Q-phase pulse and an E-phase pulse, and a data register that
+advances on the wrong one hands the CPU the byte before or after the one it
+latches. That section's fix idiom -- acknowledge only at the close of the
+E-phase pulse -- is the first thing to try.
+
+**It is general, not a title's blocker.** Thexder loses its first byte and boots
+correctly, so every loader in the suite already tolerates it. Do not expect
+fixing it to rescue a blank title; expect it to remove a whole class of
+one-byte-shifted reads that nothing has yet been shown to depend on.
+
 ### $FD1E is a drive-mapping register and we do not implement it
 
 77AVEMU `fm77avfdc.cpp:817-831`: `$FD1D` bits 1:0 select a drive *through*
