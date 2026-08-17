@@ -1115,6 +1115,7 @@ CRTRAM u_CRTRAM(
   .SDRAMBn    ( SDRAMBn      ),
   .SDRAMRn    ( SDRAMRn      ),
   .SDRAMGn    ( SDRAMGn      ),
+  .VPAGE_MASK ( {VPAGE3n, VPAGE2n, VPAGE1n} ),
   .AV_MODE_320( AV_MODE_320  ),
   .SVDATAB    ( SVDATAB      ),
   .SVDATAB3   ( SVDATAB3     ),

@@ -25,15 +25,18 @@ module crtram_tb;
   wire [7:0] video_r2, video_r1, video_r0;
   wire [7:0] video_g2, video_g1, video_g0;
   reg [12:0] ref_addr0, ref_addr1;
+  reg  [2:0] vpage_mask = 3'b000;   // $FD37 b2:0, 1 = gun closed to the CPU
+  wire [7:0] crtram_data;
 
   CRTRAM dut(
-    .CLKSYS(clk), .SDATABUS(sdata), .CRTRAMDATA(),
+    .CLKSYS(clk), .SDATABUS(sdata), .CRTRAMDATA(crtram_data),
     .SVRADRS(video_addr), .SVRADRS0(video_addr0), .SVRADRS1(video_addr1),
     .SVWEn(video_we_n), .SCASSEL(scassel), .AV_MODE_320(mode_320),
     .AV_DISPLAY_PAGE(display_page), .AV_ACTIVE_PAGE(active_page),
     .AV_VRAM_BANK(vram_bank),
     .SVCASBn(1'b0), .SVCASRn(1'b0), .SVCASGn(1'b0),
     .SDRAMBn(blue_n), .SDRAMRn(red_n), .SDRAMGn(green_n),
+    .VPAGE_MASK(vpage_mask),
     .AV_VRAM_SEL(av_sel), .AV_VRAM_PLANE(av_plane),
     .AV_VRAM_ADDR(av_addr), .AV_VRAM_WRITE(av_write),
     .AV_VRAM_DIN(av_din), .AV_VRAM_DOUT(av_dout),
@@ -161,6 +164,57 @@ module crtram_tb;
       video_addr = 14'h0042;
     @(posedge clk); #1;
     check(video_b, 8'hc3, "display VRAM page");
+
+    // ---------------------------------------------------------------------
+    // $FD37 bits 2:0, the CPU access mask.
+    //
+    // This reached nothing at all until it was wired here: SUBCRTADDR builds
+    // the masked selects as `SBLANKn & SDRAMVn & SCASSEL`, and SBLANKn is
+    // ~SCASSEL, so all three were identically zero and CRTRAM ignored them.
+    // 77AVEMU suppresses the store and returns $ff on the read, for either CPU
+    // (fm77avmemory.cpp:830-878 and :539-575).
+    //
+    // No title in hand writes $fd37, so the breadth sweep cannot cover this and
+    // a directed check is the only evidence there is.
+    // ---------------------------------------------------------------------
+    @(negedge clk); scassel = 1'b1; active_page = 1'b0; display_page = 1'b0;
+      vpage_mask = 3'b000;
+      video_addr = 14'h0100; sdata = 8'h5a; video_we_n = 1'b0; blue_n = 1'b0;
+    @(posedge clk); #1;
+      video_we_n = 1'b1; blue_n = 1'b1;
+    @(posedge clk); #1;
+    check(video_b, 8'h5a, "unmasked gun takes the sub write");
+
+    // Masked: the write must not land, so the old byte survives.
+    @(negedge clk); vpage_mask = 3'b001;
+      video_addr = 14'h0100; sdata = 8'ha5; video_we_n = 1'b0; blue_n = 1'b0;
+    @(posedge clk); #1;
+      video_we_n = 1'b1;
+    @(posedge clk); #1;
+      vpage_mask = 3'b000; blue_n = 1'b1;
+    @(posedge clk); #1;
+    check(video_b, 8'h5a, "masked gun refuses the sub write");
+
+    // ...and a masked gun reads back $ff rather than its contents.
+    @(negedge clk); vpage_mask = 3'b001; blue_n = 1'b0; video_addr = 14'h0100;
+    @(posedge clk); #1;
+    check(crtram_data, 8'hff, "masked gun reads back $ff");
+    @(negedge clk); vpage_mask = 3'b000;
+    @(posedge clk); #1;
+    check(crtram_data, 8'h5a, "unmasked gun reads its byte");
+    @(negedge clk); blue_n = 1'b1;
+
+    // The mask covers the main-CPU aperture too, not just the sub CPU.
+    @(negedge clk); vpage_mask = 3'b010; av_sel = 1'b1; av_plane = 2'd1;
+      av_addr = 14'h0100; av_din = 8'h3c; av_write = 1'b1;
+    @(posedge clk); #1;
+      av_write = 1'b0;
+    @(posedge clk); #1;
+    check(av_dout, 8'hff, "masked gun reads back $ff through the aperture");
+    @(negedge clk); vpage_mask = 3'b000;
+    @(posedge clk); #1;
+    check(av_dout, 8'h00, "masked gun refused the aperture write");
+    @(negedge clk); av_sel = 1'b0;
 
     $display("CRTRAM TEST PASS");
     $finish;

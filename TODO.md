@@ -51,8 +51,6 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    below rather than left to be re-derived.
 4. **The FM half of the YM2203 has never been compared to anything**, and its
    timers/`$FD17` IRQ path is only as good as one title's use of it.
-5. **The `$FD37` CPU access mask does not gate VRAM at all** — see below. No
-   title in hand has been shown to need it, but it is a real hole.
 
 **Ask the reference before theorising.** `refs/local/` holds a built 77AVEMU and
 its ROMs, gitignored but persistent, so no rebuild is needed:
@@ -372,7 +370,7 @@ title, and that supersedes the old per-title tables. See below.
 
 `results-av-f2000-postfix.tsv`, joined against 77AVEMU by
 `sweep/gallery.py renders` -> `renders/gallery.html`. Of 67 titles paired:
-**10 match, 5 close, 22 differ, 30 blank on both machines.**
+**11 match, 6 close, 20 differ, 30 blank on both machines.**
 
 **Read "differs" as "look at it", not "broken".** The two machines stop at
 independently chosen points, so most of that 22 is scene mismatch. Tetris is the
@@ -381,8 +379,16 @@ proof: it scores 21% agreement and is a **gain** -- we render the full
 20 M instructions, is still on its copyright text. Dragon Buster scores 72% and
 is also fine (trap 28). Judge these by eye on the page, not by the number.
 
-**Genuine gains** over the pre-fix sweep: Tetris (blank -> full title screen),
-Deep Forest, both Luxsor disks, Psy-O-Blade, Daiva Story 2, Digital Devil Story.
+**Genuine gains**: Tetris (blank -> full 4096-colour title screen), Deep Forest,
+both Luxsor disks, Psy-O-Blade, Daiva Story 2, Digital Devil Story -- and then
+Argo 34.5% -> **96.3%** and Luxsor 1 5.7% -> **98.0%** from making the drawing
+ALU reachable from the main CPU.
+
+That last change is worth remembering for its shape: it moved **exactly one row**
+of the 68-title sweep and left the other 67 byte-identical, and the row it moved
+got *smaller* -- Luxsor 42128 -> 12297 bytes. A correct render with the ALU
+masking properly has far fewer spurious colours than a wrong one, so it
+compresses better. Size-based triage scores that fix as a regression.
 
 **We render nothing where the reference renders something** -- the real blank
 list, and it is longer than the old "six" because that list predates this
@@ -397,56 +403,6 @@ were artifacts of exactly that: FM Sound Editor scored 100% coverage there while
 executing 604 instructions a frame -- a screen flooded with one colour by a
 palette that was never written. PNG byte size is worse than useless now, since a
 more correct render often compresses smaller.
-
-### The drawing ALU cannot be reached from the main CPU, and Argo proves it
-
-**Argo paints every sprite's bounding rectangle opaque.** A difference map
-against 77AVEMU makes it unmistakable: the six figures and both portraits are
-solid rectangles of disagreement, while the gaps between them, the logo letters
-and the black logo box agree exactly. That is a lost transparency mask, not a
-palette fault -- 34.5% of pixels agree overall but only 0.5% inside the left
-portrait's box.
-
-(Superseded claim: *"our green plane carries bits the reference's does not"* --
-inferred from colour proportions and wrong. No permutation or inversion of the
-three planes explains our render better than 39.7%, and no byte rotation
-explains the VRAM either. The difference is spatial, not per-plane.)
-
-The cause, from `--trace-av-video` over 400 frames:
-
-| path | count |
-|---|---|
-| `MMRSUBIO` (main CPU writing sub `$D4xx` through MMR) | 62591 |
-| `AVVRAM` (main-CPU aperture VRAM writes) | 58656 |
-| `SUBVRAM` (sub-CPU VRAM writes) | 27599 |
-| `SUBDRAW` (sub CPU writing `$D410-$D42B`) | 26 |
-| **`ALUW` (drawing ALU read-modify-writes)** | **0** |
-
-Argo halts the sub CPU and drives the MB61VH010 from the main side: 2839 writes
-to `$D410`, 1468 to `$D411`, **53023 to `$D412`**, all with `halt=1`. The ALU is
-programmed thoroughly and **never performs a single operation**, so the sprite
-data arrives as 58656 plain aperture stores instead of masked read-modify-writes.
-
-`AVHDRAW.v` triggers on `alu_access = enabled & SUB_VRAM_SEL & SCASSEL & SEB` --
-the **sub CPU's** VRAM decode. The file contains no reference to `AV_VRAM_SEL`,
-`AV_VRAM_ADDR` or `AV_VRAM_WRITE`, so a main-CPU aperture access cannot reach it
-by construction.
-
-77AVEMU keys on the *address*, not the accessor: `StoreByte`'s
-`MEMTYPE_SUBSYS_VRAM` case does the dummy read and returns whenever
-`hardDraw.enabled`, after a halt check that lets the main CPU through precisely
-because the sub is halted (`fm77avmemory.cpp:818-828`, and the same in
-`FetchByte` at `:749`).
-
-**Fix shape.** Give `AVHDRAW` the aperture as a second trigger, and suppress the
-plain aperture store while the ALU is enabled -- `CRTRAM.v`'s `cpu_write` has no
-`DRAW_INHIBIT_SUB` term, while `sub_write` does. Both directions count: the
-reference's own comment says a dummy **write** works as well as a dummy read,
-and names the title that needs it.
-
-**That title is Pro Baseball Fan -- our Pro Yakyuu Fan, which is on the blank
-list.** So this one gap plausibly covers two of the open titles. Check it
-against the reference before assuming, but it is the first thing to try there.
 
 ### The rendering artifacts were the display phase and a dead palette
 
@@ -545,23 +501,23 @@ a completely different scene (a dialogue screen) by then, so the two are not
 aligned and the comparison is not yet evidence of a video fault (trap 20). Get
 them onto the same screen first.
 
-### `$FD37`'s CPU access mask reaches nothing
+### `$FD37`'s CPU access mask, and why only a bench can cover it
 
-`FLAGS.v` decodes it correctly (`VPAGE1n/2n/3n` = bits 0-2) and `SUBCRTADDR.v`
-folds it into `SVCASBn/SVCASRn/SVCASGn` — **which `CRTRAM.v` declares as inputs
-and never uses.** The sub CPU's VRAM writes are gated by `SVWEn`, which carries
-no mask at all, and reads are unmasked too. 77AVEMU suppresses the write and
-returns `$FF` on the read (`fm77avmemory.cpp:830-878` and `:539-575`).
+Bits 2:0 close a gun to the CPU: 77AVEMU suppresses the store and returns `$FF`
+on the read, for either CPU (`fm77avmemory.cpp:830-878` and `:539-575`). Both
+are implemented in `CRTRAM.v`, for the sub CPU and the main aperture alike.
 
-Three things to know before fixing it. `SVCASBn` as written is
-`SBLANKn & SDRAMV1n & SCASSEL`, and `SBLANKn` *is* `~SCASSEL`, so all three are
-identically zero — wiring them up as they stand would be wrong; pass the three
-mask bits into `CRTRAM` instead, the way `core.v` already passes
-`VPAGE_MASK` to `AVHDRAW`, which does honour it (`plane_mask = bank_mask |
-VPAGE_MASK`, matching 77AVEMU `fm77avcrtc.cpp:411`). The sub CPU addresses one
-gun at a time, so the mask can only ever suppress, never redirect. And no title
-in hand is known to need this: Deep Forest never touches `$fd37` in 428 frames.
-It is a real hole with a citation, not a lead.
+It had reached nothing at all, and it took two stacked faults to get there.
+`SUBCRTADDR` folds the mask into `SVCASBn/SVCASRn/SVCASGn` as
+`SBLANKn & SDRAMVn & SCASSEL` — and `SBLANKn` *is* `~SCASSEL`, so all three were
+identically zero. `CRTRAM` then declared those three as inputs and never
+mentioned them again. A signal that could not assert, feeding a port that
+ignored it.
+
+**No title in hand writes `$fd37`**, so the breadth sweep is structurally
+incapable of covering this and `make crtram-test` is the only evidence there is —
+six directed assertions on the write and the `$FF` read, both paths. Do not try
+to "confirm" it from a title.
 
 ### $FD1E is a drive-mapping register and we do not implement it
 
@@ -584,6 +540,19 @@ what 77AVEMU reports for an absent drive before changing `FDC.v` — its
 `DriveReady()` lives in the shared TOWNS FDC
 (`refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1346`) and returns false for an
 unloaded drive, which does *not* obviously explain it.
+
+**The reference does not get past it by mounting a second disk.** Its headless
+driver sets `fdImgFName[0]` only (`tools/77avemu_headless.cpp:240`), exactly like
+the sweep, and `DiskDrive::DriveReady()` returns false for an unloaded drive
+(`refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1346`), with `$FD18` bit 7 built
+straight from it (`fm77avfdc.cpp:906`). So the reference sees drive 1 not-ready
+too and still renders. **That makes this a first-divergence hunt, not a
+drive-mapping fix**: our `$fd1d <- $81` is a symptom of going wrong earlier.
+
+Also settled: the drawing-ALU aperture fix does not help it. 77AVEMU names Pro
+Baseball Fan as the title that triggers hardware drawing by dummy-writing, which
+made it a fair guess, but it retires 5435 instructions a frame sitting on
+`$fd18` and never reaches its drawing at all.
 
 ### Nothing in the collection uses 640x400 (superseded claim, corrected)
 
@@ -608,6 +577,47 @@ Keep the register fact, which is real and cited: `$FD04` bit 3 clear selects
 (`fm77avcrtc.cpp:205-219` `WriteFD04`). This core models neither — `AV_MODE_320`
 is one bit off `$FD12` bit 6 — and decodes `$fd04` only as the FM-7's attention
 register. That is a real gap; it is just not the gap these two titles fell into.
+
+### Shounen Mike: the video path is fine, the title does not progress
+
+The largest gap in the set -- 99.9% coverage and 200 colours on the reference,
+nothing here -- and it is **not** a video bug. Triaged with `--trace-av-video`
+over 600 frames:
+
+* 27614 sub-CPU VRAM writes, all in frames 0-199, then they stop.
+* From frame 150 the title works purely through the drawing ALU in **TILE**
+  mode (`$D410 <- $86`), 672 operations across 450 frames, loading
+  `$D41C/D/E` before each.
+* Those operations write real data -- 352 of `ff/ff/ff` and 320 of `00/00/00`.
+  It is drawing and erasing something small, over and over.
+
+So the machine is executing (6574 main, 8707 sub per frame), the ALU is firing,
+and the bytes it writes are the bytes it was told to write. VRAM ends up empty
+because the title never reaches the artwork the reference paints -- 672 tile
+blits in 600 frames is not a screen. This is the Woody Poco class: find why it
+does not progress, and do not look at the video path.
+
+**Three suspects eliminated, do not re-check:**
+
+* **`$FD37`'s access mask.** It never writes `$fd37` in 620 frames.
+* **Fine scroll (`$D430` bit 2).** It sets that bit in every `$D430` write, so
+  it *asks* for the unmasked VRAM offset that `MB60H010` does not implement --
+  but it never writes `$D40E`/`$D40F` at all, so the offset stays 0 and the
+  missing feature cannot be its problem. (The gap is real and still open; see
+  below.)
+* **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
+
+### `$D430` bit 2 -- the unmasked VRAM offset -- is not implemented
+
+77AVEMU: `if(0!=(data&4)) VRAMOffsetMask=0xffff; else 0xffe0`
+(`fm77avcrtc.cpp:271-282`). With the bit set the scroll offset's low 5 bits are
+live, i.e. fine scroll rather than 32-byte steps.
+
+`MB60H010.v` hardcodes the masked form -- `VOFFSET0 = {SRH[5:0], SRL[7:5], 5'd0}`
+-- so a title that sets the bit and then writes a fine offset scrolls to the
+wrong address. Shounen Mike sets the bit but never writes the offset, so nothing
+in hand is known to need this yet. Recorded because it is a real divergence with
+a citation, not because a title is waiting on it.
 
 ### The next lead: another undelivered interrupt
 

@@ -14,6 +14,7 @@ module AVCRTRAM_COLOR(
   input SVWEn,
   input SCASSEL,
   input SDRAMn,
+  input PAGE_MASKED,      // $FD37 bit for this gun: 1 = CPU access blocked
   input AV_DISPLAY_PAGE,
   input AV_ACTIVE_PAGE,
   input AV_MODE_320,
@@ -69,8 +70,8 @@ wire [12:0] addr3 = AV_MODE_320 ? raster_offset1 : video_offset;
 // aperture writes landed as an opaque store on top of the masked draw that
 // should have replaced it, and each sprite painted its bounding box.
 wire cpu_write = AV_VRAM_WRITE && AV_VRAM_SEL && (AV_VRAM_PLANE == COLOR_SEL) &&
-                 ~DRAW_INHIBIT;
-wire sub_write = ~SVWEn && ~SDRAMn && ~DRAW_INHIBIT;
+                 ~DRAW_INHIBIT && ~PAGE_MASKED;
+wire sub_write = ~SVWEn && ~SDRAMn && ~DRAW_INHIBIT && ~PAGE_MASKED;
 // The drawing ALU borrows the main-CPU aperture port because it is the only
 // one that reaches all three guns at a single address.  It holds the port for
 // two clocks per byte, so a main-CPU aperture access landing in exactly those
@@ -136,6 +137,14 @@ module CRTRAM(
   input SDRAMBn,
   input SDRAMRn,
   input SDRAMGn,
+  // $FD37 bits 2:0 (FLAGS.v VPAGE1n/2n/3n), 1 = that gun is closed to the CPU.
+  // 77AVEMU suppresses the store and returns $FF on the read, for either CPU
+  // (fm77avmemory.cpp:830-878 and :539-575). The mask reached nothing here: the
+  // masked selects SUBCRTADDR builds are `SBLANKn & SDRAMVn & SCASSEL`, and
+  // SBLANKn is ~SCASSEL, so all three were identically zero and CRTRAM ignored
+  // them. The raster is deliberately NOT masked -- $FD37 bits 6:4 do that, and
+  // PAL.v already handles them.
+  input [2:0] VPAGE_MASK,
   input AV_DISPLAY_PAGE,
   input AV_ACTIVE_PAGE,
   input AV_MODE_320,
@@ -185,7 +194,8 @@ wire [7:0] green3, green2, green1, green0;
 AVCRTRAM_COLOR blue(
   .CLKSYS(CLKSYS), .SDATABUS(SDATABUS), .SVRADRS(SVRADRS),
   .SVRADRS0(SVRADRS0), .SVRADRS1(SVRADRS1), .SVWEn(SVWEn),
-  .SCASSEL(SCASSEL), .SDRAMn(SDRAMBn), .AV_DISPLAY_PAGE(AV_DISPLAY_PAGE),
+  .SCASSEL(SCASSEL), .SDRAMn(SDRAMBn),
+  .PAGE_MASKED(VPAGE_MASK[0]), .AV_DISPLAY_PAGE(AV_DISPLAY_PAGE),
   .AV_ACTIVE_PAGE(AV_ACTIVE_PAGE), .AV_MODE_320(AV_MODE_320),
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
@@ -198,7 +208,8 @@ AVCRTRAM_COLOR blue(
 AVCRTRAM_COLOR red(
   .CLKSYS(CLKSYS), .SDATABUS(SDATABUS), .SVRADRS(SVRADRS),
   .SVRADRS0(SVRADRS0), .SVRADRS1(SVRADRS1), .SVWEn(SVWEn),
-  .SCASSEL(SCASSEL), .SDRAMn(SDRAMRn), .AV_DISPLAY_PAGE(AV_DISPLAY_PAGE),
+  .SCASSEL(SCASSEL), .SDRAMn(SDRAMRn),
+  .PAGE_MASKED(VPAGE_MASK[1]), .AV_DISPLAY_PAGE(AV_DISPLAY_PAGE),
   .AV_ACTIVE_PAGE(AV_ACTIVE_PAGE), .AV_MODE_320(AV_MODE_320),
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
@@ -211,7 +222,8 @@ AVCRTRAM_COLOR red(
 AVCRTRAM_COLOR green(
   .CLKSYS(CLKSYS), .SDATABUS(SDATABUS), .SVRADRS(SVRADRS),
   .SVRADRS0(SVRADRS0), .SVRADRS1(SVRADRS1), .SVWEn(SVWEn),
-  .SCASSEL(SCASSEL), .SDRAMn(SDRAMGn), .AV_DISPLAY_PAGE(AV_DISPLAY_PAGE),
+  .SCASSEL(SCASSEL), .SDRAMn(SDRAMGn),
+  .PAGE_MASKED(VPAGE_MASK[2]), .AV_DISPLAY_PAGE(AV_DISPLAY_PAGE),
   .AV_ACTIVE_PAGE(AV_ACTIVE_PAGE), .AV_MODE_320(AV_MODE_320),
   .AV_VRAM_BANK(AV_VRAM_BANK), .AV_VRAM_SEL(AV_VRAM_SEL), .AV_VRAM_PLANE(AV_VRAM_PLANE),
   .AV_VRAM_ADDR(AV_VRAM_ADDR), .AV_VRAM_WRITE(AV_VRAM_WRITE),
@@ -222,9 +234,9 @@ AVCRTRAM_COLOR green(
   .Q640(green_640), .Q3(green3), .Q2(green2), .Q1(green1), .Q0(green0)
 );
 
-assign CRTRAMDATA = ~SDRAMBn ? blue_640 :
-                    ~SDRAMRn ? red_640 :
-                    ~SDRAMGn ? green_640 : 8'h00;
+assign CRTRAMDATA = ~SDRAMBn ? (VPAGE_MASK[0] ? 8'hff : blue_640)  :
+                    ~SDRAMRn ? (VPAGE_MASK[1] ? 8'hff : red_640)   :
+                    ~SDRAMGn ? (VPAGE_MASK[2] ? 8'hff : green_640) : 8'h00;
 assign SVDATAB = blue_640;
 assign SVDATAR = red_640;
 assign SVDATAG = green_640;
@@ -241,8 +253,8 @@ assign SVDATAG2 = green2;
 assign SVDATAG1 = green1;
 assign SVDATAG0 = green0;
 
-assign AV_VRAM_DOUT = (AV_VRAM_PLANE == 2'd0) ? blue_cpu :
-                      (AV_VRAM_PLANE == 2'd1) ? red_cpu :
-                      (AV_VRAM_PLANE == 2'd2) ? green_cpu : 8'hff;
+assign AV_VRAM_DOUT = (AV_VRAM_PLANE == 2'd0) ? (VPAGE_MASK[0] ? 8'hff : blue_cpu)  :
+                      (AV_VRAM_PLANE == 2'd1) ? (VPAGE_MASK[1] ? 8'hff : red_cpu)   :
+                      (AV_VRAM_PLANE == 2'd2) ? (VPAGE_MASK[2] ? 8'hff : green_cpu) : 8'hff;
 
 endmodule
