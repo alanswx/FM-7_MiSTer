@@ -698,6 +698,26 @@ always @(posedge clk_sys) begin
 						if((state == STATE_IDLE) | (din[7:4] == 'hD)) begin
 							cmd_mode <= din[7];
 							s_wpe    <= ~din[7];
+
+							// Accepting a command CLEARS the error bits. The WD179x
+							// resets status on a new command, and 77AVEMU cannot even
+							// express a stale one -- MakeUpStatus() builds the byte
+							// from live state every time it is asked
+							// (refs/TOWNSEMU/src/diskdrive/diskdrive.cpp:1213).
+							//
+							// Here s_seekerr was cleared only by reset, by a Force
+							// Interrupt, and inside some Type II/III branches. Nothing
+							// on the Type I path cleared it, so one error stuck for
+							// ever: Shounen Mike sets it with an out-of-range sector,
+							// then loops `W $fd1b <- $10 / W $fd18 <- $18 / R $fd18 ->
+							// $10` -- SEEK to track 16 with verify DISABLED, which
+							// cannot fail a seek, answered with a seek error from a
+							// previous command. It never escapes.
+							//
+							// Type II and III branches below still clear their own
+							// flags; this makes the Type I path do it too, at the one
+							// point every command passes through.
+							{s_seekerr, s_crcerr} <= 0;
 							case (din[7:4])
 							'h0: 	// RESTORE
 								begin
