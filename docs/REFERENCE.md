@@ -512,6 +512,14 @@ confident wrong answer at least once:
     before the reference was checked and found to be equally stopped. Compare the reference's
     sub activity before treating a halt as the bug.
 
+35. **PNG byte size is not a coverage measure.** The sweep records it because it is free and
+    separates "blank" from "something", and that is *all* it separates. After the ALU read
+    trigger, Valis Disk 1 went 17149 → 14873 bytes and was written up here as having lost
+    content; scored against the reference it had *gained* 1.7 points, 73.03% → 74.75%. PNG
+    size tracks how compressible the image is, so a screen that resolves from dithered noise
+    into flat colour gets smaller as it gets more correct. Score against the reference before
+    calling a direction.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

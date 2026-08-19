@@ -74,7 +74,17 @@ Quirks:
 - CSP gates main-CPU access to the `$1xxxx` sub aperture on the sub CPU being halted;
   otherwise reads return `$FF` (`mainmem_readseq.cpp`, `read_direct_access`). 77AVEMU
   is the same rule stated the other way round: a main-CPU access to `$10000-$1FFFF`
-  is discarded while the sub CPU is *running* (`fm77avmemory.cpp:804-809`).
+  is discarded while the sub CPU is *running* — reads return `$FF`
+  (`fm77avmemory.cpp:737-742`), stores are dropped (`:805-810`). **The rule covers the
+  whole `$1xxxx` range**, not just the I/O page: VRAM, sub RAM, shared RAM, font and
+  monitor ROM alike. This core gates the I/O page and the VRAM aperture; sub RAM and
+  the monitor ROM are still reachable through MMR with the sub running (see `TODO.md`).
+- Titles observe this gate scrupulously, so it blocks almost nothing in practice.
+  Shounen Mike's sub CPU is halted for **0.1%** of cycles and every one of its 4608
+  main-CPU VRAM writes falls inside that 0.1%; Valis Disk 1's 27874 writes and 34020
+  reads are likewise all inside its halts. Measured with `DEBUG_AVDRAW=1`, which prints
+  rejected accesses next to accepted ones — necessary because a gate that blocks nothing
+  and a gate absent from the build look identical (REFERENCE.md trap 3).
 - **The sub I/O page at `$1D400-$1D4FF` is not decoration.** The 2019 AV demo halts
   the sub CPU and then drives `$D430` and `$D410` from the main CPU: at the point it
   fills the second bit-plane pair it writes `$1D430 = $64` (display page 1, access
