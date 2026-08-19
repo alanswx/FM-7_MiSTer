@@ -85,6 +85,10 @@ the FPGA side's own log and the exact procedures.
 | `648efbd` | YM2203 interrupt delivered, `EXTIRQ` driven | changes interrupt delivery on every AV title |
 | `6356000` | every AV write no longer clobbers the FM-7 page | changes AV memory behaviour wholesale; an FPGA build older than this will not match anything reported here |
 | `bad101e` | sub I/O aperture halt gate un-inverted | as above |
+| `1706f9c` | the drawing ALU now triggers on a main-CPU VRAM **read** | fires the ALU on a bus cycle that previously did nothing; the read strobe is `~RDQEn`, one of the timing-sensitive decodes |
+| `2fdaa08` | `$fd93` bit 0 reports the boot-RAM latch | changes what boot RAM does on every machine |
+| `aa6e701` | VRAM aperture gated on the sub CPU being halted | closes a path that was open; blocks nothing measurable in sim, so only hardware can show a title that relied on it |
+| `b8ff6ac` | `$fd13`'s sub reset sets BUSY, and so does power-on | **changes power-on behaviour for every machine, FM-7 included.** Thexder's counters moved in sim; anything subtler will only show here |
 
 Earlier commits (`e699e9d`, `77c2780`, `b1aff78`, `777d8d4`) covering the
 `$fd02`/`$fd03`/`$fd04` interrupt paths were confirmed working on hardware —
