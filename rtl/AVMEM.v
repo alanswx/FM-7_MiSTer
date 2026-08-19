@@ -23,6 +23,7 @@ module AVMEM(
   input        SUBRAM_WRITE,
   input  [7:0] SUBRAM_DIN,
   input        SUBMON_STATUS_CLEAR,
+  input        SHALTn,
   input        SVSYNCn,
   input        SBLANKn,
   input        VBLANKn,
@@ -130,9 +131,25 @@ end
 // The AV's physical $10000-$1BFFF range is the three 16 KB video planes.
 // MMR maps this aperture into the main CPU address space; it is not ordinary
 // RAM and must stay coherent with the raster/sub-CPU VRAM store.
-wire vram_sel = machine_av &&
-                (physical_address >= 18'h10000) &&
-                (physical_address < 18'h1c000);
+// The main CPU only reaches the sub system while the sub CPU is HALTED.
+//
+// 77AVEMU discards a main-CPU access to physical $10000-$1FFFF whenever the sub
+// CPU is running -- a read returns $FF (`fm77avmemory.cpp:737-742`) and a store
+// is dropped (`:805-810`). CSP states the same rule the other way round
+// (`mainmem_readseq.cpp` `read_direct_access`). The sub I/O aperture below
+// already carries this gate; the VRAM aperture did not.
+//
+// It matters most for the ALU trigger. Once a main-CPU VRAM *read* arms the
+// drawing ALU, any ordinary main-CPU read that happens to land in a mapped VRAM
+// page fires a paint -- so on a title whose sub CPU is running, an access the
+// reference machine answers with $FF instead scribbles a tile into VRAM.
+//
+// SHALTn is active low: ~SHALTn means halted.
+wire sub_open = ~SHALTn;
+wire vram_addr_sel = machine_av &&
+                     (physical_address >= 18'h10000) &&
+                     (physical_address < 18'h1c000);
+wire vram_sel = vram_addr_sel && sub_open;
 assign VRAM_SEL   = vram_sel;
 assign VRAM_PLANE = physical_address[15:14]; // 0=B, 1=R, 2=G
 // 77AVEMU's TransformVRAMAddress preserves the plane/page high bits while
@@ -158,20 +175,31 @@ assign VRAM_WRITE = av_write && vram_sel;
 //
 // RDQEn is ~(RWB & (QB|EB)), one contiguous low window per read bus cycle, so
 // the edge detector in AVHDRAW gets exactly one trigger per access.
-assign VRAM_READ  = machine_av && ~RDQEn && vram_sel;
+assign VRAM_READ  = ~RDQEn && vram_sel;
 `ifdef DEBUG_AVDRAW
 // Does the main CPU reach VRAM through the MMR aperture at all, and by read or
 // by write? 77AVEMU's MEMTYPE_SUBSYS_VRAM store comments that hardware drawing
 // is "supposed to be dummy-READ", with the write form a Pro Baseball Fan quirk.
-reg av_vr_d, av_vw_d;
-wire av_vram_rd = VRAM_READ;
+// Both the gated strobes and what they WOULD have been without the sub-halt
+// gate, so a run can say how many accesses the gate actually blocked. A gate
+// that blocks nothing and a gate that is not in the build look identical from
+// the outside (REFERENCE.md trap 3).
+reg av_vr_d, av_vw_d, av_ur_d, av_uw_d;
+wire av_ungated_rd = vram_addr_sel && ~RDQEn;
+wire av_ungated_wr = vram_addr_sel && av_write;
 always @(posedge CLKSYS) begin
-  av_vr_d <= av_vram_rd;
+  av_vr_d <= VRAM_READ;
   av_vw_d <= VRAM_WRITE;
-  if (av_vram_rd & ~av_vr_d)
+  av_ur_d <= av_ungated_rd;
+  av_uw_d <= av_ungated_wr;
+  if (VRAM_READ & ~av_vr_d)
     $display("AVMEM VR phys=$%05x addr=$%04x", physical_address, VRAM_ADDR);
   if (VRAM_WRITE & ~av_vw_d)
     $display("AVMEM VW phys=$%05x addr=$%04x", physical_address, VRAM_ADDR);
+  if (av_ungated_rd & ~av_ur_d & ~sub_open)
+    $display("AVMEM BR phys=$%05x", physical_address);
+  if (av_ungated_wr & ~av_uw_d & ~sub_open)
+    $display("AVMEM BW phys=$%05x", physical_address);
 end
 `endif
 assign VRAM_DIN   = DIN;
@@ -460,8 +488,12 @@ end
 // encoder command to $2431 ($D431) and then polls $2432 ($D432) for the ACK
 // bit. With the read landing in dead RAM the ACK never arrived and the main CPU
 // span on `LDA $2432 / BITA #$01 / BEQ` forever.
+// A main-CPU read of the closed aperture is $FF, not whatever the RAM array
+// happens to present for an address it does not decode -- `vram_sel` is gated
+// on the halt, so without this the read falls through to `ram_q`, and physical
+// $10000-$1BFFF is not part of `ram_sel`.
 assign DOUT = bootram_sel ? boot_q :
-              vram_sel ? VRAM_DOUT :
+              vram_addr_sel ? (sub_open ? VRAM_DOUT : 8'hff) :
               subio_sel ? SUBIO_DOUT :
               shared_sel ? SHARED_DOUT : ram_q;
 

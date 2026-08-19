@@ -556,6 +556,7 @@ AVMEM u_AVMEM(
   .SUBMON_SEL  ( AV_SUBMON_SEL ),
   .SUBMON_RESET ( AV_SUBMON_RESET ),
   .SUBMON_STATUS_CLEAR ( AV_SUBMON_STATUS_CLEAR ),
+  .SHALTn      ( SHALTn       ),
   .SVSYNCn     ( SVSYNCn      ),
   .SBLANKn     ( SBLANKn      ),
   .VBLANKn     ( VBLANKn      ),
