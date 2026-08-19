@@ -668,6 +668,28 @@ does not progress, and do not look at the video path.
   below.)
 * **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
 
+### The MMR aperture cannot READ the drawing ALU registers
+
+The same family as the trigger bug that rescued Woody Poco, found while
+auditing for others. `AVHDRAW.v` has a readback mux for `$D410`/`$D411`/
+`$D412`/`$D413`/`$D41B`, but `core.v:409` routes it into the **sub** CPU's read
+mux only (`SADDRBUS`). The main CPU's aperture read path
+(`AV_SUBIO_dout`, `core.v:617-621`) decodes `$D430`/`$D431`/`$D432` and returns
+`$FF` for everything else, so a main-CPU read of the ALU registers gets `$FF`.
+
+77AVEMU routes them: `MEMTYPE_SUBSYS_IO` in the fetch path calls
+`IORead(accessFrom, addr)` with no check of which CPU is asking
+(`fm77avmemory.cpp:759-760`), and the `$D413` case returns the live compare
+result.
+
+Measured, but **not yet known to break anything**: Woody Poco reads `$D412`
+through the aperture 41 times in the reference and gets `$00`; we return `$FF`.
+Its subsequent writes to `$D412` are `$00` on both sides, so the value is not
+carried into behaviour there. The register to worry about is `$D413`, the
+per-pixel COMPARE result -- a title doing hit-testing from the main side would
+read "every pixel matched" from us. No title in hand is known to do that; find
+one before changing this, and re-read trap 33 first.
+
 ### `$D430` bit 2 -- the unmasked VRAM offset -- is not implemented
 
 77AVEMU: `if(0!=(data&4)) VRAMOffsetMask=0xffff; else 0xffe0`
