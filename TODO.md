@@ -652,8 +652,14 @@ because the title never reaches the artwork the reference paints -- 672 tile
 blits in 600 frames is not a screen. This is the Woody Poco class: find why it
 does not progress, and do not look at the video path.
 
-**Three suspects eliminated, do not re-check:**
+**Four suspects eliminated, do not re-check:**
 
+* **The ALU's main-CPU read trigger** (the fix that rescued Woody Poco). Does
+  not apply: Mike's sub CPU is *not* halted -- 8650 instructions/frame, halted
+  0.1% of cycles -- so its ALU work goes through the sub path, and that path was
+  never direction-qualified (`alu_access = enabled & SUB_VRAM_SEL & SCASSEL &
+  SEB`). Measured after the fix: still 0.0% coverage, 1 colour, against the
+  reference's 99.9% and 200 colours. Unchanged.
 * **`$FD37`'s access mask.** It never writes `$fd37` in 620 frames.
 * **Fine scroll (`$D430` bit 2).** It sets that bit in every `$D430` write, so
   it *asks* for the unmasked VRAM offset that `MB60H010` does not implement --
