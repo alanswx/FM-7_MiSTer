@@ -615,6 +615,24 @@ Keep the register fact, which is real and cited: `$FD04` bit 3 clear selects
 is one bit off `$FD12` bit 6 — and decodes `$fd04` only as the FM-7's attention
 register. That is a real gap; it is just not the gap these two titles fell into.
 
+### `$fd04` bit 2 reads BUSY here and `1` everywhere else
+
+`TIMER.v` returns `{5'b11111, BUSY, BREAKn, m45_q8n}`, derived from the
+schematic. **Four references now disagree**, and none of them agrees with any
+other reading either: MAME leaves the bit set, CSP ORs in `$7c` and puts
+sub-busy at bit 7, 77AVEMU returns `~firqSource` so b7:2 all read 1, and sedoc
+tabulates it straight from the Fujitsu system manual as `bits 7…2 unused`
+(`refs/sedoc/8bit/fm7/ml.md:106-112`, citing SS:1-8).
+
+Measured divergence, first one found: Woody Poco reads `$fd04` twice, at
+`pc=$6120` and `pc=$5013`, and gets `$fb` where 77AVEMU returns `$ff` — bit 2
+only. Its screen is now explained by the ALU trigger instead (fixed), so this
+did **not** turn out to be its bug and remains uncorroborated by any title's
+behaviour. Left alone deliberately: changing it is a one-line edit, but doing so
+on a reference disagreement rather than on a measured symptom is how the wrong
+answer gets locked in. Revisit when a title's *behaviour*, not its register
+read, depends on it.
+
 ### Shounen Mike: the video path is fine, the title does not progress
 
 The largest gap in the set -- 99.9% coverage and 200 colours on the reference,

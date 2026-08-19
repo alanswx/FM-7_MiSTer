@@ -315,6 +315,16 @@ bank's I/O; only CSP does (`kanjirom.cpp`).
   `fm77av/fm77avdef.h`. Carries several real-hardware observations quoted above.
 - **MAME (I/O map only)**: `refs/mame/src/mame/fujitsu/fm7.cpp`, `fm7_v.cpp`. Known
   deviations: no line-stipple in the ALU, no sub-CPU reset on unchanged `$FD13`.
+- **Retro PC Gallery (はせりん)**: `refs/haserin09/`, a mirror of
+  <https://haserin09.la.coocan.jp/>. Documentation rather than code, and the only
+  source here that is *per-model*: `difference.html` (番外編7) tabulates the FM-8 /
+  FM-7 / FM-77 / FM77AV differences register by register, `fm7rom.html` is a ROM
+  inventory, `os9_mmu.html` compares the 6809 MMUs, `shohyo.html` is an errata list for
+  the Fujitsu manuals. Pages are Shift_JIS; grep `refs/haserin09/utf8/*.txt`.
+- **sedoc (Curt Sampson)**: `refs/sedoc/8bit/fm7/`. English notes citing the Fujitsu
+  system manuals by page — `ml.md` gives `$FD04` as b0 ATTENTION / b1 BREAK / **b7:2
+  unused** (SS:1-8), `sub.md` the main↔sub halt handshake. It cites haserin09 as its
+  own main source, so the two agree by construction where they overlap.
 
 ## Compatibility notes
 
