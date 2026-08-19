@@ -675,49 +675,69 @@ does not progress, and do not look at the video path.
   below.)
 * **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
 
-### The original Fujitsu FM77AV demo disk: it is PAINT, not the video path
+### The original Fujitsu FM77AV demo disk stalls in an FDC retry loop
 
 `software/D77/FM77AV demo.d77` (and its duplicate `FM77AV-DEMO.D77`). Reference
-renders 92.8% coverage in 13 colours; this core renders nothing at frame 1980.
-Not `av-demo` in `run_tests.sh`, which is CaptainYS's 2019 demo and passes.
+renders 92.8% coverage in 13 colours; this core renders nothing, at **every**
+frame sampled -- 400, 680, 800, 1000, 1200, 1400, 1600, 1980. Not `av-demo` in
+`run_tests.sh`, which is CaptainYS's 2019 demo and passes.
 
-Fixed: `$fd13` did not set BUSY (`b8ff6ac`). The main-side `$fdxx` trace is now
-in **lockstep with 77AVEMU** through the whole boot and into the demo's command
-loop -- same ports, values and PCs, including the `$fd05` halt/release sites
-`$0366`/`$039f`/`$03dc`/`$041b`/`$047a`.
+Fixed on the way here: `$fd13` did not set BUSY (`b8ff6ac`).
 
-**The video path is not the problem, again.** At frame 500 VRAM holds 7972 of
-8192 non-zero bytes in the blue plane of both banks, and zero in red and green.
-That is *correct* for `$fd37 = $de`: CPU/ALU mask `$de & 7 = 6` blocks red and
-green, and display mask `($de>>4) & 7 = 5` blocks blue and green. Writing one
-plane while displaying another is what the demo does -- a black screen mid-
-sequence is expected. The reference's `$fd37` stream continues `$fd` twice at
-`$0336` (write red, display nothing) and finally `$c8` at `$1bec`, which is the
-write that reveals blue+red. We never reach `$fd` or that final `$c8`.
+**Where it stops.** At frame 1000 the sub CPU is idle in its command-wait loop
+and the main CPU is in the boot ROM's floppy wait:
 
-Also confirmed correct here, do not re-check: `AVHDRAW.v`'s
-`plane_mask = bank_mask | VPAGE_MASK` matches 77AVEMU's
-`bankMask = hardDraw.bankMask | VRAMAccessMaskFromCPU`, which carries its own
-citation to a 2022 experiment on a real FM77AV (`fm77avcrtc.cpp:410-412`).
+    $ff98  LDB <$1f     ; DP=$fd, so this is $FD1F -- b=$3f, DRQ clear
+    $ff9a  BPL $ffa2
+    $ffa2  LSLB         ; b=$7e, INTRQ clear
+    $ffa3  BPL $ff98    ; spin
 
-**The gap is sub command `$18` = PAINT** (`fm77avdef.h:295`), the flood fill,
-dispatched by the main CPU at `$041b`:
+`dp=fd` is the whole point: the byte is the FDC's DRQ/INTRQ register, not RAM.
 
-| | LINE `$15` | PAINT `$18` | `$041b` dispatches |
-|---|---|---|---|
-| this core | runs | **6 in 600 frames** | 6 |
-| 77AVEMU | runs | 135 | 135 |
+**Why.** `$fd18 <- $80` (read sector) is issued **2048** times here against the
+reference's **444**, and the extra attempts return status `$10` -- Record Not
+Found. Every other FDC command matches exactly: `$1c` seek x19, `$0a` x4, `$08`
+x1, on both. `DEBUG_FDC=1` shows **444 WDMATCH successes**, i.e. we read every
+sector the reference reads and then keep asking for one more.
 
-PAINT is what drives the ALU's COMPARE command: 77AVEMU writes `$87` to `$D410`
-13768 times and reads the compare result at `$D413` **370117** times. This core
-writes only `$80`/`$00` to `$D410` and reads `$D413` **zero** times in the
-frames sampled. So the outlines get drawn and nothing is ever filled.
+The first failure is at frame 348, and the request is malformed rather than
+missing: the BIOS writes the TRACK register `$fd19 <- $00` at `pc=$fe95`, then
+side `$fd1c <- $00`, sector `$fd1a <- $02`, then `$fd18 <- $80` -- asking for
+cylinder 0 with the head parked at track 14, which a WD1793 correctly answers
+with Record Not Found. The reference never makes that request.
 
-Next: find why the main under-dispatches `$041b` by ~10x, and check the `$D413`
-compare-result readback independently -- a fill that reads "no pixel matched"
-terminates immediately, which would look exactly like this. Note the sub reads
-`$D413` through `SADDRBUS` (routed, `core.v:409`), not through the MMR aperture
-(not routed -- separate open item below).
+So the question is what the main CPU reads, between the last good sector and
+`$fe95`, that makes it program track 0. The BIOS reads `$fd1d` at `$fef4` and
+`$fd1b` at `$fed7` in that window.
+
+**`$fd1d` is a known three-way disagreement and is NOT yet eliminated.** We
+return `$bc`, 77AVEMU returns `$80`, every time (2477 vs 873 reads). Both agree
+on bit 7 (motor) and bits 1:0 (drive); they differ on bits 5:2, which CSP builds
+as a constant `$3c` (`floppy.cpp:178` `get_fdc_motor`) and 77AVEMU leaves zero
+(`fm77avfdc.cpp:946-949`). This core follows CSP deliberately -- see the long
+comment in `FDC.v`, where following MAME here was what stopped Ys entering its
+loaded program. Bits 5:2 should not matter to a bit-7 motor test, so this is
+recorded as unexcluded rather than as the suspect.
+
+**Do NOT re-investigate:**
+
+* *The video path.* At frame 500 VRAM holds 7972/8192 non-zero bytes in blue and
+  zero in red/green, which is exactly what `$fd37 = $de` asks for (CPU/ALU mask
+  `$de & 7 = 6` blocks red and green; display mask `($de>>4) & 7 = 5` blocks blue
+  and green). A black screen mid-sequence is correct. `AVHDRAW.v`'s
+  `plane_mask = bank_mask | VPAGE_MASK` also matches 77AVEMU's
+  `bankMask | VRAMAccessMaskFromCPU`, which carries its own citation to a 2022
+  experiment on a real FM77AV (`fm77avcrtc.cpp:410-412`).
+* *The sub-command protocol.* `iodiff.py --ports=05` matches **1439 of 1440**
+  accesses on direction, port, value AND PC. Our whole run is a prefix of the
+  reference's; nothing diverges, we just stop early.
+* *Superseded claim: "the gap is sub command `$18` = PAINT, dispatched 6 times
+  here against 135 there."* That compared a 10-frame window of this core against
+  the reference's entire run. The whole-trace comparison above contradicts it.
+  PAINT is missing because the machine stalls before reaching it, not because a
+  branch is taken differently.
+* *The boot sector read.* Correct here; 77AVEMU's is the one that is off by one
+  (REFERENCE.md section 1).
 
 ### Sub RAM and the sub monitor ROM are reachable through MMR with the sub running
 
