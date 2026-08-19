@@ -121,6 +121,21 @@ ifeq ($(DEBUG_FDC),1)
 V_DEFINE += +define+DEBUG_FDC_SCAN
 endif
 
+# `make DEBUG_AVDRAW=1` prints one line per MB61VH010 register write accepted by
+# rtl/AVHDRAW.v, whichever CPU made it:
+#
+#   AVDRAW W $d4<reg> <- $<byte>
+#
+# The point is that 77AVEMU's --trace-io logs the same writes as
+# `IOWRITE SUB: .... IO:D4xx VALUE:xx by Main CPU`, so the two are directly
+# comparable. A title that halts the sub CPU and drives the ALU itself through
+# the MMR aperture -- Woody Poco does -- is otherwise invisible to --trace-io,
+# which only sees $fdxx. Touch ../rtl/AVHDRAW.v before building or the define
+# does not reach Verilator (trap 3).
+ifeq ($(DEBUG_AVDRAW),1)
+V_DEFINE += +define+DEBUG_AVDRAW
+endif
+
 # `make DEBUG_FDC_READ=1` prints one line per byte the controller hands the CPU
 # during a sector read, plus the buffer base chosen for each sector:
 #

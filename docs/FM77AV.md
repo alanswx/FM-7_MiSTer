@@ -170,14 +170,25 @@ Plane addressing changes with it: `page_mask = $1FFF`, `pagemod_mask = $E000` in
 320-mode vs `$3FFF`/`$C000` in 640-mode (CSP `display.cpp:378-384`). 400-line and
 260k-colour modes are AV40-family only.
 
-## MB61VH010 drawing ALU (sub CPU side)
+## MB61VH010 drawing ALU
 
-A read-modify-write engine on the sub CPU's VRAM path operating on all three planes at
+A read-modify-write engine on the VRAM path operating on all three planes at
 one byte offset simultaneously. While `$D410` b7 is set, **any** VRAM access triggers
-it and the CPU's data byte is discarded (CSP `display.cpp:3174-3181`). Reads and writes
-both trigger: "Pro Baseball Fan (Telenet) is dummy-writing to a VRAM byte to use
-hardware drawing. So, apparently reading and writing both work" (77AVEMU
-`fm77avmemory.cpp:822-828`).
+it and the CPU's data byte is discarded (CSP `display.cpp:3174-3181`).
+
+Reads and writes both trigger, and **the read is the primary form**. 77AVEMU takes the
+hardware-draw path on every read of `MEMTYPE_SUBSYS_VRAM` (`fm77avmemory.cpp:746-750` →
+`FM77AVCRTC::VRAMDummyRead`), and treats the write form as the exception: "Hardware
+drawing is supposed to be dummy-READ a VRAM byte. However, Pro Baseball Fan (Telenet)
+is dummy-writing to a VRAM byte to use hardware drawing. So, apparently reading and
+writing both work" (`fm77avmemory.cpp:822-828`).
+
+This applies to **either CPU**, on whichever path reaches VRAM — the reference keys the
+trigger on the address, not on who is accessing. A title that halts the sub CPU and
+blits from the main side through the MMR aperture needs the trigger there too. Measured
+on Woody Poco: 53311 aperture reads and **zero** aperture writes over 300 frames, so a
+core wired for the write form alone performs no drawing at all for it and leaves VRAM
+at 8 non-zero bytes.
 
 | Addr | R/W | Function (CSP `mb61vh010.h:65-79`) |
 |---|---|---|

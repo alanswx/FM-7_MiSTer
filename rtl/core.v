@@ -67,6 +67,7 @@ wire       AV_VRAM_SEL;
 wire [1:0] AV_VRAM_PLANE;
 wire [13:0] AV_VRAM_ADDR;
 wire       AV_VRAM_WRITE;
+wire       AV_VRAM_READ;
 wire [7:0] AV_VRAM_DIN;
 wire       AV_SHARED_SEL;
 wire [9:0] AV_SHARED_ADDR;
@@ -564,6 +565,7 @@ AVMEM u_AVMEM(
   .VRAM_PLANE  ( AV_VRAM_PLANE  ),
   .VRAM_ADDR   ( AV_VRAM_ADDR   ),
   .VRAM_WRITE  ( AV_VRAM_WRITE  ),
+  .VRAM_READ   ( AV_VRAM_READ   ),
   .VRAM_DIN    ( AV_VRAM_DIN    ),
   .SHARED_SEL  ( AV_SHARED_SEL  ),
   .SHARED_ADDR ( AV_SHARED_ADDR ),
@@ -1055,6 +1057,7 @@ AVHDRAW u_AVHDRAW(
   .SUB_VRAM_SEL  ( sub_vram_sel ),
   .SVRADRS       ( SVRADRS ),
   .AV_VRAM_WRITE ( AV_VRAM_WRITE ),
+  .AV_VRAM_READ  ( AV_VRAM_READ ),
   .AV_VRAM_ADDR  ( AV_VRAM_ADDR ),
   .AV_VRAM_BANK  ( AV_VRAM_BANK ),
   .AV_MODE_320   ( AV_MODE_320 ),

@@ -40,6 +40,7 @@ module AVMEM(
   output [1:0] VRAM_PLANE,
   output [13:0] VRAM_ADDR,
   output       VRAM_WRITE,
+  output       VRAM_READ,
   output [7:0] VRAM_DIN,
   output       SHARED_SEL,
   output [9:0] SHARED_ADDR,
@@ -144,6 +145,35 @@ wire [13:0] vram_addr_320 = {vram_addr_raw[13],
                              vram_addr_raw[12:0] + VRAM_OFFSET[12:0]};
 assign VRAM_ADDR  = av_mode_320 ? vram_addr_320 : vram_addr_640;
 assign VRAM_WRITE = av_write && vram_sel;
+// The main CPU's VRAM READ through the same aperture.
+//
+// This is the drawing ALU's *normal* trigger, not an exotic one: 77AVEMU takes
+// the hardware-draw path on every read of MEMTYPE_SUBSYS_VRAM
+// (fm77avmemory.cpp:746-750 -> FM77AVCRTC::VRAMDummyRead) and its own comment on
+// the write path calls the dummy READ the supposed form, with the write a Pro
+// Baseball Fan quirk. Woody Poco uses the read form exclusively -- 53311 reads
+// and not one write through this aperture over 300 frames -- so with only the
+// write trigger wired its ALU fired zero times and VRAM stayed at 8 non-zero
+// bytes for the whole run.
+//
+// RDQEn is ~(RWB & (QB|EB)), one contiguous low window per read bus cycle, so
+// the edge detector in AVHDRAW gets exactly one trigger per access.
+assign VRAM_READ  = machine_av && ~RDQEn && vram_sel;
+`ifdef DEBUG_AVDRAW
+// Does the main CPU reach VRAM through the MMR aperture at all, and by read or
+// by write? 77AVEMU's MEMTYPE_SUBSYS_VRAM store comments that hardware drawing
+// is "supposed to be dummy-READ", with the write form a Pro Baseball Fan quirk.
+reg av_vr_d, av_vw_d;
+wire av_vram_rd = VRAM_READ;
+always @(posedge CLKSYS) begin
+  av_vr_d <= av_vram_rd;
+  av_vw_d <= VRAM_WRITE;
+  if (av_vram_rd & ~av_vr_d)
+    $display("AVMEM VR phys=$%05x addr=$%04x", physical_address, VRAM_ADDR);
+  if (VRAM_WRITE & ~av_vw_d)
+    $display("AVMEM VW phys=$%05x addr=$%04x", physical_address, VRAM_ADDR);
+end
+`endif
 assign VRAM_DIN   = DIN;
 
 // The AV has a 128-byte shared command window.  The sub CPU sees it at

@@ -495,6 +495,23 @@ confident wrong answer at least once:
     line-doubled 640x200 and none is a true 640x400** — including the two titles the wrong
     inference had blamed on the missing mode.
 
+33. **`--trace-io` covers `$FDxx` only, and a title can do all its real work outside it.**
+    Woody Poco halts the sub CPU at frame 16 and then drives the whole machine from the main
+    side through the MMR aperture: the drawing ALU at `$D41x`, the page select at `$D430`, and
+    53311 VRAM accesses — none of which appear in a `$fdxx` trace. Its `$fdxx` stream matches
+    77AVEMU's port for port and value for value while the screen stays blank, which reads as
+    "the I/O is fine, so the problem is elsewhere in the CPU" and is exactly backwards. The
+    reference's own trace *does* show them, as `IOWRITE SUB: <pc> IO:D4xx ... by Main CPU` —
+    note that the `SUB:` prefix is the address space and the trailing `by ...` is the CPU, so
+    those lines are main-CPU accesses with a stale sub PC printed beside them. Read the `by`
+    field, not the prefix. `make DEBUG_AVDRAW=1` gives the matching view on this side.
+34. **A halted sub CPU is not by itself a fault.** The run stats flag `sub 6809 ... halted 99.2%
+    of cycles`, and on Woody Poco that is *correct behaviour* — the main CPU holds the sub
+    halted for the whole run on purpose so it can reach sub space itself, and 77AVEMU does the
+    same on the same frame from the same PC. Two hours went into "why is the sub CPU stopped"
+    before the reference was checked and found to be equally stopped. Compare the reference's
+    sub activity before treating a halt as the bug.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

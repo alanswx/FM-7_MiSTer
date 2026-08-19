@@ -33,7 +33,8 @@ module AVHDRAW(
   input  [13:0] SVRADRS,         // translated sub-CPU VRAM address
   // The main CPU's MMR aperture into the same VRAM. A title that halts the sub
   // CPU and drives this chip from the main side reaches the planes only here.
-  input         AV_VRAM_WRITE,   // main-CPU aperture write, held for the cycle
+  input         AV_VRAM_WRITE,
+  input         AV_VRAM_READ,   // main-CPU aperture write, held for the cycle
   input  [13:0] AV_VRAM_ADDR,    // translated aperture address
   input         AV_VRAM_BANK,
   input         AV_MODE_320,
@@ -134,6 +135,14 @@ wire reg_write = reg_wr_sr[2] & ~reg_wr_sr[1];
 // qualifier because core.v stalls the sub clock until blanking hands the VRAM
 // address bus back, and only then is SVRADRS the sub CPU's own address.
 // ---------------------------------------------------------------------------
+`ifdef DEBUG_AVDRAW
+reg av_vram_write_d;
+always @(posedge CLKSYS) begin
+  av_vram_write_d <= AV_VRAM_WRITE;
+  if (AV_VRAM_WRITE & ~av_vram_write_d)
+    $display("AVDRAW V addr=$%04x bank=%0d enabled=%0d", AV_VRAM_ADDR, AV_VRAM_BANK, enabled);
+end
+`endif
 wire alu_access = enabled & SUB_VRAM_SEL & SCASSEL & SEB;
 reg  alu_access_d;
 wire alu_access_edge = alu_access & ~alu_access_d;
@@ -153,12 +162,16 @@ wire alu_access_edge = alu_access & ~alu_access_d;
 // instead of its masked shape.
 //
 // AV_VRAM_WRITE is `av_write && vram_sel`, a level held for the main CPU's write
-// cycle, so the edge gives one trigger per access -- the same shape as the sub
-// path above. Reads are NOT a trigger here: the reference takes the same path on
-// a dummy read (`:749`) but the aperture has no read strobe to edge-detect, and
-// no title in hand needs it. 77AVEMU's own note says both work, and names Pro
-// Baseball Fan as the title that uses the write form.
-wire main_access = enabled & AV_VRAM_WRITE;
+// cycle, and AV_VRAM_READ the matching strobe for a read, so the edge gives one
+// trigger per access either way -- the same shape as the sub path above.
+//
+// BOTH forms are needed. 77AVEMU calls the dummy READ the supposed form and the
+// write a Pro Baseball Fan quirk (fm77avmemory.cpp:818-828), and the read is by
+// far the more common: Woody Poco makes 53311 aperture reads and zero aperture
+// writes. The read was left out here on the grounds that no title in hand
+// needed it, which was only true because the titles that need it were blank and
+// unexplained.
+wire main_access = enabled & (AV_VRAM_WRITE | AV_VRAM_READ);
 reg  main_access_d;
 wire main_access_edge = main_access & ~main_access_d;
 
@@ -322,6 +335,9 @@ always @(posedge CLKSYS) begin
     main_access_d <= main_access;
 
     if (reg_write) begin
+`ifdef DEBUG_AVDRAW
+      $display("AVDRAW W $d4%02x <- $%02x", SADDRBUS[7:0], SDATA);
+`endif
       case (SADDRBUS[7:0])
         8'h10: begin enabled <= SDATA[7]; condition <= SDATA[6:5]; command <= SDATA[2:0]; end
         8'h11: color <= SDATA[2:0];
@@ -372,6 +388,9 @@ always @(posedge CLKSYS) begin
           state <= ST_READ;
         end
         else if (main_access_edge) begin
+`ifdef DEBUG_AVDRAW
+          $display("AVDRAW T addr=$%04x bank=%0d cmd=%0d", AV_VRAM_ADDR, AV_VRAM_BANK, command);
+`endif
           // CRTRAM's own cpu_block/cpu_offset, so the ALU combines exactly the
           // byte the plain store would have written.
           acc_block  <= {AV_VRAM_BANK, AV_VRAM_ADDR[13]};
