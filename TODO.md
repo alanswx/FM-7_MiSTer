@@ -675,31 +675,49 @@ does not progress, and do not look at the video path.
   below.)
 * **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
 
-### The original Fujitsu FM77AV demo disk is unblocked but still blank
+### The original Fujitsu FM77AV demo disk: it is PAINT, not the video path
 
 `software/D77/FM77AV demo.d77` (and its duplicate `FM77AV-DEMO.D77`). Reference
 renders 92.8% coverage in 13 colours; this core renders nothing at frame 1980.
-Not to be confused with `av-demo` in `run_tests.sh`, which is CaptainYS's 2019
-demo on a different disk and passes.
+Not `av-demo` in `run_tests.sh`, which is CaptainYS's 2019 demo and passes.
 
-Fixed so far: `$fd13` did not set BUSY, so the loader never waited for the sub
-CPU's restart and span on `$fd05` at `$0783` for the whole run. With that fixed
-the main-side `$fdxx` trace is in **lockstep with 77AVEMU** through the entire
-boot handshake -- `$fd37 <- $c8` at `$072e`, `$fd12 <- $40` at `$0733`,
-`$fd13 <- $02` at `$0738`, the `$fd05` halt/release at `$078a`/`$071a`/`$071d`,
-then `$fd37 <- $de` twice at `$0336` -- and the machine reaches the demo's real
-sub-command protocol at frame 319 instead of stopping at frame 26.
+Fixed: `$fd13` did not set BUSY (`b8ff6ac`). The main-side `$fdxx` trace is now
+in **lockstep with 77AVEMU** through the whole boot and into the demo's command
+loop -- same ports, values and PCs, including the `$fd05` halt/release sites
+`$0366`/`$039f`/`$03dc`/`$041b`/`$047a`.
 
-Still open. Two facts to start from:
+**The video path is not the problem, again.** At frame 500 VRAM holds 7972 of
+8192 non-zero bytes in the blue plane of both banks, and zero in red and green.
+That is *correct* for `$fd37 = $de`: CPU/ALU mask `$de & 7 = 6` blocks red and
+green, and display mask `($de>>4) & 7 = 5` blocks blue and green. Writing one
+plane while displaying another is what the demo does -- a black screen mid-
+sequence is expected. The reference's `$fd37` stream continues `$fd` twice at
+`$0336` (write red, display nothing) and finally `$c8` at `$1bec`, which is the
+write that reveals blue+red. We never reach `$fd` or that final `$c8`.
 
-* We never read `$fd12`; the reference reads it **59791** times, at `$07c2`
-  (57318) and `$0805` (2472). That is the vsync/blank poll, so the reference is
-  running the demo's frame loop and we are not reaching it.
-* The reference's `$fd37` stream continues past ours: it writes `$fd` twice more
-  at `$0336` and finally `$c8` at `$1bec`. We stop after the two `$de` writes.
+Also confirmed correct here, do not re-check: `AVHDRAW.v`'s
+`plane_mask = bank_mask | VPAGE_MASK` matches 77AVEMU's
+`bankMask = hardDraw.bankMask | VRAMAccessMaskFromCPU`, which carries its own
+citation to a 2022 experiment on a real FM77AV (`fm77avcrtc.cpp:410-412`).
 
-Do NOT re-investigate the FDC for this disk: its sector data is correct here and
-77AVEMU's is the one that is off by one (REFERENCE.md section 1).
+**The gap is sub command `$18` = PAINT** (`fm77avdef.h:295`), the flood fill,
+dispatched by the main CPU at `$041b`:
+
+| | LINE `$15` | PAINT `$18` | `$041b` dispatches |
+|---|---|---|---|
+| this core | runs | **6 in 600 frames** | 6 |
+| 77AVEMU | runs | 135 | 135 |
+
+PAINT is what drives the ALU's COMPARE command: 77AVEMU writes `$87` to `$D410`
+13768 times and reads the compare result at `$D413` **370117** times. This core
+writes only `$80`/`$00` to `$D410` and reads `$D413` **zero** times in the
+frames sampled. So the outlines get drawn and nothing is ever filled.
+
+Next: find why the main under-dispatches `$041b` by ~10x, and check the `$D413`
+compare-result readback independently -- a fill that reads "no pixel matched"
+terminates immediately, which would look exactly like this. Note the sub reads
+`$D413` through `SADDRBUS` (routed, `core.v:409`), not through the MMR aperture
+(not routed -- separate open item below).
 
 ### Sub RAM and the sub monitor ROM are reachable through MMR with the sub running
 
