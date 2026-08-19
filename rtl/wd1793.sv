@@ -492,6 +492,10 @@ always @(posedge clk_sys) begin
 					end
 					else
 					if(edsk_next == edsk_start) begin
+`ifdef DEBUG_FDC_SCAN
+						$display("WDNOMATCH want trk=%0d side=%0d sec=%0d (wdreg_track=%0d rw_type=%0d edsk_size=%0d)",
+									disk_track, side, wdreg_sector, wdreg_track, rw_type, edsk_size);
+`endif
 						if(~format) s_seekerr <= 1;
 						state <= STATE_ENDCOMMAND;
 					end

@@ -123,7 +123,15 @@ cylinder versus the WD1793 track register. Daisenryaku deliberately leaves the
 track register at 0 while the head is at track 4, so 77AVEMU rejects that read
 and falls back to track 0 / sector 11. The RTL incorrectly accepted track 4 /
 sector 11 and entered the page-zero `$009f FCB $05` path. `wd1793.sv` now checks
-the ID cylinder unconditionally, matching 77AVEMU. The core's FDC command stream
+the ID cylinder unconditionally.
+
+(Superseded: that check used to be described here as "matching 77AVEMU". It does
+not. 77AVEMU looks a sector up by `compensateTrackNumber(drv.trackPos)` -- the
+physical head position -- and never compares the ID cylinder against the track
+register (`fm77avfdc.cpp:195,206`). The references genuinely disagree; a real
+WD1793 does compare C to the track register, so this core follows the datasheet
+and 77AVEMU is the lenient one. The check is load-bearing regardless: removing
+it takes Daisenryaku from 67.3% coverage to 0.1%, measured.) The core's FDC command stream
 then follows the reference through the later track loads and reaches the
 Daisenryaku title screen at frame 621. The supplied sibling `refs/TOWNSEMU` now
 satisfies 77AVEMU's build contract. Return and Space reach the keyboard latch,
@@ -706,9 +714,23 @@ side `$fd1c <- $00`, sector `$fd1a <- $02`, then `$fd18 <- $80` -- asking for
 cylinder 0 with the head parked at track 14, which a WD1793 correctly answers
 with Record Not Found. The reference never makes that request.
 
-So the question is what the main CPU reads, between the last good sector and
-`$fe95`, that makes it program track 0. The BIOS reads `$fd1d` at `$fef4` and
-`$fd1b` at `$fed7` in that window.
+The RNF itself is **correct and is not the bug**. The scan visits the right
+entry -- `addr=449 entry trk=14 side=0 sec=2`, wanting exactly that -- and
+rejects it on the fourth term of the match, `edsk_trackf == wdreg_track`: the
+ID cylinder must equal the WD track register, which the BIOS has left at 0.
+That is what a real WD1793 does.
+
+**Eliminated, do not retry: removing that term.** Measured both ways --
+Daisenryaku 67.3% -> 0.1% coverage (it is load-bearing, which is why it was
+added), and the demo unchanged at 0.0%. A clean double negative.
+
+So the question is upstream: why is the head at track 14 when the BIOS asks for
+track 0? Either `disk_track` is wrong here, or the BIOS has a path that should
+have updated `$ffe1`/re-seeked and does not run. Note `$ffe1` is written exactly
+once, at boot, and read 77 times -- if the real BIOS updates it after a seek,
+find what writes it. The BIOS also reads `$fd1d` at `$fef4` and `$fd1b` at
+`$fed7` in the window before `$fe95`, and `$fd1d` is still the unexcluded
+three-way disagreement below.
 
 **`$fd1d` is a known three-way disagreement and is NOT yet eliminated.** We
 return `$bc`, 77AVEMU returns `$80`, every time (2477 vs 873 reads). Both agree
