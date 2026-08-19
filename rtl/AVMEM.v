@@ -435,7 +435,19 @@ always @* begin
     8'h88, 8'h89, 8'h8a, 8'h8b,
     8'h8c, 8'h8d, 8'h8e, 8'h8f:
       IODOUT = {2'b00, mmr[mmr_segment][MADDRBUS[3:0]]};
-    8'h93: IODOUT = 8'h3f | (mmr_enable ? 8'h80 : 8'h00) |
+    // $FD93 is R/W (haserin09 difference.html, the FD93 mode-select row:
+    // b7 MMR 0=off/1=on, b6 window 0=off/1=on, b0 boot RAM 0=RO/1=R/W on the
+    // AV series, everything else unused, all three reset to 0).
+    //
+    // Bit 0 must report the LATCH, not a constant. 77AVEMU builds the same
+    // `0x3f | mmr | twr` and then clears bit 0 when the boot area is ROM
+    // (fm77avio.cpp:959-971 over fm77avmemory.cpp:1304-1310). Returning a
+    // hard 1 here is invisible until a title read-modify-writes this register,
+    // which Woody Poco does 2355 times: it reads $fd93, sets bit 7 and writes
+    // back, so our stale bit 0 rode along and left boot RAM permanently
+    // writable ($bf written where the reference writes $be).
+    8'h93: IODOUT = 8'h3e | {7'b0, bootram_write_enable} |
+                         (mmr_enable ? 8'h80 : 8'h00) |
                          (twr_enable ? 8'h40 : 8'h00);
     default: IODOUT = 8'hff;
   endcase

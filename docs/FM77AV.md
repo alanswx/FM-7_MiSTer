@@ -47,7 +47,7 @@ Registers (main CPU side):
 | `$FD80-$FD8F` | R/W | 16 bank registers of the selected segment; 6 bits used on base AV (physical A17:A12, 256 KB space). CSP `fm7_mainio.cpp:1528-1537` (write), `:1217` (read) |
 | `$FD90` | W | segment select, `& 3` on base AV, `& 7` only on AV20/AV40 variants (`fm7_mainio.cpp:1804-1811`). 77AVEMU: "Oh!FM May 1989 pp.45 implies 8 segments... if so F-BASIC 3.3 does not boot" (`fm77avmemory.cpp:1227-1228`) — base AV has 4 |
 | `$FD92` | W | TWR window offset, 256-byte units (`fm7_mainio.cpp:1814-1816`) |
-| `$FD93` | R/W | b7 = MMR enable, b6 = TWR enable, b0 = boot-RAM write enable (`fm7_mainio.cpp:1817-1826`, read `:1448`) |
+| `$FD93` | R/W | b7 = MMR enable, b6 = TWR enable, b0 = boot RAM `0`=RO `1`=R/W, b5:1 unused, all reset to 0 (`fm7_mainio.cpp:1817-1826`, read `:1448`; the bit map is also tabulated for the AV series in haserin09 `difference.html`, the `FD93` mode-select row). **The read returns `$3F | mmr<<7 | twr<<6` with bit 0 then set from the latch** — 77AVEMU clears it when the boot area is ROM (`fm77avio.cpp:959-971` over `fm77avmemory.cpp:1304-1310`) |
 | `$FD94` | W | AV40-family only: b7 = extended MMR (`fm7_mainio.cpp:1828-1830`) |
 | `$FD10` | W | b1 = 1 disables the initiator ROM overlay (`fm7_mainio.cpp:1603-1605`; 77AVEMU `fm77avmemory.cpp:325` `state.avBootROM=(0==(data&2))`). On at reset for AV-family machines only. While it is on, writes to `$6000-$7FFF` are discarded (`fm77avmemory.cpp:917`) and the reset vector reads `$6000`; with it off, `$6000-$7FFF` is ordinary RAM and the vector comes from boot RAM |
 
