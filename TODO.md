@@ -122,11 +122,14 @@ sector 11 and entered the page-zero `$009f FCB $05` path. `wd1793.sv` now checks
 the ID cylinder unconditionally, matching 77AVEMU. The core's FDC command stream
 then follows the reference through the later track loads and reaches the
 Daisenryaku title screen at frame 621. The supplied sibling `refs/TOWNSEMU` now
-satisfies 77AVEMU's build contract. With the exact FM-7 ROMs, the first BIOS
-divergence is still `$fd05`: 77AVEMU reads `$fe` (BUSY asserted after reset),
-while this core reads `$7e`; forcing BUSY high changes timing but is not needed
-for the title fix. Hardware confirmation remains useful. Return and Space reach
-the keyboard latch, and the DOS boot-ROM selections do not mount this FM-7 disk.
+satisfies 77AVEMU's build contract. Return and Space reach the keyboard latch,
+and the DOS boot-ROM selections do not mount this FM-7 disk.
+
+(Superseded: this section used to end "the first BIOS divergence is still
+`$fd05`: 77AVEMU reads `$fe` (BUSY asserted after reset), while this core reads
+`$7e`; forcing BUSY high changes timing but is not needed for the title fix."
+It was needed -- see the FM77AV demo disk. `FLAGS.v` now sets BUSY on reset and
+the divergence is gone.)
 
 Resolved in simulation: the shared boot loader seeks with `$fd18=$1a`, writes
 the next sector number while the seek is busy, then starts a `$fd18=$80` read.
@@ -667,6 +670,32 @@ does not progress, and do not look at the video path.
   missing feature cannot be its problem. (The gap is real and still open; see
   below.)
 * **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
+
+### The original Fujitsu FM77AV demo disk is unblocked but still blank
+
+`software/D77/FM77AV demo.d77` (and its duplicate `FM77AV-DEMO.D77`). Reference
+renders 92.8% coverage in 13 colours; this core renders nothing at frame 1980.
+Not to be confused with `av-demo` in `run_tests.sh`, which is CaptainYS's 2019
+demo on a different disk and passes.
+
+Fixed so far: `$fd13` did not set BUSY, so the loader never waited for the sub
+CPU's restart and span on `$fd05` at `$0783` for the whole run. With that fixed
+the main-side `$fdxx` trace is in **lockstep with 77AVEMU** through the entire
+boot handshake -- `$fd37 <- $c8` at `$072e`, `$fd12 <- $40` at `$0733`,
+`$fd13 <- $02` at `$0738`, the `$fd05` halt/release at `$078a`/`$071a`/`$071d`,
+then `$fd37 <- $de` twice at `$0336` -- and the machine reaches the demo's real
+sub-command protocol at frame 319 instead of stopping at frame 26.
+
+Still open. Two facts to start from:
+
+* We never read `$fd12`; the reference reads it **59791** times, at `$07c2`
+  (57318) and `$0805` (2472). That is the vsync/blank poll, so the reference is
+  running the demo's frame loop and we are not reaching it.
+* The reference's `$fd37` stream continues past ours: it writes `$fd` twice more
+  at `$0336` and finally `$c8` at `$1bec`. We stop after the two `$de` writes.
+
+Do NOT re-investigate the FDC for this disk: its sector data is correct here and
+77AVEMU's is the one that is off by one (REFERENCE.md section 1).
 
 ### Sub RAM and the sub monitor ROM are reachable through MMR with the sub running
 

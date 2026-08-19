@@ -18,6 +18,31 @@ history and code comments, not here. `Pn-m` numbers cite sections of the retired
 split at `fm7_mainmem.cpp:218` is AV40EX-only; the plain FM-7 boot ROM is `$FE00-$FFEF` per
 `fm7_common.h:19`.
 
+### Worked example: 77AVEMU's sector reads are off by one (we are right)
+
+Recorded so nobody "fixes" the FDC to match the tiebreaker. On the original
+Fujitsu FM77AV demo disk, the boot loader's first sector read at `pc=$521f`
+yields:
+
+| | first bytes returned |
+|---|---|
+| this core | `1A 50 86 FD 1F 8B 30 8D ...` |
+| 77AVEMU   | `FF 1A 50 86 FD 1F 8B 30 ...` |
+
+Both read exactly 256 times. Reading the `.d77` directly settles it: track 0
+sector 1 is `1A 50 86 FD 1F 8B 30 8D 00 42 10 8E 01 00 86 02`. **This core is
+correct**; 77AVEMU emits a leading `$FF` -- the data register's stale content
+from the loader's own `$FD1B <- $FF` scratch test at `$5190` -- and so drops the
+sector's last byte.
+
+Its `$FD18` Type I status bit 6 is wrong on the same disk too: it reports
+write-protect set (`$44` where we return `$04`) while the image's write-protect
+byte at offset `$1A` is `$00`.
+
+Neither artifact stops 77AVEMU rendering the disk, so neither is a lead. Both
+look exactly like a first-byte bug on *our* side if you diff the traces without
+checking the image — which is the whole point of writing them down.
+
 ### Worked example: VRAM plane order (MAME is the odd one out)
 
 Recorded so nobody "fixes" the display to match MAME:

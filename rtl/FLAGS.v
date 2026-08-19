@@ -221,8 +221,24 @@ reg sbusyset_d, subhaltreq_d;
 always @(posedge CLKSYS) begin
   sbusyset_d   <= SBUSYSETn;
   subhaltreq_d <= SUBHALTREQn;
-  if (~RESETBn)                              m44_8 <= 1'b0;
-  // The main CPU asking for a halt marks the sub busy. THIS is the fix.
+  // BUSY is SET by reset, not cleared by it, and `reset` here includes the sub
+  // CPU reset that a $fd13 write triggers -- SRESETn is RESETBn & ~SUBMON_RESET.
+  //
+  // 77AVEMU does both: FM77AV::Reset has `state.subSysBusy=true; // Busy on
+  // reset` (fm77av.cpp:624) and the $FD13 handler repeats it after resetting
+  // the sub CPU (fm77avio.cpp:194-202). CSP does not model the $FD13 reset at
+  // all, so 77AVEMU is the only authority here and it is unambiguous. The flag
+  // then clears the normal way, when the sub monitor's init reaches its idle
+  // loop and reads $d40a.
+  //
+  // Clearing it here instead is what kept the original Fujitsu FM77AV demo
+  // disk blank. Its loader writes $fd13 to select monitor B and then polls
+  // $fd05 for the sub to finish restarting; the reference reads $fe (busy) and
+  // waits, while this core read $7e (idle) immediately, concluded the restart
+  // was already done, halted and released a sub CPU still in reset, and then
+  // span on $fd05 at $0783 for the rest of the run.
+  if (~SRESETn)                              m44_8 <= 1'b1;
+  // The main CPU asking for a halt marks the sub busy.
   else if (subhaltreq_d & ~SUBHALTREQn)      m44_8 <= 1'b1;
   else if (sbusyset_d & ~SBUSYSETn) begin
     if (SRWBn)                               m44_8 <= 1'b1;  // sub wrote $d40a

@@ -240,7 +240,13 @@ by the rotating `$D422/$D423` stipple.
   font at `$D800`, rest is the monitor), 1 → `subsys_a`, 2 → `subsys_b`, 3 → `subsyscg`.
 - **Writing `$FD13` resets the sub CPU, even if the value is unchanged** — "Confirmed
   on actual FM77AV... POKE &HFD13,0 from F-BASIC will reset sub-CPU" (77AVEMU
-  `fm77avio.cpp:193-201`).
+  `fm77avio.cpp:193-201`). **The reset also SETS the sub-system BUSY flag**
+  (`state.subSysBusy=true; // Busy on reset`, `fm77avio.cpp:201`), and so does a
+  machine reset (`fm77av.cpp:624`). CSP does not model the `$FD13` reset at all, so
+  77AVEMU is the sole authority here. Software depends on it: the original Fujitsu
+  FM77AV demo disk writes `$FD13` and then polls `$FD05` for the restart to finish,
+  and a core that leaves BUSY clear reports "already idle", halts and releases a sub
+  CPU still in reset, and hangs on `$FD05` forever.
 - `subsyscg.rom` is four 2 KB font banks, not a monitor: bank = `$D430[1:0]`
   (0 katakana, 1 hiragana, 2 ROM1, 3 ROM2 — 77AVEMU `fm77avmemory.h:22,41`,
   `fm77avmemory.cpp:49,1047-1060`).
