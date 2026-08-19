@@ -668,6 +668,22 @@ does not progress, and do not look at the video path.
   below.)
 * **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
 
+### Sub RAM and the sub monitor ROM are reachable through MMR with the sub running
+
+77AVEMU discards a main-CPU access to the whole of physical `$10000-$1FFFF`
+while the sub CPU is running -- read `$FF` (`fm77avmemory.cpp:737-742`), store
+dropped (`:805-810`). This core now gates the sub I/O page (`core.v:596`) and
+the VRAM aperture (`AVMEM.v`, `sub_open`), but not sub RAM `$1C000-$1D37F` or
+the font/monitor ROM `$1D800-$1FFFF`, which `ram_sel`/the block selects still
+serve unconditionally.
+
+No title in hand is known to read either with the sub running -- the gate on
+the two ranges that *are* covered rejects zero accesses across the collection,
+which is what a correctly-observed handshake looks like. Finish the range when
+something turns up that needs it, and instrument the rejected accesses (as
+`DEBUG_AVDRAW=1` does) so "the gate blocks nothing" can be told apart from
+"the gate is not in the build".
+
 ### The MMR aperture cannot READ the drawing ALU registers
 
 The same family as the trigger bug that rescued Woody Poco, found while
