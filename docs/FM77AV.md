@@ -251,9 +251,19 @@ by the rotating `$D422/$D423` stipple.
   (0 katakana, 1 hiragana, 2 ROM1, 3 ROM2 — 77AVEMU `fm77avmemory.h:22,41`,
   `fm77avmemory.cpp:49,1047-1060`).
 - `$D500-$D7FF` becomes 768 bytes of hidden RAM (CSP `fm7_display.h:264`,
-  `display.cpp:2628,3169`); on the FM-7 it is part of the MMIO region.
+  `display.cpp:2628,3169`); on the FM-7 it is part of the MMIO region. This core
+  no longer decodes it as I/O, but **does not yet implement the RAM** — see
+  `TODO.md`.
 - Sub I/O aliases every **64** bytes on base AV (`& $3F`) vs 16 on the FM-7 (`& $0F`)
-  — CSP `display.cpp:2753-2759`. The ALU block needs address bits 5:4 decoded.
+  — CSP `display.cpp:2753-2759`. The ALU block needs address bits 5:4 decoded, and
+  `$D500-$D7FF` must not decode as I/O at all. **Both are side-effect decodes, not
+  just read multiplexing**: every Y-output of `SDECODE`'s `m87`/`m98` does something
+  when merely addressed — `SCRTSWn` (the CRT on/off latch at `$D408`: read = on,
+  write = off), `ATTENTn` (raises the main CPU's attention FIRQ), `KDATAn`,
+  `KACKNGn`, `SIRQCLRn`, `BUZZERn`, `SBUSYSETn`. With bits 9:8 and 5:4 undecoded,
+  an ALU write to `$D428` switched the display off and a read of hidden RAM at
+  `$D7F4` raised a spurious FIRQ. Fixed in `c2fc867`; the two faults had been
+  partially cancelling, so fixing either alone looks like it made things worse.
 - Sub-side kanji ports `$D406/$D407`: CSP gates them to AV40/AV20/FM-77 variants —
   **not** base AV (`display.cpp:2772-2784`). The main-side window `$FD20-$FD23` is
   unchanged from the FM-7.

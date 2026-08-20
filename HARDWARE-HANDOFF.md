@@ -6,6 +6,102 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# For the FPGA side: 41 commits, 5 of them RTL, none ever built
+
+`6356000` is the last commit this side knows to have been on hardware. Head is
+41 commits past it. Everything below is simulation-only: **sim proves "behaviour
+unchanged", it cannot prove the glitch-domain classes**, and three of these five
+touch signals that have bitten hardware-only before.
+
+Build head, then work down this list. Each entry says what to run and what a
+pass looks like, so a failure can be attributed to one commit rather than to
+"the new build".
+
+## The five RTL commits, riskiest first
+
+### 1. `b8ff6ac` — `$fd13`'s sub reset now sets BUSY, and so does power-on
+
+**Changes power-on behaviour for every machine, FM-7 included.** `FLAGS.v` used
+to clear the sub-system BUSY flag on reset; it now sets it, which is what
+77AVEMU does in both `FM77AV::Reset` and the `$FD13` handler. F-BASIC and every
+AV title poll `$fd05` bit 7 during boot, so if the sub monitor's init does not
+reach its `$d40a` read as promptly on real silicon as it does here, **boot
+hangs**. That is the one failure mode to watch for and it will be obvious.
+
+* Run: cold boot to F-BASIC, then boot DOS. Both should reach their prompt in
+  the usual time.
+* This one moved Thexder's counters in sim (main 4745→4750/frame) and its
+  screenshot by 2% of pixels, all inside three animated bands. That was expected
+  and blessed; if Thexder looks *structurally* wrong on hardware rather than one
+  animation frame off, that is a real failure.
+
+### 2. `c2fc867` — the sub I/O decoder no longer aliases over `$D410-$D4FF` or `$D500-$D7FF`
+
+Touches **every sub-CPU I/O access on the AV**. `SDECODE`'s FM-7 block decoded
+only `SADDRBUS[3:0]`, so on the AV it was firing read/write side effects --
+`KDATAn`, `KACKNGn`, `SIRQCLRn`, `BUZZERn`, `ATTENTn`, `SCRTSWn` -- for
+addresses belonging to the drawing ALU and the hidden RAM. Now gated on
+`machine_av` with bits 9:8 and 5:4 decoded.
+
+* Run: any AV title that draws. The FM77AV demo disk is the sharp one -- it
+  should show the Fujitsu logo building, in 13 colours. It rendered **nothing**
+  before this commit.
+* Failure mode to watch: the FM-7 path is gated out entirely, so an FM-7
+  regression here would mean the `machine_av` term is wrong, not the decode.
+
+### 3. `1706f9c` — the drawing ALU triggers on a main-CPU VRAM **read**
+
+Arms the ALU on a bus cycle that previously did nothing, off `~RDQEn` -- one of
+the timing-sensitive read strobes this project has already been burned by twice
+(see `REFERENCE.md` §2).
+
+* Run: Woody Poco disk 1. It should draw its full title screen -- sky,
+  mountains, trees, logo, both sprites, "HIT A SPACE KEY", copyright. It was a
+  black screen with two colours before.
+* If the ALU fires when it should not, expect *corruption* rather than a blank:
+  stray tiles painted over otherwise-correct artwork.
+
+### 4. `aa6e701` — the VRAM aperture is gated on the sub CPU being halted
+
+Closes a path that was open. Measured to block **zero** accesses across the
+whole collection, because titles observe the handshake scrupulously -- so on
+hardware this should be invisible, and if it is not, something is driving the
+aperture at a moment no title in the sim set does.
+
+### 5. `2fdaa08` — `$fd93` bit 0 reports the boot-RAM latch
+
+Boot RAM was permanently writable before, on every machine. Low risk, but it
+changes what `$FE00-$FFDF` does, so a title that scribbles there would newly be
+prevented from doing so.
+
+## The two tests this side was waiting on are closed — thank you
+
+Written before your `bb10370` landed; both questions in it are answered by the
+section immediately below, and neither needs re-running:
+
+* **Joystick** (`71c00e6`) — works end to end from both pads; the dead pad was
+  MiSTer player assignment, not the core. Retired.
+* **PSG pitch** (`378fee6`) — hardware 234.5 Hz against this side's predicted
+  234.65 Hz, 0.06% apart. **Keep the commit.** The 117 Hz revert threshold this
+  side quoted is nowhere near; the residual 2.3% flat is the separate
+  `CORE_CLK_1_2 = 39` fractional-divider job.
+* **Thexder** — your dump verdict is accepted here. The sim side had already
+  found it never reads PSG 14/15; that it is a protected image in every known
+  dump closes it. This side will stop treating `disk-Thexder [b]` as a
+  behavioural reference beyond "does it still render the same title screen".
+
+## What this side would most like back
+
+1. Does F-BASIC still boot, and does DOS? (commit 1 is the risk.)
+2. Does the FM77AV demo disk render the logo building? (commit 2.)
+3. Does Woody Poco draw its title screen? (commit 3.)
+4. The PSG pitch number, and whether the joystick moves anything.
+
+If a build is bad and you want it bisected, commits 1 and 3 are the two worth
+reverting independently -- 2, 4 and 5 are each gated or inert enough that they
+are unlikely to be the cause on their own.
+---
+
 ## Joystick closed, sound closed, Thexder explained — hardware at `4fcecb8`
 
 Deployed build unchanged (`4fcecb8`: 56% ALMs, 516/553 RAM blocks, zero

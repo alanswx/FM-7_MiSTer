@@ -545,6 +545,22 @@ confident wrong answer at least once:
     into flat colour gets smaller as it gets more correct. Score against the reference before
     calling a direction.
 
+36. **An address decoder's outputs can be side effects, so "we never read that register"
+    does not mean the address is harmless.** Every Y-output of `SDECODE`'s `m87`/`m98`
+    *does* something when merely addressed: `SCRTSWn` toggles the CRT on/off latch,
+    `ATTENTn` raises the main CPU's attention FIRQ. On the AV those decoders were missing
+    address bits 9:8 and 5:4, so a drawing-ALU write to `$D428` switched the display off
+    and a read of hidden RAM at `$D7F4` raised a spurious FIRQ. Neither address was ever
+    "accessed as I/O" by any software; the aliasing did it. When a symptom implicates a
+    register nothing appears to touch, check what else decodes to the same low bits.
+37. **Two faults that cancel look like one working machine, and fixing either alone looks
+    like a regression.** On the FM77AV demo disk the spurious `$D7F4` FIRQ hung the disk
+    loader, while the `$D428` display-off was being undone by an equally accidental
+    `$D5xx` read switching it back on. Fixing the FIRQ alone cleared the hang and left a
+    black screen — which reads as "the fix did nothing" and nearly ended the
+    investigation. If a well-evidenced fix produces a *different* wrong answer rather
+    than a right one, suspect a second fault in the same mechanism before backing it out.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
