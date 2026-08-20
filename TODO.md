@@ -724,6 +724,21 @@ That is what a real WD1793 does.
 Daisenryaku 67.3% -> 0.1% coverage (it is load-bearing, which is why it was
 added), and the demo unchanged at 0.0%. A clean double negative.
 
+**The boot ROM is not the difference.** `$FE00-$FFDF` -- all 480 bytes of BIOS
+code -- is byte-identical across `vsim/roms/boot_bas.rom`,
+`vsim/roms/fm77av_boot_basic.rom.mem` and `refs/local/fm77av-roms/BOOT_BAS.ROM`.
+Only `$FFE0-$FFFF` differs, and only in fill: `$ff` in ours, `$00` in the
+reference's image. That range is the BIOS work area (the `$ffe1` track cache,
+`$ffe5`, `$ffe8`) plus the vectors, and the loader writes the cache entries at
+boot anyway, so both machines reach the same values. Worth knowing before
+diffing PCs in this region.
+
+**Both machines park the head on track 14.** 19 `$1c` seeks on each, issued by
+the demo's own code at `$023f`/`$024e`/`$0253`, and the reference's destination
+list ends `... 03 0F 0A 0E` -- `$0e` = 14. So the head position agrees and the
+reference reads track 14 sector 2 where the BIOS asked for cylinder 0, because
+it looks sectors up by head position and never checks C.
+
 So the question is upstream: why is the head at track 14 when the BIOS asks for
 track 0? Either `disk_track` is wrong here, or the BIOS has a path that should
 have updated `$ffe1`/re-seeked and does not run. Note `$ffe1` is written exactly
