@@ -706,7 +706,7 @@ static void dump_av_vram(int frame) {
 static void dump_av_palette(int frame) {
 	const char *palOut = getenv("FM7_PAL_DUMP");
 	if (!palOut) return;
-	const auto *r = top->rootp;
+	const auto *r = VL_ROOT(top);
 	FILE *fp = fopen(palOut, "w");
 	if (!fp) {
 		fprintf(stderr, "palette dump failed: %s\n", palOut);
