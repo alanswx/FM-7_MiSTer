@@ -221,23 +221,24 @@ reg sbusyset_d, subhaltreq_d;
 always @(posedge CLKSYS) begin
   sbusyset_d   <= SBUSYSETn;
   subhaltreq_d <= SUBHALTREQn;
-  // BUSY is SET by reset, not cleared by it, and `reset` here includes the sub
-  // CPU reset that a $fd13 write triggers -- SRESETn is RESETBn & ~SUBMON_RESET.
+  // BUSY is CLEARED by reset here, and that is deliberate -- see below.
   //
-  // 77AVEMU does both: FM77AV::Reset has `state.subSysBusy=true; // Busy on
-  // reset` (fm77av.cpp:624) and the $FD13 handler repeats it after resetting
-  // the sub CPU (fm77avio.cpp:194-202). CSP does not model the $FD13 reset at
-  // all, so 77AVEMU is the only authority here and it is unambiguous. The flag
-  // then clears the normal way, when the sub monitor's init reaches its idle
-  // loop and reads $d40a.
+  // `b8ff6ac` set it instead, on the strength of 77AVEMU doing so in both
+  // FM77AV::Reset (fm77av.cpp:624) and the $FD13 handler (fm77avio.cpp:201),
+  // and it did unstick the Fujitsu FM77AV demo disk at the time. It was
+  // reverted because it broke Mugen Senshi Valis disk 2 -- 86.9% coverage in 17
+  // colours down to 7.2% in 8 -- and because the demo's ACTUAL fault turned out
+  // to be elsewhere: `c2fc867`, the sub I/O decoder aliasing a hidden-RAM read
+  // onto ATTENTn and raising a spurious FIRQ. With that fixed the demo renders
+  // whether BUSY is set on reset or not, so this bought nothing and cost a
+  // working title.
   //
-  // Clearing it here instead is what kept the original Fujitsu FM77AV demo
-  // disk blank. Its loader writes $fd13 to select monitor B and then polls
-  // $fd05 for the sub to finish restarting; the reference reads $fe (busy) and
-  // waits, while this core read $7e (idle) immediately, concluded the restart
-  // was already done, halted and released a sub CPU still in reset, and then
-  // span on $fd05 at $0783 for the rest of the run.
-  if (~SRESETn)                              m44_8 <= 1'b1;
+  // Three variants were measured before reverting -- level-held `~SRESETn`,
+  // power-on split out, and edge-detected -- and Valis disk 2 was 7.2%/8 in all
+  // three, so it is the $fd13 set itself that it cannot tolerate, not the shape
+  // of it. If this is ever revisited, start by asking why our $fd13 sub reset
+  // differs from the reference's, not by re-shaping the flag.
+  if (~RESETBn)                              m44_8 <= 1'b0;
   // The main CPU asking for a halt marks the sub busy.
   else if (subhaltreq_d & ~SUBHALTREQn)      m44_8 <= 1'b1;
   else if (sbusyset_d & ~SBUSYSETn) begin

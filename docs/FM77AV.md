@@ -240,13 +240,16 @@ by the rotating `$D422/$D423` stipple.
   font at `$D800`, rest is the monitor), 1 → `subsys_a`, 2 → `subsys_b`, 3 → `subsyscg`.
 - **Writing `$FD13` resets the sub CPU, even if the value is unchanged** — "Confirmed
   on actual FM77AV... POKE &HFD13,0 from F-BASIC will reset sub-CPU" (77AVEMU
-  `fm77avio.cpp:193-201`). **The reset also SETS the sub-system BUSY flag**
-  (`state.subSysBusy=true; // Busy on reset`, `fm77avio.cpp:201`), and so does a
-  machine reset (`fm77av.cpp:624`). CSP does not model the `$FD13` reset at all, so
-  77AVEMU is the sole authority here. Software depends on it: the original Fujitsu
-  FM77AV demo disk writes `$FD13` and then polls `$FD05` for the restart to finish,
-  and a core that leaves BUSY clear reports "already idle", halts and releases a sub
-  CPU still in reset, and hangs on `$FD05` forever.
+  `fm77avio.cpp:193-201`). 77AVEMU also SETS the sub-system BUSY flag on that reset
+  (`state.subSysBusy=true; // Busy on reset`, `fm77avio.cpp:201`) and on a machine
+  reset (`fm77av.cpp:624`); CSP does not model the `$FD13` reset at all, so 77AVEMU
+  is the sole authority. **This core deliberately does not follow it.** Setting BUSY
+  there was tried (`b8ff6ac`) and reverted: it took Mugen Senshi Valis disk 2 from
+  86.9% coverage in 17 colours to 7.2% in 8, in all three shapes measured
+  (level-held, power-on split out, edge-detected). Nothing needs it — the FM77AV
+  demo disk, which motivated it, renders either way once `c2fc867` fixed its real
+  fault. Whatever the reference is modelling, our `$FD13` sub reset differs from it
+  in some way that this flag exposes; that is the thing to find before trying again.
 - `subsyscg.rom` is four 2 KB font banks, not a monitor: bank = `$D430[1:0]`
   (0 katakana, 1 hiragana, 2 ROM1, 3 ROM2 — 77AVEMU `fm77avmemory.h:22,41`,
   `fm77avmemory.cpp:49,1047-1060`).
