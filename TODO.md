@@ -683,122 +683,17 @@ does not progress, and do not look at the video path.
   below.)
 * **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
 
-### The original Fujitsu FM77AV demo disk stalls in an FDC retry loop
+### `$D500-$D7FF` is hidden RAM on the AV and this core does not implement it
 
-`software/D77/FM77AV demo.d77` (and its duplicate `FM77AV-DEMO.D77`). Reference
-renders 92.8% coverage in 13 colours; this core renders nothing, at **every**
-frame sampled -- 400, 680, 800, 1000, 1200, 1400, 1600, 1980. Not `av-demo` in
-`run_tests.sh`, which is CaptainYS's 2019 demo and passes.
+Fixed in `c2fc867`: the sub I/O decoder no longer *aliases* into that range, so
+a read there has no I/O side effect. The RAM itself is still missing -- CSP
+gives the AV 768 bytes there (`fm7_display.h:264`, `display.cpp:2628,3169`) and
+this core has no storage for it, so a read returns whatever the sub read mux
+falls through to and a write is dropped.
 
-Fixed on the way here: `$fd13` did not set BUSY (`b8ff6ac`).
-
-**Where it stops.** At frame 1000 the sub CPU is idle in its command-wait loop
-and the main CPU is in the boot ROM's floppy wait:
-
-    $ff98  LDB <$1f     ; DP=$fd, so this is $FD1F -- b=$3f, DRQ clear
-    $ff9a  BPL $ffa2
-    $ffa2  LSLB         ; b=$7e, INTRQ clear
-    $ffa3  BPL $ff98    ; spin
-
-`dp=fd` is the whole point: the byte is the FDC's DRQ/INTRQ register, not RAM.
-
-**Why.** `$fd18 <- $80` (read sector) is issued **2048** times here against the
-reference's **444**, and the extra attempts return status `$10` -- Record Not
-Found. Every other FDC command matches exactly: `$1c` seek x19, `$0a` x4, `$08`
-x1, on both. `DEBUG_FDC=1` shows **444 WDMATCH successes**, i.e. we read every
-sector the reference reads and then keep asking for one more.
-
-The first failure is at frame 348, and the request is malformed rather than
-missing: the BIOS writes the TRACK register `$fd19 <- $00` at `pc=$fe95`, then
-side `$fd1c <- $00`, sector `$fd1a <- $02`, then `$fd18 <- $80` -- asking for
-cylinder 0 with the head parked at track 14, which a WD1793 correctly answers
-with Record Not Found. The reference never makes that request.
-
-The RNF itself is **correct and is not the bug**. The scan visits the right
-entry -- `addr=449 entry trk=14 side=0 sec=2`, wanting exactly that -- and
-rejects it on the fourth term of the match, `edsk_trackf == wdreg_track`: the
-ID cylinder must equal the WD track register, which the BIOS has left at 0.
-That is what a real WD1793 does.
-
-**Eliminated, do not retry: removing that term.** Measured both ways --
-Daisenryaku 67.3% -> 0.1% coverage (it is load-bearing, which is why it was
-added), and the demo unchanged at 0.0%. A clean double negative.
-
-**The boot ROM is not the difference.** `$FE00-$FFDF` -- all 480 bytes of BIOS
-code -- is byte-identical across `vsim/roms/boot_bas.rom`,
-`vsim/roms/fm77av_boot_basic.rom.mem` and `refs/local/fm77av-roms/BOOT_BAS.ROM`.
-Only `$FFE0-$FFFF` differs, and only in fill: `$ff` in ours, `$00` in the
-reference's image. That range is the BIOS work area (the `$ffe1` track cache,
-`$ffe5`, `$ffe8`) plus the vectors, and the loader writes the cache entries at
-boot anyway, so both machines reach the same values. Worth knowing before
-diffing PCs in this region.
-
-**Both machines park the head on track 14.** 19 `$1c` seeks on each, issued by
-the demo's own code at `$023f`/`$024e`/`$0253`, and the reference's destination
-list ends `... 03 0F 0A 0E` -- `$0e` = 14. So the head position agrees and the
-reference reads track 14 sector 2 where the BIOS asked for cylinder 0, because
-it looks sectors up by head position and never checks C.
-
-**The demo retries forever, by design.** The BIOS error path is
-`$ffa5 LDB <$18 / BNE / BITB #$80 / BITB #$40 / BITB #$14 / ORCC #$01 / RTS`
--- it classifies the error into A ($0c for RNF) and returns carry set. The
-demo's own code then does `$011c BCS $0119 / $0119 JSR $fe08`, an
-**unconditional retry with no counter**, and throws the error code away. So this
-read is not allowed to fail on real hardware: whatever the machine does, it must
-answer it.
-
-That is the crux. On this disk every sector's ID C equals its physical track
-(checked: 0 of 1296 differ, and 0 of 1292 on Daisenryaku), so
-`edsk_trackf == wdreg_track` reduces exactly to "track register must equal head
-position" -- 0 vs 14 here. A real WD1793 compares C to the track register, so by
-the datasheet this read fails; yet the disk shipped and worked.
-
-So one of these is true and none is yet established:
-
-1. Something should have left the track register at 14 -- e.g. a real WD179x
-   ignoring the `$fd19` write. This core models the ignore-while-BUSY rule
-   (`WDDROP TRACK`), and the BIOS polls status `$00` (idle) before writing, so
-   that path does not fire.
-2. `disk_track` should not be 14 by then, i.e. this core moves the head where
-   the machine would not.
-3. The C comparison has a qualifier this core does not model.
-
-So the question is upstream: why is the head at track 14 when the BIOS asks for
-track 0? Either `disk_track` is wrong here, or the BIOS has a path that should
-have updated `$ffe1`/re-seeked and does not run. Note `$ffe1` is written exactly
-once, at boot, and read 77 times -- if the real BIOS updates it after a seek,
-find what writes it. The BIOS also reads `$fd1d` at `$fef4` and `$fd1b` at
-`$fed7` in the window before `$fe95`, and `$fd1d` is still the unexcluded
-three-way disagreement below.
-
-**`$fd1d` is a known three-way disagreement and is NOT yet eliminated.** We
-return `$bc`, 77AVEMU returns `$80`, every time (2477 vs 873 reads). Both agree
-on bit 7 (motor) and bits 1:0 (drive); they differ on bits 5:2, which CSP builds
-as a constant `$3c` (`floppy.cpp:178` `get_fdc_motor`) and 77AVEMU leaves zero
-(`fm77avfdc.cpp:946-949`). This core follows CSP deliberately -- see the long
-comment in `FDC.v`, where following MAME here was what stopped Ys entering its
-loaded program. Bits 5:2 should not matter to a bit-7 motor test, so this is
-recorded as unexcluded rather than as the suspect.
-
-**Do NOT re-investigate:**
-
-* *The video path.* At frame 500 VRAM holds 7972/8192 non-zero bytes in blue and
-  zero in red/green, which is exactly what `$fd37 = $de` asks for (CPU/ALU mask
-  `$de & 7 = 6` blocks red and green; display mask `($de>>4) & 7 = 5` blocks blue
-  and green). A black screen mid-sequence is correct. `AVHDRAW.v`'s
-  `plane_mask = bank_mask | VPAGE_MASK` also matches 77AVEMU's
-  `bankMask | VRAMAccessMaskFromCPU`, which carries its own citation to a 2022
-  experiment on a real FM77AV (`fm77avcrtc.cpp:410-412`).
-* *The sub-command protocol.* `iodiff.py --ports=05` matches **1439 of 1440**
-  accesses on direction, port, value AND PC. Our whole run is a prefix of the
-  reference's; nothing diverges, we just stop early.
-* *Superseded claim: "the gap is sub command `$18` = PAINT, dispatched 6 times
-  here against 135 there."* That compared a 10-frame window of this core against
-  the reference's entire run. The whole-trace comparison above contradicts it.
-  PAINT is missing because the machine stalls before reaching it, not because a
-  branch is taken differently.
-* *The boot sector read.* Correct here; 77AVEMU's is the one that is off by one
-  (REFERENCE.md section 1).
+Nothing in hand is known to *use* it as memory; the FM77AV demo disk only read
+`$D7F4` once, and what mattered was the side effect, not the value. Recorded
+because it is a real gap with a citation.
 
 ### Sub RAM and the sub monitor ROM are reachable through MMR with the sub running
 
