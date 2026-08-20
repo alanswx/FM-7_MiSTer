@@ -45,10 +45,17 @@ so this is recorded for the next AV rendering pass rather than attributed.
 
 ---
 
-# For the FPGA side: 41 commits, 5 of them RTL, none ever built
+# For the FPGA side: 4 RTL commits to build (was 5 — one was reverted)
 
-`6356000` is the last commit this side knows to have been on hardware. Head is
-41 commits past it. Everything below is simulation-only: **sim proves "behaviour
+`6356000` is the last commit this side knows to have been on hardware.
+
+**Amended after this section was first written.** It originally listed five RTL
+commits and ranked `b8ff6ac` ($fd13 sets BUSY) the riskiest. That commit has
+since been **reverted** — the AV sweep caught it breaking Mugen Senshi Valis
+disk 2, 86.9% coverage down to 7.2%, and it turned out to buy nothing once
+`c2fc867` fixed the demo disk's real fault. Do not look for it in the tree, and
+Thexder's screenshot/counters are back to their original values. Four RTL
+commits remain. Everything below is simulation-only: **sim proves "behaviour
 unchanged", it cannot prove the glitch-domain classes**, and three of these five
 touch signals that have bitten hardware-only before.
 
@@ -56,25 +63,9 @@ Build head, then work down this list. Each entry says what to run and what a
 pass looks like, so a failure can be attributed to one commit rather than to
 "the new build".
 
-## The five RTL commits, riskiest first
+## The four RTL commits, riskiest first
 
-### 1. `b8ff6ac` — `$fd13`'s sub reset now sets BUSY, and so does power-on
-
-**Changes power-on behaviour for every machine, FM-7 included.** `FLAGS.v` used
-to clear the sub-system BUSY flag on reset; it now sets it, which is what
-77AVEMU does in both `FM77AV::Reset` and the `$FD13` handler. F-BASIC and every
-AV title poll `$fd05` bit 7 during boot, so if the sub monitor's init does not
-reach its `$d40a` read as promptly on real silicon as it does here, **boot
-hangs**. That is the one failure mode to watch for and it will be obvious.
-
-* Run: cold boot to F-BASIC, then boot DOS. Both should reach their prompt in
-  the usual time.
-* This one moved Thexder's counters in sim (main 4745→4750/frame) and its
-  screenshot by 2% of pixels, all inside three animated bands. That was expected
-  and blessed; if Thexder looks *structurally* wrong on hardware rather than one
-  animation frame off, that is a real failure.
-
-### 2. `c2fc867` — the sub I/O decoder no longer aliases over `$D410-$D4FF` or `$D500-$D7FF`
+### 1. `c2fc867` — the sub I/O decoder no longer aliases over `$D410-$D4FF` or `$D500-$D7FF`
 
 Touches **every sub-CPU I/O access on the AV**. `SDECODE`'s FM-7 block decoded
 only `SADDRBUS[3:0]`, so on the AV it was firing read/write side effects --
@@ -88,7 +79,7 @@ addresses belonging to the drawing ALU and the hidden RAM. Now gated on
 * Failure mode to watch: the FM-7 path is gated out entirely, so an FM-7
   regression here would mean the `machine_av` term is wrong, not the decode.
 
-### 3. `1706f9c` — the drawing ALU triggers on a main-CPU VRAM **read**
+### 2. `1706f9c` — the drawing ALU triggers on a main-CPU VRAM **read**
 
 Arms the ALU on a bus cycle that previously did nothing, off `~RDQEn` -- one of
 the timing-sensitive read strobes this project has already been burned by twice
@@ -100,14 +91,14 @@ the timing-sensitive read strobes this project has already been burned by twice
 * If the ALU fires when it should not, expect *corruption* rather than a blank:
   stray tiles painted over otherwise-correct artwork.
 
-### 4. `aa6e701` — the VRAM aperture is gated on the sub CPU being halted
+### 3. `aa6e701` — the VRAM aperture is gated on the sub CPU being halted
 
 Closes a path that was open. Measured to block **zero** accesses across the
 whole collection, because titles observe the handshake scrupulously -- so on
 hardware this should be invisible, and if it is not, something is driving the
 aperture at a moment no title in the sim set does.
 
-### 5. `2fdaa08` — `$fd93` bit 0 reports the boot-RAM latch
+### 4. `2fdaa08` — `$fd93` bit 0 reports the boot-RAM latch
 
 Boot RAM was permanently writable before, on every machine. Low risk, but it
 changes what `$FE00-$FFDF` does, so a title that scribbles there would newly be
@@ -131,14 +122,15 @@ section immediately below, and neither needs re-running:
 
 ## What this side would most like back
 
-1. Does F-BASIC still boot, and does DOS? (commit 1 is the risk.)
-2. Does the FM77AV demo disk render the logo building? (commit 2.)
-3. Does Woody Poco draw its title screen? (commit 3.)
+1. Does the FM77AV demo disk render the logo building? (commit 1.)
+2. Does Woody Poco draw its title screen? (commit 2.)
+3. Does F-BASIC still boot, and does DOS? Nothing here should touch that any
+   more, but it is the cheapest sanity check there is.
 4. The PSG pitch number, and whether the joystick moves anything.
 
-If a build is bad and you want it bisected, commits 1 and 3 are the two worth
-reverting independently -- 2, 4 and 5 are each gated or inert enough that they
-are unlikely to be the cause on their own.
+If a build is bad and you want it bisected, commits 1 and 2 are the two worth
+reverting independently -- 3 and 4 are each gated or inert enough that they are
+unlikely to be the cause on their own.
 ---
 
 ## Joystick closed, sound closed, Thexder explained — hardware at `4fcecb8`

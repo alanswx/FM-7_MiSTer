@@ -33,6 +33,17 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
 
 **Open, in priority order:**
 
+0. **Luxsor disk 2 regressed on `c2fc867`** — 9.7% coverage / 12 colours down to
+   0.4% / 4. Both are far from the reference's 81.8% / 42, so this is a broken
+   title failing differently rather than a working one lost, but it is a real
+   regression and it is mine. The decode fix removes side effects Luxsor was
+   getting by accident from ALU writes aliasing onto `m87` — `SCRTSWn`,
+   `SBUSYSETn`, `SVRACSn` and the two scroll registers. `DEBUG_ACK=1` prints
+   `SBLOCK` lines for every access the gate newly rejects. Note the two builds
+   are byte-identical at frame 400 and only diverge later, and that the all-zero
+   digital palette in the run summary is a red herring: disk 2 is a 320-mode
+   title using the analog palette, and it reads that way in both builds.
+
 1. **A hardware build is 41 commits overdue, five of them RTL.** Nothing since
    `6356000` has ever been synthesized. `HARDWARE-HANDOFF.md` opens with the
    list, ordered by risk, with what to run and what a pass looks like for each.
@@ -91,7 +102,6 @@ assignment, not the core.)
 | `1706f9c` | the drawing ALU now triggers on a main-CPU VRAM **read** | fires the ALU on a bus cycle that previously did nothing; the read strobe is `~RDQEn`, one of the timing-sensitive decodes |
 | `2fdaa08` | `$fd93` bit 0 reports the boot-RAM latch | changes what boot RAM does on every machine |
 | `aa6e701` | VRAM aperture gated on the sub CPU being halted | closes a path that was open; blocks nothing measurable in sim, so only hardware can show a title that relied on it |
-| `b8ff6ac` | `$fd13`'s sub reset sets BUSY, and so does power-on | **changes power-on behaviour for every machine, FM-7 included.** Thexder's counters moved in sim; anything subtler will only show here |
 | `c2fc867` | sub I/O decoder no longer aliases over `$D410-$D4FF`/`$D500-$D7FF` | touches **every** sub-CPU I/O access on the AV, and the outputs it gates are side effects (CRT on/off, attention FIRQ), not just a read mux |
 
 Earlier commits (`e699e9d`, `77c2780`, `b1aff78`, `777d8d4`) covering the
