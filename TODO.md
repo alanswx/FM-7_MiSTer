@@ -739,6 +739,30 @@ list ends `... 03 0F 0A 0E` -- `$0e` = 14. So the head position agrees and the
 reference reads track 14 sector 2 where the BIOS asked for cylinder 0, because
 it looks sectors up by head position and never checks C.
 
+**The demo retries forever, by design.** The BIOS error path is
+`$ffa5 LDB <$18 / BNE / BITB #$80 / BITB #$40 / BITB #$14 / ORCC #$01 / RTS`
+-- it classifies the error into A ($0c for RNF) and returns carry set. The
+demo's own code then does `$011c BCS $0119 / $0119 JSR $fe08`, an
+**unconditional retry with no counter**, and throws the error code away. So this
+read is not allowed to fail on real hardware: whatever the machine does, it must
+answer it.
+
+That is the crux. On this disk every sector's ID C equals its physical track
+(checked: 0 of 1296 differ, and 0 of 1292 on Daisenryaku), so
+`edsk_trackf == wdreg_track` reduces exactly to "track register must equal head
+position" -- 0 vs 14 here. A real WD1793 compares C to the track register, so by
+the datasheet this read fails; yet the disk shipped and worked.
+
+So one of these is true and none is yet established:
+
+1. Something should have left the track register at 14 -- e.g. a real WD179x
+   ignoring the `$fd19` write. This core models the ignore-while-BUSY rule
+   (`WDDROP TRACK`), and the BIOS polls status `$00` (idle) before writing, so
+   that path does not fire.
+2. `disk_track` should not be 14 by then, i.e. this core moves the head where
+   the machine would not.
+3. The C comparison has a qualifier this core does not model.
+
 So the question is upstream: why is the head at track 14 when the BIOS asks for
 track 0? Either `disk_track` is wrong here, or the BIOS has a path that should
 have updated `$ffe1`/re-seeked and does not run. Note `$ffe1` is written exactly
