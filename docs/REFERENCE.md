@@ -561,6 +561,18 @@ confident wrong answer at least once:
     investigation. If a well-evidenced fix produces a *different* wrong answer rather
     than a right one, suspect a second fault in the same mechanism before backing it out.
 
+38. **Half the AV set renders blank on the REFERENCE, and a blank reference scores 100%.**
+    33 of 67 titles. Agreement is per pixel, so two blank screens agree perfectly: those
+    rows inflate any whole-set mean, make "titles >= 99%" meaningless, and — the part that
+    cost real time — score a core that *starts rendering one correctly* as the worst
+    regression in the sweep. World Golf II disk 1 sat at 100.00% while both machines drew
+    nothing; when `c2fc867` made this core draw its full title screen the number fell to
+    57.58%. **Check the reference's own coverage before believing any agreement figure.**
+    `sweep/score.py` splits the set into scored / blank-both / drawn-here-only and refuses
+    to print a single mean; `DRAWN_ONLY=1 sweep/av-sweep.sh` skips the blank half, which is
+    also half the wall clock — but run the full set after anything that could plausibly
+    unblank a title, or wins like that one stay invisible.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

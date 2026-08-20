@@ -33,6 +33,13 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
 
 **Open, in priority order:**
 
+0. **World Golf II disk 1 now renders here and NOT on 77AVEMU.** Its title screen
+   — kana logo, golfer, mountains — appears at 42.4% coverage in 8 colours since
+   `c2fc867`, where the reference draws a black screen. Nobody has checked which
+   machine is right. Worth an hour: if this core is correct it is the first AV
+   title where the reference is the one that fails, and `refs/local`'s renders
+   stop being a safe target for the whole blank half of the set.
+
 0. **Luxsor disk 2 regressed on `c2fc867`** — 9.7% coverage / 12 colours down to
    0.4% / 4. Both are far from the reference's 81.8% / 42, so this is a broken
    title failing differently rather than a working one lost, but it is a real

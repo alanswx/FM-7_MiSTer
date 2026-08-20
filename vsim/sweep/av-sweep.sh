@@ -41,6 +41,25 @@ find "$DISKDIR" -maxdepth 1 -iname '*.d77' \
   | grep -viE '\[b\]|\[Alt|\[Set 1\]|AV40|User disk|Save disk|- Data|Disk B\)' \
   | sort > "$OUT/images.txt"
 
+# DRAWN_ONLY=1 keeps only the titles 77AVEMU itself renders.
+#
+# Half the AV set is blank on BOTH machines -- 32 of 67 -- and those rows cost
+# the same 2000 frames as any other while telling you almost nothing: two blank
+# screens agree on 100% of their pixels whatever changes underneath them. For
+# the common case, "did this change regress the set", they are dead weight and
+# roughly half the wall clock.
+#
+# They are NOT worthless, which is why this is a switch and not a deletion. A
+# title that is blank on both sides is exactly where a new win appears: World
+# Golf II disk 1 sat blank-on-blank until `c2fc867` made this core draw its full
+# title screen, and a drawn-only sweep would never have shown it. Run the full
+# set after a fix that could plausibly unblank something, and drawn-only while
+# iterating.
+if [ "${DRAWN_ONLY:-0}" = 1 ]; then
+  python3 "$HERE/drawn_only.py" "$OUT/images.txt" "$HERE/renders/ref-shots" > "$OUT/images.drawn" \
+    && mv "$OUT/images.drawn" "$OUT/images.txt"
+fi
+
 echo "$(wc -l < "$OUT/images.txt") FM77AV images, $JOBS jobs, $FRAMES frames" >&2
 
 printf 'MAIN_PF\tSUB_PF\tPNG\tIO\tNOTES\tTITLE\n' > "$OUT/results.tsv"
