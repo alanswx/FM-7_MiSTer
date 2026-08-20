@@ -889,6 +889,7 @@ FLAGS u_FLAGS(
 );
 
 SDECODE u_SDECODE(
+  .machine_av( machine_av ),
   .SADDRBUS  ( SADDRBUS  ),
   .SQB       ( SQB       ),
   .SEB       ( SEB       ),

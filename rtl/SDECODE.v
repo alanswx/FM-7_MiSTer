@@ -1,6 +1,7 @@
 
 module SDECODE(
   input [15:0] SADDRBUS,
+  input machine_av,
   input SQB,
   input SEB,
   input SBA,
@@ -58,7 +59,35 @@ wire m57_6_rd = ~(SRWB & (SEB | SQB)); // what actually enables m98
 wire m57_8 = ~(&SADDRBUS[15:13] & ~SBA);
 wire m58_11 = m57_8 | m80_10;
 wire m64_11 = m86_y6 | SADDRBUS[10];
-wire m64_8 = m86_y6 | ~SADDRBUS[10];
+// On the FM77AV the sub I/O page is $D400-$D4FF ONLY.
+//
+// m98/m87 below decode SADDRBUS[3:0] and nothing between bits 9 and 4, which is
+// the FM-7's 16-byte aliasing across the whole $D400-$D7FF MMIO region. The AV
+// turns $D500-$D7FF into 768 bytes of hidden RAM (CSP `fm7_display.h:264`,
+// `display.cpp:2628,3169`) and narrows the alias to 64 bytes inside the I/O page
+// (`display.cpp:2753-2759`), so those reads must have no I/O side effect at all.
+//
+// They had one, and it was fatal. Every Y-output of m98 is a READ side effect --
+// KDATAn, KACKNGn, SIRQCLRn, BUZZERn and ATTENTn -- so a sub-CPU read anywhere
+// in $D500-$D7FF whose low nibble happens to be 4 raised the main CPU's
+// attention FIRQ. The Fujitsu FM77AV demo disk reads $D7F4 exactly once; that
+// spurious FIRQ ran the demo's handler at $0f35, which called the BIOS disk
+// read, which asked for cylinder 0 with the head parked on track 14 and hung
+// retrying for ever. 77AVEMU never raises attention on that disk at all: zero
+// accesses to $D404 in its whole run.
+// Bits 5:4 as well as 9:8. The AV's 64-byte alias unit is $D400-$D43F, and
+// inside it only $D400-$D40F is this FM-7-compatible block -- $D410-$D42F is
+// the drawing ALU and $D430-$D43F the AV registers, both decoded elsewhere.
+//
+// Leaving 5:4 out is not a smaller version of the same bug, it is a second one.
+// m87's Y0 is SCRTSWn, the CRT on/off latch ($D408: read = on, write = off),
+// so with 16-byte aliasing every ALU write to $D428 -- the line-draw Y1
+// coordinate, 84 of them in ten frames -- switched the display OFF, and the
+// screen only came back because some unrelated read in $D500-$D7FF switched it
+// on again by the same accident.
+wire subio_alias_block = machine_av &
+                         (SADDRBUS[9] | SADDRBUS[8] | SADDRBUS[5] | SADDRBUS[4]);
+wire m64_8 = m86_y6 | ~SADDRBUS[10] | subio_alias_block;
 
 x74138 m86(
   .G2B ( SBA          ),
