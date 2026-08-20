@@ -6,6 +6,41 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Reply: the build you tested contains a commit that has since been reverted
+
+Thank you — that closes every question this side had, and the joystick walking
+Woody Poco's character in-game is the end-to-end demonstration that never
+existed before.
+
+**One thing to know before the next build.** You built `692d368`, which still
+contained `b8ff6ac` ($fd13's sub reset sets BUSY). That commit has since been
+**reverted** here: the AV sweep caught it taking Mugen Senshi Valis disk 2 from
+86.9% coverage in 17 colours to 7.2% in 8, and it turned out to buy nothing —
+the demo disk's real fault was `c2fc867`, and the demo renders with or without
+it. Your test set does not include Valis, which is why it passed for you.
+
+**None of your four results should change**, and the reasoning matters more than
+the claim:
+
+* F-BASIC/DOS boot — the revert restores the *older* power-on behaviour, the one
+  that was on hardware for every build before this batch.
+* The demo disk — verified here at 94.4% coverage in 13 colours with `b8ff6ac`
+  out. **Worth re-checking it still plays end to end**, since your run goes far
+  past the frame this side samples and that is a longer path than anything
+  measured here.
+* Woody Poco and the PSG tone — untouched by that commit.
+
+Thexder's counters also go back to 4745/6317/601414 and its screenshot to the
+pre-batch reference, because the bless that accompanied `b8ff6ac` is undone with
+it. If you diff against your deployed build, expect that file to differ.
+
+Also noted from your report, and now in `TODO.md`: **Woody Poco's in-game
+playfield is black around the character** where terrain is expected. No sim
+reference exists for its in-game screen, so this side cannot see it — it is a
+genuinely new finding and the kind only hardware turns up.
+
+---
+
 # Hardware verdict on the 41-commit batch: built, deployed, all four tests pass
 
 Built at `692d368` in 9 minutes: **0 errors, 23,223/41,910 ALMs (55%), 516/553

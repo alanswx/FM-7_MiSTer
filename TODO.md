@@ -33,6 +33,13 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
 
 **Open, in priority order:**
 
+0. **Woody Poco's in-game playfield is black around the character** — reported
+   from hardware in `b50c1de`, with the HUD, sprites and scrolling all correct.
+   Its title screen is 100.00% against the reference, so this is past anything
+   the sweep samples, and 77AVEMU has no in-game render here to compare with.
+   Reproduce it in simulation first (drive the mode select with `--joystick`,
+   then hold right) — there is no measurement of it on this side at all yet.
+
 0. **World Golf II disk 1 now renders here and NOT on 77AVEMU.** Its title screen
    — kana logo, golfer, mountains — appears at 42.4% coverage in 8 colours since
    `c2fc867`, where the reference draws a black screen. Nobody has checked which
