@@ -33,16 +33,16 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
 
 **Open, in priority order:**
 
-1. **Two hardware tests are waiting, and only hardware can settle them.**
-   `HARDWARE-HANDOFF.md` has both procedures verbatim.
-   * *Pitch.* The PSG was an octave flat; measured, not inferred, and fixed. Four
-     typable F-BASIC lines program one known tone: **240 Hz means this build is
-     right, 117 Hz means revert `378fee6`.**
-   * *Joystick.* Dead on hardware, working in simulation — the signature of the
-     glitch-domain class, so `SOUND.v`'s strobes were filtered on that reading.
-     **Test an FM77AV title**, not an FM-7 one: only the AV routes the gameport
-     through `$FD15`/`$FD16`. Twenty AV titles provably poll it; Dragon Buster is
-     the pick because it already rendered before any of this work.
+1. **A hardware build is 41 commits overdue, five of them RTL.** Nothing since
+   `6356000` has ever been synthesized. `HARDWARE-HANDOFF.md` opens with the
+   list, ordered by risk, with what to run and what a pass looks like for each.
+   `b8ff6ac` is the one to watch: it changes power-on behaviour for every
+   machine, FM-7 included.
+
+   (The pitch and joystick tests that used to head this list were both settled
+   on hardware in `bb10370` — PSG tone 234.5 Hz vs 234.65 predicted, keep
+   `378fee6`; joystick works from both pads, the dead pad was MiSTer player
+   assignment. Neither is a core defect.)
 2. **The gate lost an AV row's worth of coverage.** `av-kohakuiro`'s reference
    was a picture of the dead palette; the corrected render is a black screen
    that matches 77AVEMU exactly and tests almost nothing. Replace it with a
@@ -78,10 +78,13 @@ These are on `alanswx/fdc-d77-support` and **cannot be settled in simulation** �
 they are the glitch-domain and listening classes. `HARDWARE-HANDOFF.md` carries
 the FPGA side's own log and the exact procedures.
 
+(`378fee6` and `71c00e6` were settled on hardware in `bb10370`: the controlled
+tone measured 234.5 Hz against this side's predicted 234.65, so the PSG commit
+stays; and the joystick works from both pads -- the dead pad was MiSTer player
+assignment, not the core.)
+
 | commit | what | why only hardware |
 |---|---|---|
-| `378fee6` | PSG was an octave flat; chip clock now machine-dependent | **the pitch test is the whole point.** 240 Hz = right, 117 Hz = revert this one commit |
-| `71c00e6` | `SOUND.v`'s four strobes filtered to 3 stages | Verilator gives one clean edge per access either way, so sim is byte-identical before and after. The joystick test is the only evidence there is |
 | `648efbd` | YM2203 interrupt delivered, `EXTIRQ` driven | changes interrupt delivery on every AV title |
 | `6356000` | every AV write no longer clobbers the FM-7 page | changes AV memory behaviour wholesale; an FPGA build older than this will not match anything reported here |
 | `bad101e` | sub I/O aperture halt gate un-inverted | as above |
