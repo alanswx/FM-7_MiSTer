@@ -6,6 +6,45 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Hardware verdict on the 41-commit batch: built, deployed, all four tests pass
+
+Built at `692d368` in 9 minutes: **0 errors, 23,223/41,910 ALMs (55%), 516/553
+RAM blocks (93%), every clock at positive slack (TNS 0.000)**. Deployed to the
+DE10-Nano (previous rbf kept as `_Computer/FM-7_prev.rbf.bak`). Answers to the
+four questions below, in order:
+
+1. **F-BASIC and DOS both boot.** Cold boot to the F-BASIC banner in normal
+   time; the disk-BASIC image reaches `DISK VERSION / How many disk drives ?`.
+   Commit 1's BUSY-at-reset change did not bite.
+2. **The FM77AV demo disk plays all the way through.** Not just the logo: the
+   4096-colour gradient with the typed intro, the wireframe line-drawing
+   scenes (New Horizons spacecraft and the rest), through to `'DUCKY IS BACK'
+   END / THANK YOU FOR WATCHING!`. This rendered nothing before commit 2.
+   (The disk used here is CaptainYS's own published copy,
+   `2019_FM77AVDEMO_CaptainYS_V2.D77` from 77AVEMU's `diskimage/`, now in
+   `_hwtest/` on the MiSTer as `46-AVDemo.mgl`.)
+3. **Woody Poco draws its full title screen** — sky, mountains, trees, logo,
+   both sprites, `HIT A SPACE KEY`, copyright — where it was a two-colour
+   black screen before commit 3. No stray-tile corruption anywhere.
+4. **PSG pitch unchanged and the joystick moves a real game.** Controlled tone
+   measures **234.38 Hz** (odd harmonics at 703/1172 Hz — a clean square),
+   against 234.5 Hz on the previous build and 234.65 Hz predicted. And the
+   full end-to-end joystick demonstration finally exists: on Woody Poco's
+   NORMAL/BEGINNER select screen, virtual-pad *right* moved the selection
+   halo to the other sprite, trigger A accepted it, and in-game a 4-second
+   *right* hold walked the character from the left edge to the first rock.
+   A gameport-polling title, on hardware, driven by the stick.
+
+Thexder's title screen is structurally intact (62,475 bytes, logo and
+asteroid landscape correct) — the expected animation-phase drift only.
+
+One observation, not scored as a failure: Woody Poco's in-game playfield
+around the character is black where terrain might be expected (HUD, sprites
+and scrolling all correct). No sim reference exists for its in-game screen,
+so this is recorded for the next AV rendering pass rather than attributed.
+
+---
+
 # For the FPGA side: 41 commits, 5 of them RTL, none ever built
 
 `6356000` is the last commit this side knows to have been on hardware. Head is
