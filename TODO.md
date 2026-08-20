@@ -89,6 +89,7 @@ the FPGA side's own log and the exact procedures.
 | `2fdaa08` | `$fd93` bit 0 reports the boot-RAM latch | changes what boot RAM does on every machine |
 | `aa6e701` | VRAM aperture gated on the sub CPU being halted | closes a path that was open; blocks nothing measurable in sim, so only hardware can show a title that relied on it |
 | `b8ff6ac` | `$fd13`'s sub reset sets BUSY, and so does power-on | **changes power-on behaviour for every machine, FM-7 included.** Thexder's counters moved in sim; anything subtler will only show here |
+| `c2fc867` | sub I/O decoder no longer aliases over `$D410-$D4FF`/`$D500-$D7FF` | touches **every** sub-CPU I/O access on the AV, and the outputs it gates are side effects (CRT on/off, attention FIRQ), not just a read mux |
 
 Earlier commits (`e699e9d`, `77c2780`, `b1aff78`, `777d8d4`) covering the
 `$fd02`/`$fd03`/`$fd04` interrupt paths were confirmed working on hardware —
