@@ -74,7 +74,7 @@ assign ch_sel  = chtr(up_ch);
 assign out_sel = chtr(ch);
 
 integer i;
-/* verilator lint_off WIDTHEXPAND */
+/* verilator lint_off WIDTH */
 always @* begin
     ch_IV = ch;
     if( NUM_CH==6 )
@@ -88,7 +88,7 @@ always @* begin
             default: ch_IV = 0;
         endcase
 end
-/* verilator lint_on WIDTHEXPAND */
+/* verilator lint_on WIDTH */
 
 always @(posedge clk) if(cen) begin
     block <= reg_block[out_sel];

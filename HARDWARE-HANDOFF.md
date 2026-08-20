@@ -6,6 +6,108 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+## Joystick closed, sound closed, Thexder explained — hardware at `4fcecb8`
+
+Deployed build unchanged (`4fcecb8`: 56% ALMs, 516/553 RAM blocks, zero
+negative-slack paths). The test harness this section was driven with now lives
+in `tools/hw/` — see its README for the scripts and the traps.
+
+### The joystick path works end to end; the "dead pad" was MiSTer player assignment
+
+The F-BASIC probe (`docs/IO_MAP.md`, select via reg 15, read reg 14), run four
+ways on hardware with a virtual pad (`tools/hw/vjoyd.py`, created before core
+load) and the real Xbox 360 pad together:
+
+| probe | virtual pad held up+A | real Xbox pad held up+A |
+|---|---|---|
+| stick 0 (`reg15=32`) | **222** | 255 |
+| stick 1 (`reg15=80`) | 255 | **238** |
+
+Every value is correct: 222 = up + trigger 2 (the vjoy's `a` lands on
+`joy[5]`), 238 = up + trigger 1, 255 = nothing selected/pressed. **Both
+`joystick_0` and `joystick_1` reach the PSG and read back correctly, from both
+pads.** The earlier "real pad reads 255" result was measured on stick 0 only:
+MiSTer had assigned the virtual pad to `joystick_0` and the real pad to
+`joystick_1`. Nothing in the core was ever wrong, and the suspected framework
+`joy1` wiring defect is retired too — stick 1 demonstrably carries the real
+pad's bits.
+
+Untested but likely: with `vjoyd` killed and the core reloaded, the real pad
+should land on `joystick_0`. There are still no FM-7 files in
+`/media/fat/config/`, so nothing about this assignment is sticky.
+
+### Sound: keep `378fee6` — the controlled tone lands where the sim predicted
+
+The `docs/IO_MAP.md` controlled tone (TP=$0140, channel A), captured off the
+HDMI card and measured: **hardware 234.5 Hz, sim predicted 234.65 Hz** — 0.06%
+apart. Against the 240 Hz ideal the ratio is 0.977, the known 2.3%-flat
+`CORE_CLK_1_2 = 39` residual (separate fractional-divider job). Against the
+117 Hz revert threshold the ratio is 1.999: **do not revert.** The earlier
+"156 vs 117 Hz" alarm was passage ambiguity — two notes a fourth apart.
+
+### Thexder cannot start, and now we know why: it is the dump, not the core
+
+Closing the open question from the sections below. The evidence, in order:
+
+- The sim side had already shown Thexder **never reads PSG registers 14/15**
+  (1686 writes, all tone/noise/envelope/amplitude), so the joystick was never
+  the start mechanism — and the joystick is now proven working anyway.
+- Our image is `Thexder [b].d77`, and the Neo Kobe collection's only FM-7
+  Thexder is **byte-identical to it** (md5 `2540e4ef…`). Every known dump of
+  this title is the same marked-bad image.
+- That image carries a visible **copy-protection track**: track 3 (cyl 1,
+  head 1) holds a single 256-byte sector whose ID fields are garbage
+  (`C=$C8 H=$BA R=$E9 N=$F9`), flagged deleted-DAM with d77 status `$B0`
+  (data CRC error), its data all `$4E` gap filler. Every other track is a
+  clean 16×256 layout.
+- CaptainYS documents the rest in the 77AVEMU readme: **"real Thexder does
+  not boot on start up"** on his emulator either; circulating cracked copies
+  use a loader by "J.N." (they beep at startup), and his "played first 3
+  stages" result was on such a copy.
+
+So: attract → credits → attract on hardware, on 77AVEMU, and in our sim is
+what this dump family does everywhere. It is **not a joystick problem and not
+an FM-7_MiSTer defect**; no keyboard or stick input can start this image. The
+path that could change that is a fully-cracked (J.N.-loader) dump.
+`rtl/wd1793.sv` already models what a D77 can carry — the per-sector status
+byte becomes `s_crcerr` on reads, and READ ADDRESS returns the *recorded* ID
+bytes through the d77 sector table, bogus values included — so the parts of
+the protection a D77 can express are in place; what the format cannot
+represent is the unstable-bit behaviour these schemes also relied on, which
+is presumably why every dump of the protected original carries `[b]`.
+
+### Which games actually poll a joystick, and what they look like on hardware
+
+For future in-game tests, from the sim side's reference analysis: 20 FM77AV
+titles poll the gameport (list in `docs/TESTING.md`), and on the FM-7 side
+only Wibarm and Topple Zip are plausible pollers (Death Force and Space
+Harrier from the static `$fd0e`-read list are AV disks). Hardware status of
+the ones tried, all from the Neo Kobe zip on the MiSTer, MGLs in
+`/media/fat/games/fm-7/_hwtest/`:
+
+| title | machine | on hardware at `4fcecb8` |
+|---|---|---|
+| Topple Zip | FM-7 | renders cleanly, auto-runs an attract demo; demo motion confounds stick attribution, start key unknown |
+| The Tower of Druaga | FM77AV | boots (even in FM-7 mode, to a title card), AV mode reaches garbled "HIT KEY TO START" over near-black — AV artifact class, useless for a visual stick test |
+| Dragon Buster | FM77AV | renders full scenes with heavy artifacts, attract auto-plays; same confound |
+| Wibarm | FM-7 | **most promising**: clean title, keys advance it, then asks for its data disk on drive 1 — a two-disk MGL (`44-Wibarm2.mgl`) is in place, test unfinished |
+
+Setting `Machine: FM77AV` for a `load_core` MGL has to be done by hand each
+time: the OSD row is 6 downs from the top on this build, and nothing persists
+because no config file is ever written.
+
+### Two Verilator-version fixes so `vsim` builds on this side again
+
+Current head did not build under this side's Verilator 4.204 (the sim side
+runs 5.x): `jt12_reg_ch.v` used the lint code `WIDTHEXPAND` (unknown before
+Verilator 5, now `WIDTH`, which both accept), and `sim_main.cpp` included
+`Vemu___024root.h` unconditionally — 4.204 does not generate that header, the
+internals live on `Vemu` itself. Both are now version-proof (`__has_include`
+probe + `VL_ROOT()`/`decltype` in `sim_main.cpp`). Same class as the
+`--no-timing` conditional already in `vsim/Makefile`.
+
+---
+
 ## Answer from the sim side at `048f2cc` — both questions closed
 
 ### The joystick: **no JOYSEL. Thexder never polls the stick.**

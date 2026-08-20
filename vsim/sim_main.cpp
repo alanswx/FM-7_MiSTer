@@ -16,7 +16,17 @@
 
 #include <verilated.h>
 #include "Vemu.h"
+// Verilator >= 4.21 moves the design internals onto a separate root class
+// reached via top->rootp; 4.204 (the hardware side's Verilator) keeps them as
+// members of Vemu itself and generates no Vemu___024root.h at all. Probe for
+// the header so both sides build; VL_ROOT() picks the object the
+// emu__DOT__... members live on.
+#if __has_include("Vemu___024root.h")
 #include "Vemu___024root.h"
+#define VL_ROOT(t) ((t)->rootp)
+#else
+#define VL_ROOT(t) (t)
+#endif
 #if VM_TRACE_VCD
 #include <verilated_vcd_c.h>
 #endif
@@ -628,7 +638,7 @@ static void kanji_check(void) {
 	static unsigned char img[131072];
 	size_t n = fread(img, 1, sizeof(img), f);
 	fclose(f);
-	const auto *r = top->rootp;
+	const auto *r = VL_ROOT(top);
 	int bad = 0, checked = 0;
 	for (unsigned g = 0; g < 65536; g += 4099) {          // a scattered sample
 		const unsigned byte0 = (g << 1) & 0x1ffff;
@@ -650,8 +660,12 @@ static void kanji_check(void) {
 static void dump_av_vram(int frame) {
 	const char *vramOut = getenv("FM7_VRAM_DUMP");
 	if (!opt_machine_av || !vramOut) return;
-	const auto *r = top->rootp;
-	const VlUnpacked<CData/*7:0*/, 8192> *ram[3][4] = {
+	const auto *r = VL_ROOT(top);
+	// decltype rather than VlUnpacked<CData, 8192>* by name: 4.204 generates a
+	// plain C array here, so the concrete type differs between versions while
+	// (*p)[i] indexes both.
+	typedef decltype(&r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__blue__DOT__ram0__DOT__ram) vram_ptr;
+	const vram_ptr ram[3][4] = {
 		{&r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__blue__DOT__ram0__DOT__ram,
 		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__blue__DOT__ram1__DOT__ram,
 		 &r->emu__DOT__u_core__DOT__u_CRTRAM__DOT__blue__DOT__ram2__DOT__ram,
