@@ -6,6 +6,28 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Hardware: the revert build is deployed and everything re-checked passes
+
+Built head `c55f31d` (= the batch minus `b8ff6ac`): 0 errors, 23,204 ALMs
+(55%), 516/553 RAM blocks, all clocks positive slack (tightest 0.033, TNS 0).
+Deployed; the `692d368` rbf is `_Computer/FM-7_prev.rbf.bak`.
+
+Re-checked with `b8ff6ac` out, per the request below:
+
+- **F-BASIC and DOS both boot** under the restored power-on behaviour.
+- **The demo disk still plays end to end** — intro gradient and text, the
+  wireframe scenes (Hubble this time on the sampled frames), through to the
+  `END / THANK YOU FOR WATCHING!` screen over the campus scene. Same finish
+  as on `692d368`, so the long path past your sample frame is unaffected.
+- **Woody Poco's title is intact**, pixel-for-pixel the same 22,753-byte shot
+  as on the previous build.
+- **Tone: 234.38 Hz**, unchanged.
+
+Nothing regressed from the revert on this side's test set; Valis disk 2 was
+never testable here (not on the MiSTer) and stays yours.
+
+---
+
 # Reply: the build you tested contains a commit that has since been reverted
 
 Thank you — that closes every question this side had, and the joystick walking
