@@ -573,6 +573,26 @@ confident wrong answer at least once:
     also half the wall clock — but run the full set after anything that could plausibly
     unblank a title, or wins like that one stay invisible.
 
+39. **archive.org's `_djvu.txt` for a Japanese book is often ENGLISH OCR run over Japanese
+    pages.** It ships beside the PDF, looks like a text layer and greps like one, so it is
+    easy to trust. It is close to worthless: 330 pages of FM-7/8活用研究 gave 1.4 MB in
+    which the prose is shattered into per-character fragments. Same page, same scan:
+
+        archive.org (eng OCR):  PE EE 所 / FM- フ / 日 62fkp オ / に に 還 叶 拉
+        re-OCR (jpn+eng):       エディタ・アセンブラ マシン語ダンプ・リスト
+
+    `tools/reocr.sh` re-runs it with Japanese data, resumably, one page at a time. Do that
+    before concluding a book does not cover something.
+40. **Even after a good OCR, grep the pattern you have and not the one you want.** OCR
+    swaps `0/O/Q/D`, `1/l/I`, `5/S`, `8/B` and inserts spaces inside tokens. On the FM-7/8
+    scan, plain `grep FD05` returns **1** hit; `tools/ocrgrep.py FD05` returns **103** —
+    the rest are on the page as `FDO5`, `FDQ5`, `FDQO5`, `FD0S`, `7FFDOS`. Use `ocrgrep.py`,
+    and treat a zero from it as "look at the rendered page", not as absence.
+41. **OCR of a schematic is worthless in any language** — the text is tiny, rotated and
+    scattered among the symbols. Render and *look*:
+    `pdftoppm -f 300 -l 300 -r 110 -png book.pdf /tmp/p`. 77AVEMU cites this book's
+    schematics by page number (`pp.294`, `pp.300`), and those pages are drawings, not text.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
