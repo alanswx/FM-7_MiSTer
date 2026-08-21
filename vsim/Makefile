@@ -187,6 +187,20 @@ ifeq ($(DEBUG_ACK),1)
 V_DEFINE += +define+DEBUG_ACK
 endif
 
+# `make DEBUG_SCROLL=1` prints one line per change of either page's raster
+# offset, from rtl/MB60H010.v:
+#
+#   SCROLL page0=<hhhh> page1=<hhhh>  active=<n> display=<n>
+#
+# The AV keeps a scroll offset PER PAGE ($D40E/$D40F select by $D430 bit 5), and
+# in 320-colour mode blocks 0/1 read at page 0's while blocks 2/3 read at page
+# 1's -- so the two halves of every 12-bit colour index can come from different
+# addresses. Written to check whether a title that scrolls one page only is
+# being served mismatched halves.
+ifeq ($(DEBUG_SCROLL),1)
+V_DEFINE += +define+DEBUG_SCROLL
+endif
+
 UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S), Darwin)

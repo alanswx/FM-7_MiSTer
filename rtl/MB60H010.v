@@ -61,6 +61,17 @@ wire [13:0] VOFFSET1 = { SRH[1][5:0], SRL[1][7:5], 5'd0 };
 wire [13:0] VOFFSET = AV_ACTIVE_PAGE ? VOFFSET1 : VOFFSET0;
 wire [13:0] DISPLAY_OFFSET = AV_DISPLAY_PAGE ? VOFFSET1 : VOFFSET0;
 assign VRAM_OFFSET = VOFFSET;
+`ifdef DEBUG_SCROLL
+reg [13:0] o0_d = 14'h3fff, o1_d = 14'h3fff;
+reg ap_d = 1'bx, dp_d = 1'bx;
+always @(posedge CLKSYS) begin
+  if (VOFFSET0 != o0_d || VOFFSET1 != o1_d || AV_ACTIVE_PAGE != ap_d || AV_DISPLAY_PAGE != dp_d) begin
+    $display("SCROLL page0=%04x page1=%04x  active=%0d display=%0d",
+             VOFFSET0, VOFFSET1, AV_ACTIVE_PAGE, AV_DISPLAY_PAGE);
+    o0_d <= VOFFSET0; o1_d <= VOFFSET1; ap_d <= AV_ACTIVE_PAGE; dp_d <= AV_DISPLAY_PAGE;
+  end
+end
+`endif
 assign VRAM_OFFSET0 = VOFFSET0;
 assign VRAM_OFFSET1 = VOFFSET1;
 // 320x200 keeps the 15.75 kHz line timing but presents each logical pixel
