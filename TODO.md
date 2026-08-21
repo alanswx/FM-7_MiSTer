@@ -711,17 +711,42 @@ does not progress, and do not look at the video path.
   below.)
 * **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
 
-### `$D500-$D7FF` is hidden RAM on the AV and this core does not implement it
+### Woody Poco's in-game playfield: partly explained, no fault yet proven
 
-Fixed in `c2fc867`: the sub I/O decoder no longer *aliases* into that range, so
-a read there has no I/O side effect. The RAM itself is still missing -- CSP
-gives the AV 768 bytes there (`fm7_display.h:264`, `display.cpp:2628,3169`) and
-this core has no storage for it, so a read returns whatever the sub read mux
-falls through to and a write is dropped.
+Reported from hardware in `b50c1de` as "black where terrain might be expected".
+Reproduced here by driving the mode select with `--joystick 2000:a:30
+--joystick 2200:right:400`.
 
-Nothing in hand is known to *use* it as memory; the FM77AV demo disk only read
-`$D7F4` once, and what mattered was the side effect, not the value. Recorded
-because it is a real gap with a citation.
+**It is not blank.** At frame 2700 it renders 55.6% coverage in 38 colours --
+sky, mountain edges, the character sprite and the HUD. The frame-2500 sample
+that started this (20.0%, 12 colours) was simply too early; the screen is still
+being drawn. Both the hardware note and this side's first reading were of a
+half-drawn frame.
+
+What remains is large unfilled black regions with their outlines present. That
+looks like fills failing, but **nothing is proven**, and there is no reference:
+77AVEMU has no in-game render of this title, so "terrain might be expected" is
+an observer's guess, not a comparison. It may be the correct early-game screen.
+
+**Eliminated, with measurements:**
+
+* *Plane-to-colour-bit mapping.* Page 0 carries bits 3,2 of each channel and
+  page 1 bits 1,0 (chibiakumas 6809/fm7, and FM-Techknow's palette section).
+  `CRTRAM.v`'s `Q3=blk0 Q2=blk1 Q1=blk2 Q0=blk3` matches exactly.
+* *Analog palette contents.* All 123170 `$fd30-$fd34` writes replayed from the
+  trace and diffed against the RTL's palette RAM: **0 mismatches in 4096
+  entries**. The game itself writes the playfield's indices black.
+* *VRAM addressing.* The data sits exactly where the raster reads it.
+* *Page selection.* `$D430` b5 toggles as expected; display page stays 0, which
+  is right -- in 320 mode both pages are read simultaneously.
+* *The `$D500-$D7FF` work area.* Implemented now (see below) and it changes
+  nothing here: this title's sub CPU is halted 99.3% of cycles, runs 35
+  instructions/frame and never touches that range. It drives the ALU from the
+  main side through the MMR aperture, so the sub ROM's PAINT never runs.
+
+Next: the fills are done by the ALU from the main CPU, so if there is a fault it
+is in that path, not in the sub ROM. Getting a reference for this screen -- even
+a photograph of real hardware -- would be worth more than more tracing.
 
 ### Sub RAM and the sub monitor ROM are reachable through MMR with the sub running
 

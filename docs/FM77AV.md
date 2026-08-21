@@ -253,10 +253,15 @@ by the rotating `$D422/$D423` stipple.
 - `subsyscg.rom` is four 2 KB font banks, not a monitor: bank = `$D430[1:0]`
   (0 katakana, 1 hiragana, 2 ROM1, 3 ROM2 — 77AVEMU `fm77avmemory.h:22,41`,
   `fm77avmemory.cpp:49,1047-1060`).
-- `$D500-$D7FF` becomes 768 bytes of hidden RAM (CSP `fm7_display.h:264`,
-  `display.cpp:2628,3169`); on the FM-7 it is part of the MMIO region. This core
-  no longer decodes it as I/O, but **does not yet implement the RAM** — see
-  `TODO.md`.
+- `$D500-$D7FF` becomes 768 bytes of sub-system work RAM (CSP `fm7_display.h:264`,
+  `display.cpp:2628,3169`); on the FM-7 it is part of the MMIO region. FM-Techknow
+  p.102 §4-5-3 lists it as area (2) a user program may borrow and states plainly
+  that **"on the FM-7 this area has no RAM fitted, so it cannot be used"** — the
+  printed confirmation that it is AV-only. It is the sub ROM's **PAINT scratch**
+  (p.88: PAINT normally uses the auxiliary work area but for some operations uses
+  `$D500-$D7FF`), and the SPECIAL `GET DOMAIN` sub-command can reserve part of it
+  for the caller (p.107-108). Implemented here: `AV_SUBRAM_SEL` covers it, backed
+  by the same `av_ram_sub` dpram that holds `$C000-$D37F`.
 - Sub I/O aliases every **64** bytes on base AV (`& $3F`) vs 16 on the FM-7 (`& $0F`)
   — CSP `display.cpp:2753-2759`. The ALU block needs address bits 5:4 decoded, and
   `$D500-$D7FF` must not decode as I/O at all. **Both are side-effect decodes, not

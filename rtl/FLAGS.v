@@ -97,9 +97,21 @@ reg sirqclr_ephase;
 always @(posedge CLKSYS) begin
   scrtsw_sr <= { scrtsw_sr[1:0], SCRTSWn };
   sled_sr   <= { sled_sr[1:0],   SLEDn   };
+  // $D408 (CRT on/off) and $D40D (insert-mode LED) both come up OFF.
+  //
+  // FM-Techknow appendix B, printed p.483, sub-system I/O address map:
+  //
+  //   D408  CRT の ON-OFF        R: ON   W: OFF   rst: OFF
+  //   D40D  インサートモード LED  R: ON   W: OFF   rst: OFF
+  //
+  // -- a primary Fujitsu source, not an emulator's behaviour. This reset to 1
+  // (= ON) instead, which is only invisible because the sub monitor's init
+  // reads $D408 and turns the CRT on itself early in every boot (2 reads in
+  // the first 55 frames, measured). It would show as a flash of whatever VRAM
+  // powered up holding, before the monitor gets there.
   if (~SRESETn) begin
-    m56_5 <= 1'b1;
-    m56_9 <= 1'b1;
+    m56_5 <= 1'b0;
+    m56_9 <= 1'b0;
   end
   else begin
     // filtered rising edge, matching the original `posedge SCRTSWn`/`SLEDn`

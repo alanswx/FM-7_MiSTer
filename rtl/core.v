@@ -101,9 +101,27 @@ wire       AV_SUBMON_STATUS;
 wire [7:0] AV_KBD_dout;
 wire       AV_KBD_sel;
 wire [7:0] AV_SUBRAM_dout;
+// $D500-$D7FF is 768 bytes of sub-system work RAM, and it is AV-only.
+//
+// FM-Techknow p.102 (PDF 102) SS4-5-3 lists the sub-CPU areas a user program may
+// borrow, and gives this one as (2) work area $D500-$D7FF (768 bytes), noting
+// plainly: "however, on the FM-7 this area has no RAM fitted, so it cannot be
+// used." CSP agrees (fm7_display.h:264, display.cpp:2628,3169).
+//
+// It is the sub ROM's PAINT scratch (TK p.88: the PAINT routine normally uses
+// the auxiliary work area but for some operations uses $D500-$D7FF), which is
+// why it is not decoration: sub command $18 = PAINT fills a bounded region, and
+// with no RAM here it has nowhere to keep its state. Woody Poco draws its
+// playfield outlines with LINE and fills them with PAINT -- the outlines, sky
+// and sprites appeared while every filled region stayed black.
+//
+// The address arithmetic below already maps $Dxxx to physical $1Dxxx, and
+// av_ram_sub is an 8 KB dpram over $1C000-$1DFFF, so the storage exists; only
+// the select excluded it. $D380-$D4FF stays out: shared RAM and sub I/O.
 wire       AV_SUBRAM_SEL = machine_av &&
                            (SADDRBUS >= 16'hc000) &&
-                           (SADDRBUS < 16'hd380);
+                           ((SADDRBUS < 16'hd380) ||
+                            ((SADDRBUS >= 16'hd500) && (SADDRBUS < 16'hd800)));
 wire       AV_SUBRAM_WRITE = AV_SUBRAM_SEL && ~SWTQEn;
 // AVMEM's port B is indexed from physical $1C000: C000-CFFF occupies the
 // first 4 KB and D000-D37F the following 896 bytes. Do not derive this by
