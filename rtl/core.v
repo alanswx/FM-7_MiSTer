@@ -132,6 +132,7 @@ wire [12:0] AV_SUBRAM_ADDR = (SADDRBUS[15:12] == 4'hd) ?
                              {1'b0, SADDRBUS[11:0]};
 wire       AV_DISPLAY_PAGE;
 wire       AV_ACTIVE_PAGE;
+wire       AV_OFFSET_FINE;
 wire       AV_VRAM_BANK;
 wire [7:0] CRTRAMDATA;
 wire [7:0] SKDATA;
@@ -1001,6 +1002,7 @@ SMEM u_SMEM(
   .av_d430_out  ( AV_D430_dout ),
   .av_display_page ( AV_DISPLAY_PAGE ),
   .av_active_page  ( AV_ACTIVE_PAGE  ),
+  .av_offset_fine  ( AV_OFFSET_FINE  ),
   .av_vram_bank    ( AV_VRAM_BANK    ),
   .av_nmi_mask     ( AV_NMI_MASK     )
 );
@@ -1199,9 +1201,13 @@ MB60H010 u_MB60H010(
   .AV_MODE_320 ( AV_MODE_320 ),
   .AV_DISPLAY_PAGE ( AV_DISPLAY_PAGE ),
   .AV_ACTIVE_PAGE  ( AV_ACTIVE_PAGE  ),
+  .AV_OFFSET_FINE  ( AV_OFFSET_FINE  ),
   .SREGLn    ( SREGLn    ),
   .SREGHn    ( SREGHn    ),
   .SWTQEn    ( SWTQEn    ),
+  .SREGADDR  ( SREGADDR ),
+  .SREGDIN   ( SREGDIN  ),
+  .SREGWEn   ( SREGWEn  ),
   .SADRSEL   ( SADRSEL   ),
   .SFTCLK    ( SFTCLK    ),
   .SCLK1     ( SCLK1     ),

@@ -20,9 +20,17 @@ module MB60H010(
   input AV_MODE_320,
   input AV_DISPLAY_PAGE,
   input AV_ACTIVE_PAGE,
+  input AV_OFFSET_FINE,
   input SREGLn,
   input SREGHn,
   input SWTQEn,
+  // The sub REGISTER bus. Identical to SADDRBUS/SDATA/SWTQEn while the sub
+  // CPU is running, but when a title halts the sub and drives these
+  // registers through the main CPU's MMR aperture it is the only place the
+  // access appears at all. $D430's latch in SMEM.v already uses it.
+  input [15:0] SREGADDR,
+  input  [7:0] SREGDIN,
+  input        SREGWEn,
   input SADRSEL,
   output SFTCLK, // shift register clock
   output SCLK1,
@@ -56,8 +64,14 @@ clk_en #(CORE_CLK_16) u_ck_en(.ref_clk(CLKSYS), .clk(_16128KHz));
 
 reg [7:0] SRL [0:1];
 reg [7:0] SRH [0:1];
-wire [13:0] VOFFSET0 = { SRH[0][5:0], SRL[0][7:5], 5'd0 };
-wire [13:0] VOFFSET1 = { SRH[1][5:0], SRL[1][7:5], 5'd0 };
+// $D430 b2 selects the UNMASKED offset: 77AVEMU swaps VRAMOffsetMask between
+// 0xffff and 0xffe0 (fm77avcrtc.cpp:271-282), so with the bit set the low 5
+// bits of SRL are live and the screen scrolls a byte at a time instead of 32.
+// Woody Poco sets b2 in its first $D430 write and never clears it.
+wire [13:0] VOFFSET0 = AV_OFFSET_FINE ? { SRH[0][5:0], SRL[0][7:0] }
+                                      : { SRH[0][5:0], SRL[0][7:5], 5'd0 };
+wire [13:0] VOFFSET1 = AV_OFFSET_FINE ? { SRH[1][5:0], SRL[1][7:0] }
+                                      : { SRH[1][5:0], SRL[1][7:5], 5'd0 };
 wire [13:0] VOFFSET = AV_ACTIVE_PAGE ? VOFFSET1 : VOFFSET0;
 wire [13:0] DISPLAY_OFFSET = AV_DISPLAY_PAGE ? VOFFSET1 : VOFFSET0;
 assign VRAM_OFFSET = VOFFSET;
@@ -91,8 +105,15 @@ assign SFTCLK = _16128KHz;
 // edge; the sub's E is far slower than the 48 MHz CLKSYS, so this is still well
 // inside the access while no longer sampling at the instant the decode settles.
 reg [2:0] offset_lo_sr, offset_hi_sr;
-wire offset_lo_wrn = ~((SADDRBUS == 16'hd40f) && ~SWTQEn);
-wire offset_hi_wrn = ~((SADDRBUS == 16'hd40e) && ~SWTQEn);
+// Decoded off SREGADDR/SREGWEn, not SADDRBUS/SWTQEn. Woody Poco halts the
+// sub CPU and writes the scroll offset 83 times through the MMR aperture,
+// SRL taking every value $00-$ff; against the sub bus the halted CPU never
+// asserts SWTQEn, so every one of those writes was dropped and VOFFSET sat
+// at 0000 for the whole run. The screen therefore never scrolled, which is
+// why that title's playfield matches the reference write-for-write until
+// the frame the player first walks and diverges from there.
+wire offset_lo_wrn = ~((SREGADDR == 16'hd40f) && ~SREGWEn);
+wire offset_hi_wrn = ~((SREGADDR == 16'hd40e) && ~SREGWEn);
 always @(posedge CLKSYS) begin
   if (~SRESETn) begin
     offset_lo_sr <= 3'b111;
@@ -105,8 +126,8 @@ always @(posedge CLKSYS) begin
   else begin
     offset_lo_sr <= { offset_lo_sr[1:0], offset_lo_wrn };
     offset_hi_sr <= { offset_hi_sr[1:0], offset_hi_wrn };
-    if (offset_lo_sr[2] & ~offset_lo_sr[1]) SRL[AV_ACTIVE_PAGE] <= SDATA;
-    if (offset_hi_sr[2] & ~offset_hi_sr[1]) SRH[AV_ACTIVE_PAGE] <= SDATA;
+    if (offset_lo_sr[2] & ~offset_lo_sr[1]) SRL[AV_ACTIVE_PAGE] <= SREGDIN;
+    if (offset_hi_sr[2] & ~offset_hi_sr[1]) SRH[AV_ACTIVE_PAGE] <= SREGDIN;
   end
 end
 

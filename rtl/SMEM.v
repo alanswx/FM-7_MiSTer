@@ -26,7 +26,8 @@ module SMEM(
   output av_display_page,
   output av_active_page,
   output av_vram_bank,
-  output av_nmi_mask
+  output av_nmi_mask,
+  output av_offset_fine
 );
 
 wire [7:0] m153_q;
@@ -58,6 +59,11 @@ assign av_vram_bank = av_d430_reg[5];
 // leaves it 0 = enabled, matching CSP's `nmi_enable = true` and 77AVEMU's
 // `state.subNMIMask=false`.
 assign av_nmi_mask = av_d430_reg[7];
+// $D430 b2 = unmasked VRAM offset. 77AVEMU:
+// `if(0!=(data&4)) VRAMOffsetMask=0xffff; else 0xffe0` (fm77avcrtc.cpp:271-282).
+// With the bit set the scroll offset's low 5 bits are live -- fine scroll
+// rather than 32-byte steps.
+assign av_offset_fine = av_d430_reg[2];
 
 // $D430 is a write latch on the sub-system register bus.  SREGADDR/SREGWEn are
 // decode outputs rather than a clock, and the address can already be moving to
