@@ -20,6 +20,17 @@ analog palette had never accepted a write in its life. Ys boots and draws, and
 four titles that rendered nothing now render game art (Deep Forest, both Luxsor
 disks, Psy-O-Blade).
 
+**Woody Poco's in-game playfield now matches 77AVEMU on 97.3% of pixels**
+(93.8% coverage in 39 colours against the reference's 93.7%/39, up from
+55.7%/37 and 58.73%). Two faults in the same mechanism: `$D40E`/`$D40F` latched
+off the sub CPU's bus, so a title that halts the sub and scrolls through the
+MMR aperture had every scroll write dropped; and `$D430` b2, the unmasked
+offset, was not implemented, so the offsets that did land were rounded to
+32-byte steps. Fixing only the first moves the number to 60.27%. Luxsor disk 2
+came with it, 65.8% -> 81.8%, its reference's coverage exactly -- it had been
+getting the scroll registers by accident from the ALU aliasing that `c2fc867`
+removed.
+
 **It fits and closes timing.** 23,293 / 41,910 ALMs (56%), 516 / 553 M10K
 (93%), positive slack in all five corners, `output_files/FM-7_MiSTer.rbf` built
 with `tools/quartus-build.sh all`. **37 M10K blocks is the whole remaining
@@ -33,30 +44,12 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
 
 **Open, in priority order:**
 
-0. **Woody Poco's in-game playfield is black around the character** — reported
-   from hardware in `b50c1de`, with the HUD, sprites and scrolling all correct.
-   Its title screen is 100.00% against the reference, so this is past anything
-   the sweep samples, and 77AVEMU has no in-game render here to compare with.
-   Reproduce it in simulation first (drive the mode select with `--joystick`,
-   then hold right) — there is no measurement of it on this side at all yet.
-
 0. **World Golf II disk 1 now renders here and NOT on 77AVEMU.** Its title screen
    — kana logo, golfer, mountains — appears at 42.4% coverage in 8 colours since
    `c2fc867`, where the reference draws a black screen. Nobody has checked which
    machine is right. Worth an hour: if this core is correct it is the first AV
    title where the reference is the one that fails, and `refs/local`'s renders
    stop being a safe target for the whole blank half of the set.
-
-0. **Luxsor disk 2 regressed on `c2fc867`** — 9.7% coverage / 12 colours down to
-   0.4% / 4. Both are far from the reference's 81.8% / 42, so this is a broken
-   title failing differently rather than a working one lost, but it is a real
-   regression and it is mine. The decode fix removes side effects Luxsor was
-   getting by accident from ALU writes aliasing onto `m87` — `SCRTSWn`,
-   `SBUSYSETn`, `SVRACSn` and the two scroll registers. `DEBUG_ACK=1` prints
-   `SBLOCK` lines for every access the gate newly rejects. Note the two builds
-   are byte-identical at frame 400 and only diverge later, and that the all-zero
-   digital palette in the run summary is a red herring: disk 2 is a 320-mode
-   title using the analog palette, and it reads that way in both builds.
 
 1. **A hardware build is 41 commits overdue, five of them RTL.** Nothing since
    `6356000` has ever been synthesized. `HARDWARE-HANDOFF.md` opens with the
@@ -711,43 +704,6 @@ does not progress, and do not look at the video path.
   below.)
 * **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
 
-### Woody Poco's in-game playfield: partly explained, no fault yet proven
-
-Reported from hardware in `b50c1de` as "black where terrain might be expected".
-Reproduced here by driving the mode select with `--joystick 2000:a:30
---joystick 2200:right:400`.
-
-**It is not blank.** At frame 2700 it renders 55.6% coverage in 38 colours --
-sky, mountain edges, the character sprite and the HUD. The frame-2500 sample
-that started this (20.0%, 12 colours) was simply too early; the screen is still
-being drawn. Both the hardware note and this side's first reading were of a
-half-drawn frame.
-
-What remains is large unfilled black regions with their outlines present. That
-looks like fills failing, but **nothing is proven**, and there is no reference:
-77AVEMU has no in-game render of this title, so "terrain might be expected" is
-an observer's guess, not a comparison. It may be the correct early-game screen.
-
-**Eliminated, with measurements:**
-
-* *Plane-to-colour-bit mapping.* Page 0 carries bits 3,2 of each channel and
-  page 1 bits 1,0 (chibiakumas 6809/fm7, and FM-Techknow's palette section).
-  `CRTRAM.v`'s `Q3=blk0 Q2=blk1 Q1=blk2 Q0=blk3` matches exactly.
-* *Analog palette contents.* All 123170 `$fd30-$fd34` writes replayed from the
-  trace and diffed against the RTL's palette RAM: **0 mismatches in 4096
-  entries**. The game itself writes the playfield's indices black.
-* *VRAM addressing.* The data sits exactly where the raster reads it.
-* *Page selection.* `$D430` b5 toggles as expected; display page stays 0, which
-  is right -- in 320 mode both pages are read simultaneously.
-* *The `$D500-$D7FF` work area.* Implemented now (see below) and it changes
-  nothing here: this title's sub CPU is halted 99.3% of cycles, runs 35
-  instructions/frame and never touches that range. It drives the ALU from the
-  main side through the MMR aperture, so the sub ROM's PAINT never runs.
-
-Next: the fills are done by the ALU from the main CPU, so if there is a fault it
-is in that path, not in the sub ROM. Getting a reference for this screen -- even
-a photograph of real hardware -- would be worth more than more tracing.
-
 ### Sub RAM and the sub monitor ROM are reachable through MMR with the sub running
 
 77AVEMU discards a main-CPU access to the whole of physical `$10000-$1FFFF`
@@ -763,40 +719,6 @@ which is what a correctly-observed handshake looks like. Finish the range when
 something turns up that needs it, and instrument the rejected accesses (as
 `DEBUG_AVDRAW=1` does) so "the gate blocks nothing" can be told apart from
 "the gate is not in the build".
-
-### The MMR aperture cannot READ the drawing ALU registers
-
-The same family as the trigger bug that rescued Woody Poco, found while
-auditing for others. `AVHDRAW.v` has a readback mux for `$D410`/`$D411`/
-`$D412`/`$D413`/`$D41B`, but `core.v:409` routes it into the **sub** CPU's read
-mux only (`SADDRBUS`). The main CPU's aperture read path
-(`AV_SUBIO_dout`, `core.v:617-621`) decodes `$D430`/`$D431`/`$D432` and returns
-`$FF` for everything else, so a main-CPU read of the ALU registers gets `$FF`.
-
-77AVEMU routes them: `MEMTYPE_SUBSYS_IO` in the fetch path calls
-`IORead(accessFrom, addr)` with no check of which CPU is asking
-(`fm77avmemory.cpp:759-760`), and the `$D413` case returns the live compare
-result.
-
-Measured, but **not yet known to break anything**: Woody Poco reads `$D412`
-through the aperture 41 times in the reference and gets `$00`; we return `$FF`.
-Its subsequent writes to `$D412` are `$00` on both sides, so the value is not
-carried into behaviour there. The register to worry about is `$D413`, the
-per-pixel COMPARE result -- a title doing hit-testing from the main side would
-read "every pixel matched" from us. No title in hand is known to do that; find
-one before changing this, and re-read trap 33 first.
-
-### `$D430` bit 2 -- the unmasked VRAM offset -- is not implemented
-
-77AVEMU: `if(0!=(data&4)) VRAMOffsetMask=0xffff; else 0xffe0`
-(`fm77avcrtc.cpp:271-282`). With the bit set the scroll offset's low 5 bits are
-live, i.e. fine scroll rather than 32-byte steps.
-
-`MB60H010.v` hardcodes the masked form -- `VOFFSET0 = {SRH[5:0], SRL[7:5], 5'd0}`
--- so a title that sets the bit and then writes a fine offset scrolls to the
-wrong address. Shounen Mike sets the bit but never writes the offset, so nothing
-in hand is known to need this yet. Recorded because it is a real divergence with
-a citation, not because a title is waiting on it.
 
 ### The next lead: another undelivered interrupt
 
@@ -816,6 +738,51 @@ The other two shapes, for whoever picks this up:
   so an FDC problem rather than an interrupt one.
 * **Little Box** executes garbage at `$61b8` with a dead main CPU
   (243 instructions/frame) — a runaway, and a different fault again.
+
+### The FM77AV main CPU clock has no AV leg (and 2.016 MHz is not the fix)
+
+`CLKCTRL.v`'s `assign MCPUCLK = switch ? CLK4_9 : SCLK1` has no `machine_av`
+term, so the AV runs its main CPU at the FM-7 leg's 4.9152/4 = 1.2288 MHz.
+That is measurably wrong against every reference: MAME's `fm77av` is an MC6809E
+at 16.128/8 = 2.016 MHz E (`refs/mame/src/mame/fujitsu/fm7.cpp:1986`), and
+against 77AVEMU this core performs 65-82% of the reference's polling reads over
+the same frames.
+
+**The obvious fix is wrong.** Adding `machine_av ? SCLK1 : ...` gives E = 2.0 MHz
+and breaks the FM77AV demo to a solid single-colour screen (92.8%/13 ->
+100.0%/1). Reverted; see trap 45.
+
+The references disagree on the right figure and none of them is 2.016 for a base
+AV: CSP has `MAINCLOCK_NORMAL 1798000` dropping to `MAINCLOCK_MMR 1565000` when
+MMR is enabled (`fm7_common.h:79-82`), with `CPU_CLOCKS 2016000` reserved for
+the AV20/AV40 (`fm7.h:254-258`). The two measured shortfall clusters here,
+0.65-0.66 and 0.80-0.82, bracket 1.2288/1.798 and 1.2288/1.565 -- which is what
+you would expect if the true rate is ~1.8 MHz falling to ~1.57 with MMR on.
+Neither is reachable from the existing 4.9152/8 MHz sources; both need a new
+`clk_en`. Do the MMR-dependent drop at the same time.
+
+### Undriven read bits return 0 where hardware returns 1
+
+Found by diffing the read streams against 77AVEMU over the same frames. Bits
+that no device drives should read as 1 -- which `core.v:622` already says for
+the sub I/O page ("Everything else returns $FF") but several registers do not
+honour:
+
+| port | reference | here | what it is |
+|---|---|---|---|
+| `$FD16` | `$7C`/`$7D` | `$00`/`$01`/`$80`/`$81` | YM2203 status; read 254175 times pre-divergence |
+| `$FD00` | `$7F` | `$00` | keyboard/switch; bit 7 agrees, the rest do not |
+| `$FD1D` | `$80` | `$BC` | |
+| `$D432` | `$FE`/`$FF` | `$81` | AV keyboard encoder status (`AVKEYBOARD.v:37` builds `{~data_valid, 6'd0, ack}`) |
+
+`$D432` also differs in bit 0: this core reports ACK immediately (8 reads
+against the reference's 74), so the handshake completes but not the way the
+hardware does it.
+
+**These are tolerated by Woody Poco** -- they read identically in the window
+where the drawing streams match exactly, so they are not that title's fault.
+Fix them as accuracy work, and re-gate: changing a status bit a title polls
+254175 times is not a safe no-op.
 
 ### Open FM77AV implementation gaps
 

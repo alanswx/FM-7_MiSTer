@@ -633,6 +633,31 @@ confident wrong answer at least once:
     machine measurably faster while leaving the picture bit-for-bit identical is a *clean
     refutation*, not a null result to shrug at.
 
+46. **A `$display` string survives into `obj_dir/*.cpp`; a WIRE NAME does not.** Trap 3
+    says to confirm a rebuilt model with `grep -l <MARKER> obj_dir/*.cpp`, which is right
+    for a debug print and wrong for a signal. After adding `AV_OFFSET_FINE`,
+    `grep -c AV_OFFSET_FINE obj_dir/*.cpp` returned 0 in every file and that read as "the
+    change never reached the binary" -- but Verilator had simply folded a one-bit wire into
+    the expression that used it. Confirm RTL changes with a `$display` under a `DEBUG_*`
+    guard, or by a behavioural probe, never by grepping for the name of a wire.
+
+47. **A probe that stops before the event proves the probe stopped, not that nothing
+    happened.** `DEBUG_SCROLL` printed `page0=0000 page1=0000` for a whole Woody Poco run
+    and that read as "the scroll registers still are not latching" -- twice, once before
+    the fix and once after. The run was `--stop-at-frame 2400`; the title's first scroll
+    write is at frame **2443**. The frame numbers were already in the trace
+    (`grep 'W \$d40[ef]' ` shows 191, 2443, 2526) and one look at them would have
+    settled it. Before believing a flat probe, find the frame of the first event you are
+    probing for and check it is inside the window.
+
+48. **A half-finished fix can look exactly like a failed one.** The scroll path had two
+    independent faults: the offset registers were unreachable through the MMR aperture,
+    and `$D430` b2's unmasked offset was not implemented. Fixing only the routing moves
+    Woody Poco from 58.73% agreement to **60.27%** -- indistinguishable from noise, and
+    every reason to revert it. Both together give **97.30%**. This is trap 37 again from
+    the other side: when a well-evidenced fix barely moves the number, look for a second
+    fault in the same mechanism before backing the first one out.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

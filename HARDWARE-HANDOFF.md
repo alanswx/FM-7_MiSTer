@@ -6,6 +6,65 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# For the next build: Woody Poco's in-game playfield is fixed (4 commits)
+
+Head is now `c50a852`. Four commits since `c55f31d`, all FM77AV, all simulated
+and gated on this side. The one that matters to you is the last.
+
+**`c50a852` fm77av: the scroll offset registers were unreachable through the
+MMR aperture.** This is the fix for the black playfield you reported in
+`b50c1de`. Two independent faults in the same mechanism:
+
+1. `$D40E`/`$D40F` (the CRTC scroll offset) latched off `SADDRBUS`/`SWTQEn` —
+   the *sub* CPU's bus. Woody Poco halts the sub and drives the CRTC from the
+   main side through the MMR aperture, so the halted sub never asserts `SWTQEn`
+   and all 83 of its scroll writes were dropped. `DEBUG_SCROLL=1` showed
+   `page0=0000 page1=0000` for the entire run: the screen never scrolled.
+   Now decoded off `SREGADDR`/`SREGWEn`, which is what `$D430`'s own latch in
+   `SMEM.v` already used — these two were simply left behind.
+2. `$D430` b2, the unmasked VRAM offset, was not implemented, so offsets were
+   rounded to 32-byte steps. Woody Poco sets b2 in its first `$D430` write and
+   its offsets step `3fd8, 3fd9, 3fda …` one byte at a time.
+
+**Fixing only the first gets you 60.27% where both get 97.30%** — if you build a
+partial version you will think it did nothing.
+
+Simulated result, Woody Poco disk 1 in-game at frame 3000 against 77AVEMU's own
+render of the same frame:
+
+    before   cov 55.7%  colours 37   agreement 58.73%
+    after    cov 93.8%  colours 39   agreement 97.30%
+    77AVEMU  cov 93.7%  colours 39
+
+**What to check on hardware.** Boot Woody Poco disk 1, start the game, hold
+right. Expected: the playfield scrolls smoothly *one pixel at a time* and shows
+mountains, trees, a house and ground — not black around the character. The
+smoothness is the tell: if it jumps in 32-byte steps, b2 did not make it in.
+
+**Also worth a look: Luxsor disk 2.** Same fix took it 65.8% -> 81.8% coverage
+in 37 colours, which is its reference's coverage exactly. It had been getting
+the scroll registers by accident from the ALU aliasing that `c2fc867` removed,
+which is what the regression at the top of TODO.md was; that item is now closed.
+
+**Regression gate on this side:** Valis disk 2 (87.2%/22), the FM77AV demo
+(92.8%/13) and Woody Poco's title screen (57.3%/44) are all bit-identical
+before and after.
+
+The other three commits are lower risk: `b7df560` makes the drawing ALU's
+registers readable through the same aperture (same family, needed by the same
+title), `9856db4` is simulation-only tracing, `b2117a0` is docs.
+
+**One negative result you may care about.** The FM77AV's main CPU has no AV leg
+in the clock mux — `MCPUCLK = switch ? CLK4_9 : SCLK1` runs it at the FM-7's
+1.2288 MHz where MAME's `fm77av` is 2.016 MHz E. Adding the leg made the CPU
+~1.8x faster and **broke the FM77AV demo to a solid screen**, so it is *not*
+committed. The rate is still wrong and TODO.md now carries it as open work
+(CSP suggests ~1.798 MHz falling to ~1.565 with MMR enabled, neither reachable
+from the existing clock sources). Do not "fix" it on your side without gating
+the demo disk.
+
+---
+
 # Hardware: the revert build is deployed and everything re-checked passes
 
 Built head `c55f31d` (= the batch minus `b8ff6ac`): 0 errors, 23,204 ALMs
