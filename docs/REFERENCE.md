@@ -593,6 +593,46 @@ confident wrong answer at least once:
     `pdftoppm -f 300 -l 300 -r 110 -png book.pdf /tmp/p`. 77AVEMU cites this book's
     schematics by page number (`pp.294`, `pp.300`), and those pages are drawings, not text.
 
+42. **The reference runner's third argument is 6809 STEPS, not frames.** `ref-sweep.sh`
+    passes 20,000,000 and calls it "about 22 s of machine time"; passing `3010` there to
+    match a `--stop-at-frame 3010` run gives **3.2 ms**. Worse is the near miss: an
+    existing 26,000,000-step Woody Poco log covers 58.55 s against our 50.17 s, and
+    comparing per-port write totals across that pair reads as a uniform ~7% shortfall in
+    this core that is entirely run length. Both logs carry `INPUT frame=N` lines for every
+    `--joystick`/`--key` event — **bucket both sides between those anchors** and the
+    comparison is exact. Doing that turned a vague "we write less" into "identical through
+    frame 2200, diverges the frame the scroll starts".
+
+43. **77AVEMU's PC field on a `$D4xx` line is the SUB CPU's PC, and on an AV title the sub
+    is halted, so it is a constant.** Every one of Woody Poco's 166,484 `$D4xx` accesses is
+    logged `SUB: E146` — and `RESULT ... sub=$e146` confirms that is just where the halted
+    sub is parked. `tools/iodiff.py` keys its comparison on PC, so for exactly the accesses
+    that matter on an AV title it is matching a constant against our main-CPU PC and the
+    result is meaningless. Ours logs the *main* PC there, which is the useful one. Compare
+    `$D4xx` by port+value sequence, never by PC.
+
+44. **Matching N entries of a low-entropy stream is not evidence of lockstep.** `$D410`
+    takes only three values in this title (`$86`, `$9E`, `$80`). Our first 637 `$D410`
+    writes matched the reference's first 637 exactly, which read as "identical, then we
+    stop early" — and was wrong. The port *mix* had already diverged: over the same frame
+    window we wrote `$D411` 1297 times against 3204, while `$D41C` matched at 97%. Check a
+    high-entropy key (port+value across all ports) before believing a prefix match.
+
+45. **A 1.8x faster CPU changed nothing, which is what disproved the throughput theory.**
+    The FM77AV's main CPU had no AV leg in the clock mux at all — `MCPUCLK = switch ?
+    CLK4_9 : SCLK1` gave it the FM-7's 4.9152/4 = 1.2288 MHz, where MAME's `fm77av` is an
+    MC6809E at 16.128/8 = 2.016 MHz E (`refs/mame/src/mame/fujitsu/fm7.cpp:1986`). Since
+    Woody Poco's scroll looked throughput-bound, that seemed to be the answer. Adding the
+    AV leg raised ROM fetches 8.5M -> 17.9M and `$fdxx` I/O cycles 2.7M -> 5.4M in the same
+    run, and the frame-3000 render came out **byte-identical**: 55.7% coverage, 37 colours,
+    58.73% agreement, all three unchanged. It also broke the FM77AV demo to a solid
+    single-colour screen (92.8%/13 -> 100.0%/1). **Reverted.** Two lessons: the AV clock
+    rate is genuinely wrong here but 2.016 MHz is not simply the right value (CSP has
+    `MAINCLOCK_NORMAL 1798000` / `MAINCLOCK_MMR 1565000` for the base AV, `fm7_common.h:79-82`,
+    with 2016000 reserved for AV20/AV40, `fm7.h:254-258`); and a change that makes the
+    machine measurably faster while leaving the picture bit-for-bit identical is a *clean
+    refutation*, not a null result to shrug at.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
