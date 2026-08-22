@@ -190,6 +190,7 @@ module emu
 	// Temporary AV MMR physical-address tap.
 	output [17:0] dbg_av_phys,
 	output        dbg_av_write,
+	output        dbg_av_read,
 	output        dbg_sub_halt,
 
 	// Temporary audio-path tap.
@@ -554,6 +555,7 @@ assign dbg_alu_d_r   = u_core.AV_DRAW_DIN_R;
 assign dbg_alu_d_g   = u_core.AV_DRAW_DIN_G;
 assign dbg_av_phys   = u_core.u_AVMEM.physical_address;
 assign dbg_av_write  = u_core.u_AVMEM.av_write;
+assign dbg_av_read   = ~u_core.u_AVMEM.RDQEn;
 assign dbg_sub_halt  = ~u_core.SHALTn;
 assign dbg_audio_out  = audio_out;
 assign dbg_core_audio = core_audio;

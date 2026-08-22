@@ -119,6 +119,7 @@ static bool last_sub_vram_write = false;
 static bool last_sub_draw_write = false;
 static bool last_alu_write = false;
 static bool last_subio_write = false;
+static bool last_subio_read  = false;
 static int  av_dump_frame = 870;
 static bool trace_av_video = false;
 static unsigned au_out_max = 0, au_core_max = 0, au_l_max = 0;
@@ -1347,6 +1348,15 @@ static void sim_cycle() {
 	if (top->dbg_io_wr && !last_io_wr) { io_counts[top->dbg_io_port]++; stat_io_cycles++; }
 	if (top->dbg_io_rd && !last_io_rd) { io_counts[top->dbg_io_port]++; stat_io_cycles++; }
 
+	// Main-CPU MMR access to the sub-system I/O page ($1D400-$1D4FF), and the
+	// sub CPU's own writes to the drawing ALU / $D430.
+	const bool subio_write = top->dbg_av_write &&
+		top->dbg_av_phys >= 0x1d400 && top->dbg_av_phys < 0x1d500;
+	const bool subio_read = top->dbg_av_read &&
+		top->dbg_av_phys >= 0x1d400 && top->dbg_av_phys < 0x1d500;
+	const bool sub_draw_write = top->dbg_s_e && !top->dbg_s_rw &&
+		((top->dbg_s_addr >= 0xd410 && top->dbg_s_addr <= 0xd42b) ||
+		 top->dbg_s_addr == 0xd430);
 	if (trace_io) {
 		uint8_t p = top->dbg_io_port;
 		if ((top->dbg_io_wr && !last_io_wr) &&
@@ -1361,14 +1371,38 @@ static void sim_cycle() {
 			fprintf(o, "%8d R $fd%02x -> $%02x   pc=$%04x\n",
 			        video.count_frame, p, top->dbg_io_data, m_cur_pc);
 		}
+		// Sub-system I/O ($D4xx), in the SAME line format as the $fdxx lines
+		// above so tools/iodiff.py can diff the two sides directly.
+		//
+		// A $fdxx-only trace is blind to any title that halts the sub CPU and
+		// drives the drawing ALU from the main side through the MMR aperture --
+		// which is how most AV titles draw. Woody Poco issues 274570 ALU
+		// triggers that way and not one of them appeared in the trace, so the
+		// two machines looked identical right up to the point where one drew a
+		// scene and the other did not. 77AVEMU has always logged these (as
+		// `IO:D4xx ... by Main CPU`); this side had them only in the separate
+		// --trace-av-video stream, in a format iodiff could not read.
+		if (!trace_io_unknown_only) {
+			FILE* o = trace_io_file ? trace_io_file : stdout;
+			if (subio_write && !last_subio_write)
+				fprintf(o, "%8d W $d4%02x <- $%02x   pc=$%04x\n",
+				        video.count_frame, top->dbg_av_phys & 0xff,
+				        top->dbg_m_dout, m_cur_pc);
+			// Reads matter more than writes for a title that is drawing the
+			// RIGHT things and too few of them: what the game draws next is
+			// decided by what it reads back. The reference has always logged
+			// these; this side logged only writes, which is why $D410 coming
+			// back as $ff instead of $9e stayed invisible for so long.
+			if (subio_read && !last_subio_read)
+				fprintf(o, "%8d R $d4%02x -> $%02x   pc=$%04x\n",
+				        video.count_frame, top->dbg_av_phys & 0xff,
+				        top->dbg_m_din, m_cur_pc);
+			if (sub_draw_write && !last_sub_draw_write)
+				fprintf(o, "%8d W $d4%02x <- $%02x   pc=$%04x\n",
+				        video.count_frame, top->dbg_s_addr & 0xff,
+				        top->dbg_s_dout, top->dbg_s_pc);
+		}
 	}
-	// Main-CPU MMR access to the sub-system I/O page ($1D400-$1D4FF), and the
-	// sub CPU's own writes to the drawing ALU / $D430.
-	const bool subio_write = top->dbg_av_write &&
-		top->dbg_av_phys >= 0x1d400 && top->dbg_av_phys < 0x1d500;
-	const bool sub_draw_write = top->dbg_s_e && !top->dbg_s_rw &&
-		((top->dbg_s_addr >= 0xd410 && top->dbg_s_addr <= 0xd42b) ||
-		 top->dbg_s_addr == 0xd430);
 	// FM77AV video-path trace.  Off by default: these fire on nearly every bus
 	// cycle of an AV run and would bury the ordinary trace output.
 	if (trace_av_video && video.count_frame >= trace_from &&
@@ -1400,6 +1434,7 @@ static void sim_cycle() {
 	last_sub_vram_write = top->dbg_sub_vram_write;
 	last_alu_write      = top->dbg_alu_write;
 	last_subio_write    = subio_write;
+	last_subio_read     = subio_read;
 	last_sub_draw_write = sub_draw_write;
 	last_io_wr = top->dbg_io_wr;
 	last_io_rd = top->dbg_io_rd;

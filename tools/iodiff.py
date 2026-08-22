@@ -42,17 +42,22 @@ import re
 import sys
 import difflib
 
-OURS = re.compile(r'^\s*(\d+)\s+([RW])\s+\$fd([0-9a-f]{2})\s+(?:<-|->)\s+\$([0-9a-f]{2})\s+pc=\$([0-9a-f]{4})')
+OURS = re.compile(r'^\s*(\d+)\s+([RW])\s+\$(fd|d4)([0-9a-f]{2})\s+(?:<-|->)\s+\$([0-9a-f]{2})\s+pc=\$([0-9a-f]{4})')
 REF = re.compile(r'^IO(WRITE|READ)\s+(MAIN|SUB):\s*([0-9A-F]{4})\s+IO:([0-9A-F]{4})\s+VALUE:([0-9A-F]{2})')
 
 
-def load_ours(path):
+def load_ours(path, keep_sub=False):
     out = []
     for line in open(path, errors='replace'):
         m = OURS.match(line)
         if m:
-            frame, rw, port, val, pc = m.groups()
-            out.append((rw, int(port, 16), int(val, 16), int(pc, 16), int(frame)))
+            frame, rw, page, port, val, pc = m.groups()
+            if page == 'd4' and not keep_sub:
+                continue
+            # $d4xx is carried in the high byte so the two pages cannot collide
+            # in the comparison key.
+            p = int(port, 16) | (0xd400 if page == 'd4' else 0)
+            out.append((rw, p, int(val, 16), int(pc, 16), int(frame)))
     return out
 
 
@@ -64,9 +69,13 @@ def load_ref(path, keep_sub):
             continue
         kind, cpu, pc, io, val = m.groups()
         io = int(io, 16)
-        if not keep_sub and (io & 0xFF00) != 0xFD00:
+        page = io & 0xFF00
+        if page not in (0xFD00, 0xD400):
             continue
-        out.append(('W' if kind == 'WRITE' else 'R', io & 0xFF,
+        if page == 0xD400 and not keep_sub:
+            continue
+        p = (io & 0xFF) | (0xd400 if page == 0xD400 else 0)
+        out.append(('W' if kind == 'WRITE' else 'R', p,
                     int(val, 16), int(pc, 16), 0))
     return out
 
@@ -87,10 +96,10 @@ def fmt(entry, use_pc):
     key, count, frame = entry
     if use_pc:
         rw, port, val, pc = key
-        s = f"{rw} $fd{port:02x} {'<-' if rw=='W' else '->'} ${val:02x}  pc=${pc:04x}"
+        s = f"{rw} ${'d4' if port & 0xd400 else 'fd'}{port & 0xff:02x} {'<-' if rw=='W' else '->'} ${val:02x}  pc=${pc:04x}"
     else:
         rw, port, val = key
-        s = f"{rw} $fd{port:02x} {'<-' if rw=='W' else '->'} ${val:02x}"
+        s = f"{rw} ${'d4' if port & 0xd400 else 'fd'}{port & 0xff:02x} {'<-' if rw=='W' else '->'} ${val:02x}"
     if count > 1:
         s += f"   x{count}"
     return s, frame
@@ -118,7 +127,7 @@ def main():
         print(__doc__)
         return 2
 
-    oe, re_ = load_ours(args[0]), load_ref(args[1], keep_sub)
+    oe, re_ = load_ours(args[0], keep_sub), load_ref(args[1], keep_sub)
     if want is not None:
         oe = [e for e in oe if e[1] in want]
         re_ = [e for e in re_ if e[1] in want]
@@ -213,7 +222,7 @@ def main():
             note = f'reference does {rt // max(ot,1)}x more'
         elif ot > rt * 8:
             note = f'this core does {ot // max(rt,1)}x more'
-        print(f"  $fd{port:02x} {ot:9d} {rt:9d} | {o:8d} {r:8d}   {note}")
+        print(f"  ${'d4' if port & 0xd400 else 'fd'}{port & 0xff:02x} {ot:9d} {rt:9d} | {o:8d} {r:8d}   {note}")
     return 0
 
 
