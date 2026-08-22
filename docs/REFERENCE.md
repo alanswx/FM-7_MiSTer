@@ -658,6 +658,27 @@ confident wrong answer at least once:
     the other side: when a well-evidenced fix barely moves the number, look for a second
     fault in the same mechanism before backing the first one out.
 
+49. **Now that scrolling works, a sweep agreement score on a scrolling title measures
+    PHASE, not correctness.** `ref-sweep.sh` captures every blessed reference at a fixed
+    20,000,000 steps and the core samples at a fixed frame; those are different points in
+    machine time (~22 s against 33 s), which never mattered while nothing scrolled. After
+    `c50a852` it matters a lot. Dragon Buster read as the worst regression in the sweep,
+    74.90% -> 65.98%, with coverage and colour count unchanged (87.4% -> 87.5% against the
+    reference's 87.6%; 16 colours against 15) -- the giveaway that the picture had *moved*
+    rather than broken. Sampling our own render across frames 1800-2300 swings the score
+    from 57.94% to 73.76% with no RTL change at all. Rendering the REFERENCE at 18M/20M/22M
+    steps moves it the same way, and against the 22M reference the numbers inverted:
+
+        our frame-2000 render   vs ref@18M   vs ref@20M   vs ref@22M
+        pre-fix                   13.61%       74.90%       65.45%
+        post-fix                  13.61%       65.98%       97.70%
+
+    So the title improved by 32 points and the sweep reported it as a 9-point regression.
+    **Before believing any sweep delta on a title with a moving camera, render the
+    reference at two or three step counts and check whether the score follows the phase.**
+    A useful tell costs nothing: if coverage and colour count are unchanged and only
+    agreement moved, the image shifted rather than degraded.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

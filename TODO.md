@@ -44,6 +44,25 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
 
 **Open, in priority order:**
 
+0. **The sweep cannot score a scrolling title, and now several of them scroll.**
+   Every blessed reference in `sweep/renders/ref-shots/` is captured at a fixed
+   20,000,000 reference steps (~22 s) while the core samples at a fixed frame
+   (2000 = 33 s). Those are different moments, which did not matter while
+   nothing scrolled and matters a great deal after `c50a852`. Dragon Buster
+   read as the sweep's worst regression, 74.90% -> 65.98%, and is in fact a
+   **32-point improvement**: against a reference rendered at 22M steps it goes
+   65.45% -> 97.70%. Sampling our own render across frames 1800-2300 moves the
+   score 57.94% -> 73.76% with no RTL change at all.
+
+   Do not re-bless Dragon Buster to 22M to make the number look right — that is
+   how `shots-ref/` rotted. Options worth thinking about: capture references at
+   several step counts and score against the best match; or drive scrolling
+   titles to a deterministic state the way the Woody Poco comparison does with
+   `--joystick`, which is what made that title scoreable at all. Until then,
+   treat any agreement delta on a moving-camera title as uninterpretable, and
+   check coverage and colour count instead — if those are unchanged and only
+   agreement moved, the picture shifted rather than broke.
+
 0. **World Golf II disk 1 now renders here and NOT on 77AVEMU.** Its title screen
    — kana logo, golfer, mountains — appears at 42.4% coverage in 8 colours since
    `c2fc867`, where the reference draws a black screen. Nobody has checked which

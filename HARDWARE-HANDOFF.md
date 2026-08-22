@@ -50,6 +50,17 @@ which is what the regression at the top of TODO.md was; that item is now closed.
 (92.8%/13) and Woody Poco's title screen (57.3%/44) are all bit-identical
 before and after.
 
+**Full AV sweep, 34 scored titles: 3 moved, 31 unchanged.** Luxsor disk 2
++18.56, Digital Devil Story +1.55, Dragon Buster -8.92. The Dragon Buster
+number is a measurement artifact, not a regression — its coverage and colour
+count are unchanged (87.5% against the reference's 87.6%, 16 colours against
+15) and only the alignment moved, because the blessed reference is captured at
+a fixed 20M reference steps while we sample at a fixed frame. Against a
+reference rendered at 22M steps the same pair of builds goes 65.45% -> **97.70%**.
+Dragon Buster is a second end-to-end confirmation of the fix, not a casualty of
+it — worth a look on hardware alongside Woody Poco, since it scrolls
+horizontally and continuously.
+
 The other three commits are lower risk: `b7df560` makes the drawing ALU's
 registers readable through the same aperture (same family, needed by the same
 title), `9856db4` is simulation-only tracing, `b2117a0` is docs.
