@@ -639,8 +639,28 @@ wire [7:0] AV_SUBIO_dout =
   SHALTn ? 8'hff :
   (AV_SUBIO_ADDR == 8'h30) ? AV_D430_dout :
   ((AV_SUBIO_ADDR == 8'h31) || (AV_SUBIO_ADDR == 8'h32)) ? AV_KBD_mmr_dout :
+  // $D410-$D41B, the drawing ALU's readable registers. This returned $ff, and
+  // that is how Woody Poco lost its scenery: it read-modify-writes the ALU from
+  // the main side through this aperture, so `LDA $D410 / ... / STA $D410` read
+  // $ff and wrote $ff back -- enabling COMPARE (command 7), which writes no
+  // pixels at all -- and $D412 read $ff and wrote $ff, a mask that preserves
+  // every pixel. 77AVEMU returns the real registers: on the same frames $D410
+  // reads $9E and $D412 reads $f0 there, against $ff here.
+  //
+  // AVHDRAW's mux was already correct and simply unrouted -- for enabled=1,
+  // condition=0, command=6 it builds {1,00,11,110} = $9E, the reference value
+  // exactly. TODO.md carried this as a known gap with 'no title in hand is
+  // known to do that; find one before changing this.' Woody Poco is that title.
+  (AV_SUBIO_ADDR[7:4] == 4'h1) ? AV_DRAW_dout :
   8'hff;
-wire [15:0] SREGADDR = AV_SUBIO_MMR ? {8'hd4, AV_SUBIO_ADDR} : SADDRBUS;
+// The aperture drives the sub register ADDRESS whenever it is selected, not
+// only when it is writing. AVHDRAW decodes its readback mux off this address,
+// so on a main-CPU READ the old write-only `AV_SUBIO_MMR` left SREGADDR
+// pointing at the halted sub CPU's stale address and the readback answered
+// for the wrong register. The write STROBE below stays gated on the write, so
+// a read still cannot disturb anything.
+wire        AV_SUBIO_ADDRSEL = AV_SUBIO_SEL & ~SHALTn;
+wire [15:0] SREGADDR = AV_SUBIO_ADDRSEL ? {8'hd4, AV_SUBIO_ADDR} : SADDRBUS;
 wire  [7:0] SREGDIN  = AV_SUBIO_MMR ? AV_SUBIO_DIN : SDATABUS_out;
 wire        SREGWEn  = AV_SUBIO_MMR ? 1'b0 : SWTQEn;
 
