@@ -618,20 +618,27 @@ confident wrong answer at least once:
     window we wrote `$D411` 1297 times against 3204, while `$D41C` matched at 97%. Check a
     high-entropy key (port+value across all ports) before believing a prefix match.
 
-45. **A 1.8x faster CPU changed nothing, which is what disproved the throughput theory.**
-    The FM77AV's main CPU had no AV leg in the clock mux at all — `MCPUCLK = switch ?
-    CLK4_9 : SCLK1` gave it the FM-7's 4.9152/4 = 1.2288 MHz, where MAME's `fm77av` is an
-    MC6809E at 16.128/8 = 2.016 MHz E (`refs/mame/src/mame/fujitsu/fm7.cpp:1986`). Since
-    Woody Poco's scroll looked throughput-bound, that seemed to be the answer. Adding the
-    AV leg raised ROM fetches 8.5M -> 17.9M and `$fdxx` I/O cycles 2.7M -> 5.4M in the same
-    run, and the frame-3000 render came out **byte-identical**: 55.7% coverage, 37 colours,
-    58.73% agreement, all three unchanged. It also broke the FM77AV demo to a solid
-    single-colour screen (92.8%/13 -> 100.0%/1). **Reverted.** Two lessons: the AV clock
-    rate is genuinely wrong here but 2.016 MHz is not simply the right value (CSP has
-    `MAINCLOCK_NORMAL 1798000` / `MAINCLOCK_MMR 1565000` for the base AV, `fm7_common.h:79-82`,
-    with 2016000 reserved for AV20/AV40, `fm7.h:254-258`); and a change that makes the
-    machine measurably faster while leaving the picture bit-for-bit identical is a *clean
-    refutation*, not a null result to shrug at.
+45. **Two different AV main-CPU clock rates both break the same title, so the fault is
+    not the rate.** The FM77AV main CPU had no AV leg in the clock mux at all --
+    `MCPUCLK = switch ? CLK4_9 : SCLK1` gives it the FM-7 leg's 4.8/4 = 1.2 MHz E, where
+    MAME's `fm77av` is 2.016 MHz (fm7.cpp:1986) and CSP has 1.798 MHz normal / 1.565 MHz
+    with MMR on for a base AV (fm7_common.h:79-82, fm7.h:254-258). Two attempts:
+
+        E = 2.016 MHz (SCLK1)   FM77AV demo 92.8%/13 -> 100.0%/1  (solid screen)
+        E = 1.714 MHz (48/7)    FM77AV demo 92.8%/13 -> 100.0%/1  (solid screen)
+                                Valis disk 2 87.2%/22 -> 84.1%/24
+
+    1.714 MHz is the closest an integer divide off 48 MHz gets to CSP's 1.798, and it sits
+    above the 1.5 MHz threshold 77AVEMU uses for `$FD00` b0 -- and it fails exactly like
+    2.016 did. **Both reverted.** That a *slower, closer* rate fails the same way says the
+    demo is not calibrated to some specific frequency; something else in this core is
+    coupled to the main CPU clock and comes apart when it moves. Find that coupling before
+    trying a third number -- the rate is wrong, but changing it is not the fix.
+
+    The first attempt also disproved a separate theory cleanly: at 2.016 MHz ROM fetches
+    went 8.5M -> 17.9M and `$fdxx` I/O cycles 2.7M -> 5.4M in the same run, and Woody
+    Poco's frame-3000 render came out **byte-identical** -- 55.7% coverage, 37 colours,
+    58.73% agreement, all three unchanged. Whatever was wrong there, it was not throughput.
 
 46. **A `$display` string survives into `obj_dir/*.cpp`; a WIRE NAME does not.** Trap 3
     says to confirm a rebuilt model with `grep -l <MARKER> obj_dir/*.cpp`, which is right

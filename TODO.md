@@ -760,28 +760,36 @@ The other two shapes, for whoever picks this up:
 * **Little Box** executes garbage at `$61b8` with a dead main CPU
   (243 instructions/frame) — a runaway, and a different fault again.
 
-### The FM77AV main CPU clock has no AV leg (and 2.016 MHz is not the fix)
+### The FM77AV main CPU clock is wrong, and changing it is not the fix
 
 `CLKCTRL.v`'s `assign MCPUCLK = switch ? CLK4_9 : SCLK1` has no `machine_av`
-term, so the AV runs its main CPU at the FM-7 leg's 4.9152/4 = 1.2288 MHz.
-That is measurably wrong against every reference: MAME's `fm77av` is an MC6809E
-at 16.128/8 = 2.016 MHz E (`refs/mame/src/mame/fujitsu/fm7.cpp:1986`), and
-against 77AVEMU this core performs 65-82% of the reference's polling reads over
-the same frames.
+term, so the AV runs its main CPU at the FM-7 leg's 4.8/4 = 1.2 MHz E. Every
+reference disagrees: MAME's `fm77av` is 2.016 MHz
+(`refs/mame/src/mame/fujitsu/fm7.cpp:1986`), CSP has `MAINCLOCK_NORMAL 1798000`
+dropping to `MAINCLOCK_MMR 1565000` when MMR is on (`fm7_common.h:79-82`) with
+2016000 reserved for the AV20/AV40 (`fm7.h:254-258`), and 77AVEMU's own $FD00
+handler carries the comment "Catalog spec tells 2MHz. Actual measurement implies
+1.8MHz".
 
-**The obvious fix is wrong.** Adding `machine_av ? SCLK1 : ...` gives E = 2.0 MHz
-and breaks the FM77AV demo to a solid single-colour screen (92.8%/13 ->
-100.0%/1). Reverted; see trap 45.
+**Two rates have been tried and both break the FM77AV demo disk to a solid
+single-colour screen** (92.8% coverage in 13 colours -> 100.0% in 1):
 
-The references disagree on the right figure and none of them is 2.016 for a base
-AV: CSP has `MAINCLOCK_NORMAL 1798000` dropping to `MAINCLOCK_MMR 1565000` when
-MMR is enabled (`fm7_common.h:79-82`), with `CPU_CLOCKS 2016000` reserved for
-the AV20/AV40 (`fm7.h:254-258`). The two measured shortfall clusters here,
-0.65-0.66 and 0.80-0.82, bracket 1.2288/1.798 and 1.2288/1.565 -- which is what
-you would expect if the true rate is ~1.8 MHz falling to ~1.57 with MMR on.
-Neither is reachable from the existing 4.9152/8 MHz sources; both need a new
-`clk_en`. Do the MMR-dependent drop at the same time.
+    E = 2.016 MHz   via SCLK1
+    E = 1.714 MHz   via a new 48/7 clk_en, the closest integer divide to CSP's
+                    1.798 and safely above the 1.5 MHz threshold 77AVEMU uses
+                    for $FD00 b0; also took Valis disk 2 87.2% -> 84.1%
 
+Both reverted. That the *slower, closer* rate fails identically means the demo
+is not calibrated to a particular frequency -- **something else in this core is
+coupled to the main CPU clock**. Find that coupling first; a third number is not
+the next thing to try. Candidates worth measuring: main-to-sub handshake timing,
+the FDC's fixed `wait_time`, and anything deriving a period from CLKSYS rather
+than from E.
+
+This blocks two other items. `$FD00` b0 is a CPU-SPEED bit -- 77AVEMU clears it
+below 1.5 MHz -- so it reads 0 here honestly and cannot be corrected on its own
+(trap 53), and it is currently the first divergence on Shounen Mike. The
+MMR-enabled drop to ~1.565 MHz is not modelled either.
 ### Undriven read bits return 0 where hardware returns 1
 
 Found by diffing the read streams against 77AVEMU over the same frames. Bits
