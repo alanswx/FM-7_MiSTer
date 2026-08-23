@@ -6,6 +6,21 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Hardware: sys/ updated to current Template_MiSTer (was April 2024)
+
+The framework was 2.5 years old; it is now today's template. The emu port
+list is the template's `sys/emu_ports.vh` include (HPS_BUS narrowed 49→46
+bits with it), and the two new outputs `HDMI_BLACKOUT`/`HDMI_BOB_DEINT` are
+tied 0. `vsim` is untouched — it never compiled the top or `sys/`.
+
+This is exactly the class of change simulation cannot see, so every
+framework path was smoke-tested on hardware on this build: F-BASIC boot
+(ioctl kanji upload), disk BASIC boot (hps_io block reads), the OSD renders,
+the joystick probe reads 222, the tone is 234.38 Hz through the new
+`audio_out.sv`. Fit 56% ALMs, all clocks positive slack, 0 errors.
+
+---
+
 # Hardware: the clock-fix build passes everything, and the speedup is visible
 
 Built head `4281408` (RTL through `6a7030e`): 0 errors, 23,293 ALMs (56%),
