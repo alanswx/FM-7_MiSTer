@@ -679,6 +679,31 @@ confident wrong answer at least once:
     A useful tell costs nothing: if coverage and colour count are unchanged and only
     agreement moved, the image shifted rather than degraded.
 
+50. **Every reference render in this project was made with the disk WRITE
+    PROTECTED, and the disks are not.** `tools/77avemu_headless.cpp:250` sets
+    `param.fdImgWriteProtect[0] = true`. 77AVEMU itself reads the flag from the image --
+    `DiskDrive::WriteProtected()` -> `DiskImage::WriteProtected(diskIdx)` ->
+    `d77.GetDisk(idx)->IsWriteProtected()` -> `0 != header.writeProtected` where
+    `header.writeProtected = d77Img[0x1a]` -- and every d77 in the collection checked so
+    far has `0x1a` = `0x00`. So the reference is right given its input and the input is
+    ours. It surfaces in `$FD18` bit 6, but only for the commands that report it:
+    `MakeUpStatus` puts write-protect in bit 6 for Type I, Write Sector, Write Track and
+    Force Interrupt, and nothing else. **Before treating any FDC status difference as a
+    core bug, check what the harness told the reference.** Two useful controls: a title
+    known to agree (Woody Poco's reference shows 30 reads of `$40` and 3 of `$44` where
+    this core shows none, and it still agrees on 97.30% of pixels), and the image's own
+    `0x1a` byte.
+
+51. **`refs/local/fm77av_headless` is a frozen build and can no longer be regenerated.**
+    `tools/build_77avemu_headless.sh` fails against the current
+    `~/Documents/development/77AVEMU` checkout with two `override` errors on
+    `CreateSound`/`DeleteSound` in the harness's own `NullWorld`; the vendored
+    `refs/77AVEMU` and the upstream tree have diverged. The binary in `refs/local` dates
+    from 2026-08-17. That matters twice over: a harness change (see trap 50) cannot
+    currently be tested, and if the drift is fixed the rebuilt binary is a DIFFERENT
+    reference from the one every blessed shot was made with -- reproduce a known title on
+    the new binary before regenerating anything.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

@@ -685,18 +685,47 @@ and are fixed in `794d016`; none of them rescued the title, but together they
 moved the first divergence from access #20594 on frame 10 to #20613 on frame 11
 and out of the boot-mode branch.
 
-**Where it stands now** -- `LDA $FD18` at pc=$516E, frame 11:
+**Where it stands now.** Two genuine divergences remain, and only two -- from
+the third row on the two streams are shifted by one against each other, so
+everything after that is desync, not signal:
 
-    ours       R $FD18 -> $04      TRACK0
-    reference  R $FD18 -> $44      TRACK0 + WRITE PROTECT
+    #20613  frame 11   ours R $FD18 -> $04     reference R $FD18 -> $44
+    #20614  frame 11   ours R $FD00 -> $00     reference R $FD00 -> $7F
 
-**Do not just copy the reference here.** The D77 header for this image says the
-disk is NOT write protected (byte 26 = 0x00, same as Woody Poco and Valis), so
-77AVEMU is asserting write-protect on an unprotected image and may be the one
-that is wrong -- there is precedent in section 1, where its sector reads are off
-by one and this core is right. Settle what a WD1793/MB8877 reports in bit 6 for
-the command actually outstanding at $516E before changing anything, and note
-this core models no write-protect at all.
+**$FD18 bit 6 is OUR OWN TEST HARNESS, not the machine.** Chased all the way
+down: `DiskDrive::MakeUpStatus` puts write-protect in bit 6 for Type I, Write
+Sector, Write Track and Force Interrupt (the command outstanding here is $0A =
+Restore, so bit 6 really is write-protect); `WriteProtected()` resolves through
+`DiskImage::WriteProtected(diskIdx)` to `d77.GetDisk(idx)->IsWriteProtected()`,
+which is `0 != header.writeProtected` where `header.writeProtected =
+d77Img[0x1a]`. This image has `0x1a` = `0x00`. The reference reports protected
+anyway because **`tools/77avemu_headless.cpp:250` sets
+`param.fdImgWriteProtect[0] = true`** -- every reference render and trace in this
+project was produced with the disk write-protected regardless of its header.
+
+It is also **not** Shounen Mike's blocker: Woody Poco's reference shows the same
+bit set (30 reads of `$40`, 3 of `$44`, against none here) and that title agrees
+with the reference on 97.30% of pixels. Fix it in the harness, not in the core --
+this core models no write-protect at all, which is right for an unprotected
+image. `SaveModifiedDiskImages()` is only called from 77AVEMU's GUI thread
+runner, never from our harness, so clearing the flag cannot modify the images.
+
+**Blocked on a rebuild:** `tools/build_77avemu_headless.sh` no longer compiles
+against the current `~/Documents/development/77AVEMU` checkout (two `override`
+errors on `CreateSound`/`DeleteSound` in the harness's `NullWorld`), so
+`refs/local/fm77av_headless` is a frozen artifact from 2026-08-17 and the flag
+cannot currently be tested. Fix the drift first, then verify the rebuilt binary
+reproduces the old one on a known title BEFORE regenerating any reference.
+
+**$FD00** is the second divergence and belongs to the undriven-read-bits family
+below. The reference builds it as `byteData=0x7F`, `|=0x80` if the keycode's
+9th bit is set, and `&=0xFE` only when the main CPU is below 1.5 MHz
+(`fm77avio.cpp`, case FM77AVIO_KEYCODE_PRINTER_CASSETTE) -- so bits 6:1 are
+always 1 and bit 0 is a CPU-SPEED bit, not a static switch. This core builds
+`{ P0, 6'd0, ~fm8_switch }`. Worth noting the comment on that clause: "Actual
+native clock may be 2.0MHz or 1.8MHz. Catalog spec tells 2MHz. Actual
+measurement implies 1.8MHz" -- the reference is itself unsure, which is the same
+uncertainty recorded under the main CPU clock item below.
 
 **Four suspects eliminated, do not re-check:**
 
