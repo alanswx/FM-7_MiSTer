@@ -670,60 +670,57 @@ Keep the register fact, which is real and cited: `$FD04` bit 3 clear selects
 is one bit off `$FD12` bit 6 — and decodes `$fd04` only as the FM-7's attention
 register. That is a real gap; it is just not the gap these two titles fell into.
 
-### Shounen Mike: the divergence is now in the disk loader
+### Three titles blocked together, and `$FD00` b0 is NOT the blocker
 
-The largest gap in the set -- 99.9% coverage and 200 colours on the reference,
-0.1% in 2 colours here -- and it is **not** a video bug. The machine executes
-(6574 main, 8707 sub instructions per frame), the ALU fires, and the bytes it
-writes are the bytes it was told to write; it never reaches the artwork.
+Shounen Mike (ref 99.9% coverage in 200 colours, 0.1% here), FM Sound Editor
+(69.8%, 0.0%) and Pro Yakyuu Fan disk A (40.2%, 0.0%) are all blank or nearly
+blank, and **all three diverge from 77AVEMU at the same instruction**: `R $FD00`
+at pc=$51CB on frame 6-10, in the boot ROM's four-drive probe, after ~20600
+accesses that match port, value AND PC exactly.
 
-**Chase it with the stream diff, not with a video trace.** Its main-CPU $FDxx
-accesses match 77AVEMU exactly -- port, value AND PC -- for 20593 distinct
-accesses, so every disagreement after that is a single readback and can be
-fixed one at a time. `$FD01`, `$FD04` b2 and `$FD0B` came out of exactly that
-and are fixed in `794d016`; none of them rescued the title, but together they
-moved the first divergence from access #20594 on frame 10 to #20613 on frame 11
-and out of the boot-mode branch.
+That made `$FD00` b0 look like one blocker gating three titles. **It is not.**
+Built with b0 = 1 (the documented value -- see the clock section in
+docs/FM77AV.md) and re-rendered all three: every one is unchanged, to the
+decimal, at every sampled frame.
 
-**$FD18 and $FD00 are fixed** (`9af9c4f`). $FD18 b6 was our own harness forcing
-write protect on every disk; $FD00's undriven bits read 0 and now read 1. See
-REFERENCE.md traps 50-53.
+    Shounen Mike     0.10% -> 0.10%
+    FM Sound Editor 30.17% -> 30.17%
+    Pro Yakyuu Fan  59.80% -> 59.80%
 
-**Where it stands now** -- `$FD1F` at pc=$5168, frame 13:
+So b0 is the first difference they NOTICE, not the one that stops them. Worth
+knowing before more effort goes into the b0/Luxsor standoff: it is one title
+(Luxsor, which blanks when b0 is set) against three, and fixing it buys none of
+the three.
 
-    ours       R $FD1F 7F              (IRQ immediately)
-    reference  R $FD1F 3F x99, then 7F (spins, then IRQ)
+**What b0 = 1 does buy is reach.** It moves each title's first divergence a long
+way down, which is how the two leads below were found at all. Both were invisible
+underneath the $FD00 difference.
 
-77AVEMU builds $FD1F as `data=0x3F; if(DRQ) |=0x80; if(IRQ) |=0x40;`
-(fm77avfdc.cpp, FM77AVIO_FDC_DRQ_IRQ). So the reference polls "nothing ready"
-99 times while the Restore ($0A, written to $FD18 at pc=$5159) seeks, then
-raises IRQ. This core raises IRQ on the same instruction that issues the
-command -- an FDC with **no seek time at all** on this path. Note section 2
-already carries FDC seek-time work ("FDC seek-time sector priming"), so some
-timing exists; this path is not covered by it.
+**Lead 1 -- Shounen Mike, `$FD05` bit 7 (SUBUNAVAIL).** With b0 = 1 the first
+divergence moves from access #20614 on frame 10 to **#29912 on frame 86**:
 
-That is the next thing to fix, and it is the first divergence on this title that
-is a *timing* fault rather than a wrong readback. Whether it is Mike's blocker
-is unproven -- Woody Poco tolerates the same instant FDC -- so measure before
-assuming, and re-run `tools/seqdiff.py` after any change to see where the
-divergence moves next.
+    ours       R $FD05 7E pc=$1273
+    reference  R $FD05 FE pc=$1273 x45292
 
-**$FD00 b0 is deliberately still "wrong"** and must not be touched on its own:
-flipping it to match the reference blanks Luxsor disk 2. It is a CPU-speed bit
-and is coupled to the main CPU clock item below. Trap 53.
+Bit 7 is the sub-CPU-unavailable flag (`TIMER.v`, `{ SUBUNAVAIL, 6'b111111,
+EXTDETn }`). This core reports the sub AVAILABLE; the reference reports it BUSY
+and spins there 45292 times before continuing. Ours then writes `$FD05 80` at
+pc=$1279 -- halting the sub -- while the reference is still waiting. That is a
+handshake this core is winning when it should be losing.
 
-**Four suspects eliminated, do not re-check:**
+**Lead 2 -- FM Sound Editor and Pro Yakyuu Fan, `$FD1D` at pc=$FEF0.** Both land
+on `R $FD1D` reading `$BC` here against `$80` there, in the boot ROM. Tested
+behaviourally: building with 77AVEMU's form (bits 5:2 cleared) changes NEITHER
+title, so matching the reference there is not the fix. See the FDC register
+section in docs/FM77AV.md -- the Fujitsu manuals define b0/b1, b6 and b7 only,
+both references agree on all of those, and they differ only on undefined bits
+where CSP's "reads 1" matches the FM-7 bus convention this project has confirmed
+four times over. **Not a lead; do not chase it.**
 
-* **The ALU's main-CPU read trigger** (the fix that rescued Woody Poco). Mike's
-  sub CPU is *not* halted -- 8650 instructions/frame, halted 0.1% of cycles --
-  so its ALU work goes through the sub path, which was never
-  direction-qualified. Measured after the fix: unchanged.
-* **`$FD37`'s access mask.** It never writes `$fd37` in 620 frames.
-* **Fine scroll (`$D430` b2) and the scroll-register aperture routing**
-  (`c50a852`). It sets b2 in every `$D430` write but never writes
-  `$D40E`/`$D40F`, so the offset stays 0 either way. Measured after that fix:
-  still 0.1% / 2 colours.
-* **The drawing ALU.** It fires, and the `q`/`d` bytes in the trace are correct.
+**Eliminated for Shounen Mike, do not re-check:** the ALU's main-CPU read
+trigger (its sub CPU is not halted), `$FD37`'s access mask (never written), fine
+scroll and the scroll-register aperture routing (it never writes `$D40E`/`$D40F`),
+and the drawing ALU itself (it fires with correct data).
 
 ### Sub RAM and the sub monitor ROM are reachable through MMR with the sub running
 
