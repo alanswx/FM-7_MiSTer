@@ -24,7 +24,11 @@ module KEYBOARD(
 
 reg press_btn;
 reg [8:0] code;
-reg [7:0] kdata = 8'd0;
+// Power-on value $FF, not $00 -- and this initialiser is what a title reads,
+// not the idle branch of the always @* block below: that block only
+// re-evaluates when something in its sensitivity list moves, so before the
+// first key event kdata keeps whatever it was declared with.
+reg [7:0] kdata = 8'hff;
 reg P0 = 0;
 reg [2:0] m77;
 reg m132;
@@ -489,7 +493,17 @@ always @* begin
 	  end
 
 		else begin
-			{ P0, kdata } <= 9'h0;
+			// $FD01 idles at $FF, not $00. 77AVEMU initialises lastKeyCode to
+			// 0xFF and says why, in four places: "Death Force Expects non-zero
+			// read from $FD01 on reset"
+			// (fm77avkeyboard.h:66, fm77avkeyboard.cpp:218,754,796).
+			//
+			// Shounen Mike is the same class. Its main-CPU $FDxx stream runs in
+			// exact lockstep with the reference -- same port, same value, same
+			// PC -- for 20593 distinct accesses, and the FIRST thing the two
+			// machines disagree about is `LDA $FD01` at pc=$610B on frame 10,
+			// where the reference reads $FF and this returned $00.
+			{ P0, kdata } <= 9'h0ff;
 		end
 
 	end

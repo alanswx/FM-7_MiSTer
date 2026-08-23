@@ -178,6 +178,15 @@ wire AV_FM_IRQn_gated = AV_FM_IRQn | ~machine_av;
 // interrupt from the other sources (77AVEMU fm77avio.cpp:897-901: the read
 // masks bit 3 off while the source is pending). Read-only; the flag is
 // cleared by writing the YM's own $27 reset bits, not by this read.
+// $FD0B read, b0: 0 = BASIC, 1 = DOS boot mode. This was not decoded at
+// all, so it fell through to the $ff default and every AV title was told
+// it had booted DOS. CSP: `retval = ((config.boot_mode & 3) == 0) ? 0xfe
+// : 0xff` inside _FM77AV_VARIANTS (fm7_mainio.cpp:1263-1264); MAME's
+// av_boot_mode_r is the same register with the same comment
+// (fm7.cpp:784-796). AV only -- on a plain FM-7 $FD0B is the shadow-RAM
+// alias of $FD0F, because the decode there ignores AB2.
+wire AV_FD0B_SEL = machine_av && (MADDRBUS == 16'hfd0b);
+wire [7:0] AV_FD0B_dout = { 7'b1111111, |bootrom_sel };
 wire AV_FD17_SEL = machine_av && (MADDRBUS == 16'hfd17);
 wire [7:0] AV_FD17_dout = { 4'hf, AV_FM_IRQn, 3'b111 };
 wire WFD15n = ~(machine_av && (MADDRBUS == 16'hfd15) && ~WTQEn);
@@ -388,6 +397,7 @@ assign MDATABUS_in =
   ~PLTREGn ? PALDATA :
   AVIO_sel ? AVIO_dout :
   ~RFD16n ? SOUND_dout :
+  (AV_FD0B_SEL & ~RDQEn) ? AV_FD0B_dout :
   (AV_FD17_SEL & ~RDQEn) ? AV_FD17_dout :
   ~IOSn ? 8'hff :
 

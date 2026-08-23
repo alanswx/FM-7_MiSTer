@@ -181,7 +181,17 @@ wire SUBUNAVAIL = BUSY | ~SHALTACn;
 // than churned on a disagreement between references. Recorded in TODO.md.
 always @*
   if (~RFD04n)
-    MDATABUS_out = { 5'b11111, BUSY, BREAKn, m45_q8n };
+    // Bit 2 reads 1, not BUSY. The Fujitsu system manual tabulates $FD04 as
+    // bit 0 ATENT, bit 1 BREAK, bits 7..2 UNUSED (SS:1-8, via
+    // refs/sedoc/8bit/fm7/ml.md:106-112), and MAME, CSP and 77AVEMU all
+    // leave it set too -- this core was the only one putting sub-BUSY there.
+    //
+    // Held back until a title's behaviour depended on it rather than just
+    // its register read. Shounen Mike is that title: its main-CPU $FDxx
+    // stream matches the reference exactly -- port, value and PC -- for
+    // 20596 distinct accesses, and the first disagreement is `LDA $FD04` at
+    // pc=$6120 on frame 10 reading $FB here against $FF there, bit 2 alone.
+    MDATABUS_out = { 6'b111111, BREAKn, m45_q8n };
   else if (~RFD05n)
     MDATABUS_out = { SUBUNAVAIL, 6'b111111, EXTDETn };
   else
