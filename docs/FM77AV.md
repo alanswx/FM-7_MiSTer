@@ -315,6 +315,44 @@ stubs. `$D432` b7 = latch ready, b0 = ACK. The mode that matters for software is
 mode with make/break codes — the FM-7 cannot sense key release at all (77AVEMU
 `readme.md`). Reset default is FM-7 mode (MAME `fm7.cpp:1829`), so software must opt in.
 
+## FDC registers, from the Fujitsu manuals
+
+FM-Techknow 図8-18 (page 180 of the scan, `refs/fm7-docs/archive-org-fm-techknow`)
+is the fullest bit-level table either manual gives for the FDC, and the FM-7
+System Specifications I/O map (page 1-9, page 23 of the scan) agrees with it:
+
+| addr | name | R/W | documented bits |
+|---|---|---|---|
+| `$FD18` | status / command | R / W | (status per WD179x command type) |
+| `$FD19` | track register | RW | track number |
+| `$FD1A` | sector register | RW | sector number |
+| `$FD1B` | data register | RW | read/write data |
+| `$FD1C` | head register | RW | b0 = side number |
+| `$FD1D` | **drive register** | RW | **b0,b1 drive number; b6 DRIVE DISABLE; b7 MOTOR ON** |
+| `$FD1F` | | R | b6 = IRQ, b7 = DRQ |
+
+**`$FD1D` b6 is a drive-disable bit** and neither reference models it as anything
+but 0; worth knowing before something writes it.
+
+**Bits 5:2 of `$FD1D` are undefined in both manuals**, and that is exactly where
+CSP and 77AVEMU disagree. CSP builds `0x3c | drive | (motor ? 0x80 : 0)` -- bits
+5:2 set -- and 77AVEMU returns `0x80 | currentDS` with them clear. This core
+follows CSP (`FDC.v`, `{ motor & ready, 1'b0, 4'b1111, drive }` = `$BC` with the
+motor on and drive 0 selected, against the reference's `$80`).
+
+Follow CSP here. Every undriven-bit question settled this session has come out
+the same way -- `$FD00` b6:1, `$FD04` b7:2, `$FD16`, `$D432` all read 1 on real
+hardware and on 77AVEMU itself -- so a floating bit reading 1 is the FM-7 bus
+convention, and 77AVEMU's zeros for `$FD1D` follow neither the convention nor
+CSP. **This means a `$FD1D` read difference in a trace diff is expected and is
+not a lead**, the same shape as the `$FD1B` logging artifact in REFERENCE.md
+section 1.
+
+Also from the same page, and not modelled here: the FM-7 blocks the MB8877A from
+starting a read/write for a fixed time after certain events -- 1 s after motor
+on, and 60 ms after a head load, a drive-register write, or a step. `FDC.v` has
+one 4000-cycle busy period and nothing this coarse.
+
 ## CPU clocks, from the Fujitsu manuals
 
 The primary sources settle this, and they disagree with what this core does and with
