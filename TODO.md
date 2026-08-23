@@ -685,47 +685,32 @@ and are fixed in `794d016`; none of them rescued the title, but together they
 moved the first divergence from access #20594 on frame 10 to #20613 on frame 11
 and out of the boot-mode branch.
 
-**Where it stands now.** Two genuine divergences remain, and only two -- from
-the third row on the two streams are shifted by one against each other, so
-everything after that is desync, not signal:
+**$FD18 and $FD00 are fixed** (`9af9c4f`). $FD18 b6 was our own harness forcing
+write protect on every disk; $FD00's undriven bits read 0 and now read 1. See
+REFERENCE.md traps 50-53.
 
-    #20613  frame 11   ours R $FD18 -> $04     reference R $FD18 -> $44
-    #20614  frame 11   ours R $FD00 -> $00     reference R $FD00 -> $7F
+**Where it stands now** -- `$FD1F` at pc=$5168, frame 13:
 
-**$FD18 bit 6 is OUR OWN TEST HARNESS, not the machine.** Chased all the way
-down: `DiskDrive::MakeUpStatus` puts write-protect in bit 6 for Type I, Write
-Sector, Write Track and Force Interrupt (the command outstanding here is $0A =
-Restore, so bit 6 really is write-protect); `WriteProtected()` resolves through
-`DiskImage::WriteProtected(diskIdx)` to `d77.GetDisk(idx)->IsWriteProtected()`,
-which is `0 != header.writeProtected` where `header.writeProtected =
-d77Img[0x1a]`. This image has `0x1a` = `0x00`. The reference reports protected
-anyway because **`tools/77avemu_headless.cpp:250` sets
-`param.fdImgWriteProtect[0] = true`** -- every reference render and trace in this
-project was produced with the disk write-protected regardless of its header.
+    ours       R $FD1F 7F              (IRQ immediately)
+    reference  R $FD1F 3F x99, then 7F (spins, then IRQ)
 
-It is also **not** Shounen Mike's blocker: Woody Poco's reference shows the same
-bit set (30 reads of `$40`, 3 of `$44`, against none here) and that title agrees
-with the reference on 97.30% of pixels. Fix it in the harness, not in the core --
-this core models no write-protect at all, which is right for an unprotected
-image. `SaveModifiedDiskImages()` is only called from 77AVEMU's GUI thread
-runner, never from our harness, so clearing the flag cannot modify the images.
+77AVEMU builds $FD1F as `data=0x3F; if(DRQ) |=0x80; if(IRQ) |=0x40;`
+(fm77avfdc.cpp, FM77AVIO_FDC_DRQ_IRQ). So the reference polls "nothing ready"
+99 times while the Restore ($0A, written to $FD18 at pc=$5159) seeks, then
+raises IRQ. This core raises IRQ on the same instruction that issues the
+command -- an FDC with **no seek time at all** on this path. Note section 2
+already carries FDC seek-time work ("FDC seek-time sector priming"), so some
+timing exists; this path is not covered by it.
 
-**Blocked on a rebuild:** `tools/build_77avemu_headless.sh` no longer compiles
-against the current `~/Documents/development/77AVEMU` checkout (two `override`
-errors on `CreateSound`/`DeleteSound` in the harness's `NullWorld`), so
-`refs/local/fm77av_headless` is a frozen artifact from 2026-08-17 and the flag
-cannot currently be tested. Fix the drift first, then verify the rebuilt binary
-reproduces the old one on a known title BEFORE regenerating any reference.
+That is the next thing to fix, and it is the first divergence on this title that
+is a *timing* fault rather than a wrong readback. Whether it is Mike's blocker
+is unproven -- Woody Poco tolerates the same instant FDC -- so measure before
+assuming, and re-run `tools/seqdiff.py` after any change to see where the
+divergence moves next.
 
-**$FD00** is the second divergence and belongs to the undriven-read-bits family
-below. The reference builds it as `byteData=0x7F`, `|=0x80` if the keycode's
-9th bit is set, and `&=0xFE` only when the main CPU is below 1.5 MHz
-(`fm77avio.cpp`, case FM77AVIO_KEYCODE_PRINTER_CASSETTE) -- so bits 6:1 are
-always 1 and bit 0 is a CPU-SPEED bit, not a static switch. This core builds
-`{ P0, 6'd0, ~fm8_switch }`. Worth noting the comment on that clause: "Actual
-native clock may be 2.0MHz or 1.8MHz. Catalog spec tells 2MHz. Actual
-measurement implies 1.8MHz" -- the reference is itself unsure, which is the same
-uncertainty recorded under the main CPU clock item below.
+**$FD00 b0 is deliberately still "wrong"** and must not be touched on its own:
+flipping it to match the reference blanks Luxsor disk 2. It is a CPU-speed bit
+and is coupled to the main CPU clock item below. Trap 53.
 
 **Four suspects eliminated, do not re-check:**
 

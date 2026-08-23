@@ -694,15 +694,41 @@ confident wrong answer at least once:
     this core shows none, and it still agrees on 97.30% of pixels), and the image's own
     `0x1a` byte.
 
-51. **`refs/local/fm77av_headless` is a frozen build and can no longer be regenerated.**
-    `tools/build_77avemu_headless.sh` fails against the current
-    `~/Documents/development/77AVEMU` checkout with two `override` errors on
-    `CreateSound`/`DeleteSound` in the harness's own `NullWorld`; the vendored
-    `refs/77AVEMU` and the upstream tree have diverged. The binary in `refs/local` dates
-    from 2026-08-17. That matters twice over: a harness change (see trap 50) cannot
-    currently be tested, and if the drift is fixed the rebuilt binary is a DIFFERENT
-    reference from the one every blessed shot was made with -- reproduce a known title on
-    the new binary before regenerating anything.
+51. **The reference harness silently stopped building, and nobody noticed for six days.**
+    77AVEMU removed `EnableDiffMouse`/`ToggleDiffMouse` from `Outside_World`, so the two
+    `override` keywords on them in the harness's own `NullWorld` became hard errors and
+    `tools/build_77avemu_headless.sh` failed against the current
+    `~/Documents/development/77AVEMU` checkout. `refs/local/fm77av_headless` sat frozen at
+    2026-08-17 and every reference render came from it. Fixed by dropping just those two
+    keywords -- the base still declares them pure virtual on the vendored tree, so the file
+    now compiles against both. (I first reported this as an error on
+    `CreateSound`/`DeleteSound`; those lines only produce warnings. Read the diagnostic,
+    not the nearest plausible line.)
+
+    **Whenever the reference binary is rebuilt, prove it reproduces the old one before
+    trusting a single number from it**: render a title you already have a blessed shot for
+    and `cmp` the PNG. Both rebuilds here were byte-identical on Woody Poco, which is what
+    made it safe to keep the blessed set rather than regenerate it.
+
+52. **`iodiff.py` cannot open the traces this project now produces.** It holds both
+    sides in memory and did not finish inside ten minutes on a 90 MB / 140 MB pair
+    (~1.2 M main-CPU accesses each). `tools/seqdiff.py` streams both and returns in
+    seconds. Its output has one rule: **only the first divergence or two are real.** The
+    streams are compared positionally, so the moment one machine emits an access the other
+    does not, every later row is offset by one -- the tell is "ours" row N starting to
+    match "reference" row N-1. Fix the first difference, re-run, let the next appear. That
+    loop walked Shounen Mike from `$FD01` to `$FD04` b2 to `$FD0B` to `$FD18` to `$FD00`
+    to `$FD1F`, one readback at a time, and four of those six turned out to be real bugs.
+
+53. **A readback that looks obviously wrong can be the only honest thing in the module.**
+    `$FD00` b0 reads back inverted against the reference, CLKCTRL's own comment says the
+    switch flip-flop *is* bit zero, and `SW2 = 1'b1` means "not FM-8". Every sign says
+    flip it. Flipping it **blanks Luxsor disk 2** (81.8% coverage in 37 colours to 0.0% in
+    1) and moves Valis disk 2. The reference's own code says why: it clears b0 when the
+    main CPU is below 1.5 MHz, so b0 is a CPU-SPEED bit and this core really does run its
+    AV main CPU at 1.2288 MHz. The register was telling the truth about a clock that is
+    wrong elsewhere. **Ablate a two-part fix into its parts before believing either half**
+    -- the undriven-bits half of the same edit is bit-identical on the gate.
 
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
