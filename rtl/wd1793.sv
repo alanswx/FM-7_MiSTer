@@ -670,10 +670,17 @@ always @(posedge clk_sys) begin
 					// boot ROM's four-drive probe expects $84 from an empty
 					// drive, not $94. (The superseded claim here was that the
 					// Fujitsu controller reports not-ready AND seek-error.)
-					if(!ready) begin
-						state <= STATE_ENDCOMMAND;
-					end
-					else if(wait_time) wait_time <= wait_time - 1;
+					// An empty drive still runs out the busy period before it
+					// terminates. It MUST still terminate and raise INTRQ -- that
+					// is what the paragraph above is about -- but ending the
+					// command on the same cycle it was issued is not how the
+					// reference behaves, and the difference is visible: on the
+					// boot ROM's four-drive probe Shounen Mike polls $FD1F and
+					// 77AVEMU answers $3F ninety-nine times before the Restore
+					// raises IRQ and it reads $7F, where this core answered $7F
+					// immediately. Letting the timer run covers both: the status
+					// still reports NOT READY, just not instantly.
+					if(wait_time) wait_time <= wait_time - 1;
 					else state <= STATE_ENDCOMMAND;
 				end
 
