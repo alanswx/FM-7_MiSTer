@@ -35,9 +35,28 @@ reg m132;
 reg [3:0] modif;
 reg input_strobe;
 
+// $FD00: b7 is the keycode's 9th bit, b0 is the machine-speed / FM-8 switch,
+// and b6:1 are UNDRIVEN and therefore read 1 -- they read 0 here and now do
+// not. 77AVEMU builds the register as `byteData=0x7F`, ORs in 0x80 for the 9th
+// keycode bit, and clears b0 only when the main CPU is below 1.5 MHz
+// (fm77avio.cpp, case FM77AVIO_KEYCODE_PRINTER_CASSETTE), so an idle read is
+// $7F where this returned $00.
+//
+// **b0 is deliberately left as `~fm8_switch` even though the reference reads
+// it back as 1.** Flipping it to match looks right -- CLKCTRL's own comment
+// says the switch flip-flop "is then used as bit zero of the main data bus",
+// and core.v wires SW2 = 1'b1 with "0 = FM-8 compatibility" -- and it takes
+// Luxsor disk 2 from 81.8% coverage in 37 colours to a BLANK SCREEN, and moves
+// Valis disk 2 as well. The undriven bits alone leave the gate bit-identical.
+//
+// The reason is in the reference's own condition: b0 is a CPU-SPEED bit, not a
+// static jumper, and this core really does run its AV main CPU at the FM-7
+// leg's 1.2288 MHz -- below the 1.5 MHz threshold -- so reporting 0 is honest
+// while the clock is what it is. b0 cannot be corrected independently of the
+// main CPU clock; see the clock item in TODO.md and REFERENCE.md trap 45.
 assign MKDATA =
   ~RFD01n ? kdata :
-  ~RFD00n ? { P0, 6'd0, ~fm8_switch } : 8'h0;
+  ~RFD00n ? { P0, 6'b111111, ~fm8_switch } : 8'h0;
 
 assign SKDATA =
   ~KACKNGn ? kdata :

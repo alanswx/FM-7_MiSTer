@@ -51,8 +51,14 @@ public:
     void Stop(void) override {}
     void DevicePolling(FM77AV &) override {}
     void SetKeyboardLayout(unsigned int) override {}
-    void EnableDiffMouse(bool) override {}
-    void ToggleDiffMouse(void) override {}
+    // No `override` on these two deliberately. 77AVEMU removed
+    // EnableDiffMouse/ToggleDiffMouse from Outside_World after the build this
+    // harness was first written against; with `override` the file stops
+    // compiling on the newer tree, and without it it compiles on both -- the
+    // keyword is optional where the base still declares them pure virtual, and
+    // the methods are simply unused where it does not.
+    void EnableDiffMouse(bool) {}
+    void ToggleDiffMouse(void) {}
     WindowInterface *CreateWindowInterface(void) const override { return new NullWindow; }
     void DeleteWindowInterface(WindowInterface *p) const override { delete p; }
     Sound *CreateSound(void) const override { return new NullSound; }
@@ -247,7 +253,21 @@ int main(int argc, char **argv)
     else
     {
         param.fdImgFName[0] = media;
-        param.fdImgWriteProtect[0] = true;
+        // Honour the image's own write-protect flag -- do NOT force it on.
+        //
+        // This was `true`, which made the reference report WRITE PROTECT in
+        // $FD18 b6 for every title regardless of the disk. 77AVEMU reads the
+        // real flag (DiskDrive::WriteProtected -> DiskImage::WriteProtected ->
+        // d77.GetDisk(idx)->IsWriteProtected(), i.e. `0 != d77Img[0x1a]`) and
+        // every image in the collection checked so far has 0x1a = 0x00, so the
+        // override was inventing a difference this core was then blamed for:
+        // Shounen Mike's $FD18 read 97 x $40 and 6 x $44 with it on, and
+        // 1385 x $00 / 7 x $04 with it off, which is this core's own profile.
+        //
+        // Safe: SaveModifiedDiskImages() is only reached from 77AVEMU's GUI
+        // thread runner, never from here, so nothing is written back to the
+        // .d77 files. Verified render-identical on Woody Poco and Shounen Mike.
+        param.fdImgWriteProtect[0] = false;
     }
 
     NullWorld world;
