@@ -49,8 +49,29 @@ def ours(path):
         for ln in f:
             m = OURS.match(ln)
             if m:
-                yield (m.group(2), m.group(3).upper(), m.group(4).upper(),
-                       m.group(5).upper()), int(m.group(1))
+                port = m.group(3).upper()
+                val = '--' if (m.group(2) == 'R' and port in VALUE_UNCOMPARABLE) \
+                    else m.group(4).upper()
+                yield (m.group(2), port, val, m.group(5).upper()), int(m.group(1))
+
+
+# 77AVEMU's trace logs a read's value BEFORE the device's side effect runs.
+# `FM77AV::IORead` takes `byteData = NonDestructiveIORead(ioAddr)`, prints that,
+# and only then reaches `byteData = fdc.IORead(ioAddr)` in its switch -- so for a
+# port whose read ADVANCES something, the logged value is the previous one. The
+# CPU gets the right byte; the log is one behind. (They know: $FD02 re-reads
+# after its side effect with the comment "This one needs to be read after Move."
+# The FDC ports do not.)
+#
+# $FD1B, the FDC data register, is the one that matters here: a sector read logs
+# the stale register and then every byte one late, which looks exactly like this
+# core returning the wrong bytes. It is not -- reading the .d77 settles it, and
+# REFERENCE.md section 1 has the worked example.
+#
+# So the VALUE of a $FD1B read is not comparable between the two traces. Compare
+# direction, port and PC for it and leave the value out of the key, rather than
+# letting a known logging artifact desynchronise the whole stream.
+VALUE_UNCOMPARABLE = {'FD1B'}
 
 
 def ref(path):
@@ -58,7 +79,10 @@ def ref(path):
         for ln in f:
             m = REF.match(ln)
             if m:
-                yield (m.group(1)[0], m.group(3), m.group(4).zfill(2),
+                port = m.group(3)
+                val = '--' if (m.group(1)[0] == 'R' and port in VALUE_UNCOMPARABLE) \
+                    else m.group(4).zfill(2)
+                yield (m.group(1)[0], port, val,
                        m.group(2).upper().zfill(4)), None
 
 

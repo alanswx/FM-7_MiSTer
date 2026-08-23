@@ -18,30 +18,49 @@ history and code comments, not here. `Pn-m` numbers cite sections of the retired
 split at `fm7_mainmem.cpp:218` is AV40EX-only; the plain FM-7 boot ROM is `$FE00-$FFEF` per
 `fm7_common.h:19`.
 
-### Worked example: 77AVEMU's sector reads are off by one (we are right)
+### Worked example: 77AVEMU's TRACE LOG is off by one, not its FDC
 
-Recorded so nobody "fixes" the FDC to match the tiebreaker. On the original
-Fujitsu FM77AV demo disk, the boot loader's first sector read at `pc=$521f`
-yields:
+**This section previously claimed 77AVEMU's sector reads were off by one and that
+this core was right. The second half is true and the first half is wrong.** The
+emulator delivers the correct bytes; only its `--trace-io` output is shifted, and
+diffing the traces without knowing that desynchronises the whole comparison at
+the first sector read.
 
-| | first bytes returned |
+On the original Fujitsu FM77AV demo disk, the boot loader's sector read loop at
+`pc=$521F` logs:
+
+| | first bytes in the trace |
 |---|---|
 | this core | `1A 50 86 FD 1F 8B 30 8D ...` |
 | 77AVEMU   | `FF 1A 50 86 FD 1F 8B 30 ...` |
 
-Both read exactly 256 times. Reading the `.d77` directly settles it: track 0
-sector 1 is `1A 50 86 FD 1F 8B 30 8D 00 42 10 8E 01 00 86 02`. **This core is
-correct**; 77AVEMU emits a leading `$FF` -- the data register's stale content
-from the loader's own `$FD1B <- $FF` scratch test at `$5190` -- and so drops the
-sector's last byte.
+Track 0 sector 1 of the `.d77` is `1A 50 86 FD 1F 8B 30 8D 00 42 ...`, so this
+core's trace is the honest one. But the reference is not returning `$FF` to its
+CPU. `FM77AV::IORead` (`fm77avio.cpp:632-651`) does:
 
-Its `$FD18` Type I status bit 6 is wrong on the same disk too: it reports
-write-protect set (`$44` where we return `$04`) while the image's write-protect
-byte at offset `$1A` is `$00`.
+    uint8_t byteData = NonDestructiveIORead(ioAddr);   // value BEFORE side effects
+    ... if monitored, PRINT byteData ...
+    switch(ioAddr) { ... case FM77AVIO_FDC_DATA: byteData = fdc.IORead(ioAddr); }
 
-Neither artifact stops 77AVEMU rendering the disk, so neither is a lead. Both
-look exactly like a first-byte bug on *our* side if you diff the traces without
-checking the image — which is the whole point of writing them down.
+The print happens before the switch, so for any port whose read *advances*
+something the log shows the previous value. `fdc.IORead` then performs the
+advance and returns the right byte to the CPU. They know about the ordering --
+`$FD02` re-reads after its side effect with the comment "This one needs to be
+read after Move." The FDC ports do not.
+
+**Consequences.** Do not "fix" 77AVEMU's FDC to match: patching it changes
+nothing (tried -- six titles render byte-identical before and after, and the
+logged sequence is unchanged) because there is nothing wrong with it.
+`tools/seqdiff.py` now leaves the VALUE of a `$FD1B` read out of its comparison
+key for both sides, which is what let a Luxsor disk 2 comparison run 3100
+accesses further, out of the boot ROM and into the title's own loader.
+
+(Superseded claim, corrected: "77AVEMU emits a leading `$FF` and so drops the
+sector's last byte" -- it emits the leading `$FF` only into the log.)
+
+Its `$FD18` Type I status bit 6 looked wrong on the same disk too -- reporting
+write-protect where we return `$04`. **That was ours**: `tools/77avemu_headless.cpp`
+was force-mounting every image write-protected. Fixed; see trap 50.
 
 ### Worked example: VRAM plane order (MAME is the odd one out)
 
