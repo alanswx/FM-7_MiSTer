@@ -3,6 +3,8 @@
 
 module CLKCTRL(
   input SW2,
+  input machine_av,
+  input mmr_enabled,
   input CLKSYS,
   input SCLK1, // 8
   input SCLK2, // 4
@@ -41,6 +43,8 @@ wire CLK4_9;
 
 // 4.9152MHz
 clk_en #(CORE_CLK_4_9) u_ck_en(.ref_clk(CLKSYS), .clk(CLK4_9));
+wire CLK6_8;
+clk_en #(CORE_CLK_6_8) u_ck_mmr_en(.ref_clk(CLKSYS), .clk(CLK6_8));
 
 // clock divider (74LS393) used to generate  2.5MHz, 1.2MHz & 0.3MHz
 reg [3:0] m93;
@@ -89,7 +93,22 @@ always @(posedge CLKSYS)
 // There are two different tape procedures in BIOS.
 // When loading tapes, the bios checks for this flag fist and jumps to the
 // corresponding procedure.
-assign MCPUCLK = switch ? CLK4_9 : SCLK1;
+// Fujitsu FM-7 System Specifications p.38, sec 1.4: both CPUs run at 8 MHz
+// normally, and the FM-8 compatibility DIP switch moves BOTH -- main to 4.9 MHz,
+// sub to 4 MHz. `switch` is that DIP switch, and page 22's I/O map labels the
+// $FD00 bit it drives 0:1.2M / 1:2M, so switch=1 is the NORMAL 2 MHz machine.
+//
+// This mux had the legs the wrong way round: switch=1 selected CLK4_9, giving
+// the main CPU the FM-8 rate while SCPUCLK kept the sub on 8 MHz -- main in
+// FM-8 mode and sub in FM-7 mode, a pairing the manual says cannot exist.
+//
+// On the AV the main CPU additionally drops to 1.6 MHz whenever MMR is enabled
+// (FM-Techknow p.334: "2MHz ではなく 1.6MHz に落ちる", and disabling MMR is
+// worth a reliable 20% -- 1.6/2.0 = 0.8). 6.4 MHz is not an integer divide of
+// 48 MHz; CLK6_8 is 48/7 = 6.857 MHz, E = 1.714 MHz. Titles toggle this at
+// runtime -- the FM77AV demo disk disables MMR for its closing palette section
+// precisely to go faster (FM-Techknow p.318) -- so it cannot be a static rate.
+assign MCPUCLK = switch ? ((machine_av & mmr_enabled) ? CLK6_8 : SCLK1) : CLK4_9;
 
 // SUPERSEDED CLAIM: "the FM-7/FM-8 switch changes the MAIN CPU's clock only,
 // the sub runs at the same rate either way" -- disproven by the Fujitsu FM-7
@@ -115,7 +134,10 @@ assign MCPUCLK = switch ? CLK4_9 : SCLK1;
 // program across the shared window with a counter at $fcfe and never waits for
 // the sub to catch up. At half speed the sub fell behind and dropped roughly
 // every other byte. This is P0-5 again, on the other CPU.
-assign SCPUCLK = SCLK1;
+// Same switch, per the manual: 8 MHz normally, 4 MHz in FM-8 mode. With SW2
+// tied high this is SCLK1 either way, so behaviour is unchanged -- but the
+// dependency is now expressed rather than implied.
+assign SCPUCLK = switch ? SCLK1 : SCLK2;
 
 // M50 is a FF that is supposed to output the timer IRQ signal for the main CPU.
 // It can be masked with TMMASK. Clock is a 2MS signal generated in this module.

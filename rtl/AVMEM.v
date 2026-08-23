@@ -55,7 +55,10 @@ module AVMEM(
   output        FM7PAGE_SEL,
   output [15:0] FM7PAGE_ADDR,
   output        FM7PAGE_WRITE,
-  input   [7:0] FM7PAGE_DOUT
+  input   [7:0] FM7PAGE_DOUT,
+  // For the clock mux: the AV main CPU drops from 2 MHz to 1.6 MHz while MMR
+  // is enabled (FM-Techknow p.334).
+  output        MMR_ENABLED
 );
 
 reg av_mode_320;
@@ -81,6 +84,7 @@ reg [5:0] mmr [0:3][0:15];
 reg [1:0] mmr_segment;
 reg [7:0] twr_address;
 reg       mmr_enable;
+assign MMR_ENABLED = mmr_enable;
 reg       twr_enable;
 reg       bootram_write_enable;
 reg [1:0] submon_sel;

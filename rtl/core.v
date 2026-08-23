@@ -359,6 +359,7 @@ wire HBLANKn;
 wire VBLANKn;
 wire HBLANK_DISP;
 wire fm8_switch;
+wire AV_MMR_ENABLED;
 wire CLK2_5;
 wire CLK1_2;
 wire CLK0_3;
@@ -449,6 +450,8 @@ CLKCTRL u_CLKCTRL(
   // it at the FM-8's 2 MHz) and is reported on $FD00 bit 0, which the BIOS
   // reads to choose between two different cassette routines.
   .SW2          ( 1'b1         ), // 0 = FM-8 compatibility
+  .machine_av   ( machine_av      ),
+  .mmr_enabled  ( AV_MMR_ENABLED  ),
   .CLKSYS       ( CLKSYS       ),
   .SCLK1        ( SCLK1        ),
   .SCLK2        ( SCLK2        ),
@@ -609,7 +612,8 @@ AVMEM u_AVMEM(
   .FM7PAGE_SEL   ( AV_FM7PAGE_SEL   ),
   .FM7PAGE_ADDR  ( AV_FM7PAGE_ADDR  ),
   .FM7PAGE_WRITE ( AV_FM7PAGE_WRITE ),
-  .FM7PAGE_DOUT  ( MRAM_dout        )
+  .FM7PAGE_DOUT  ( MRAM_dout        ),
+  .MMR_ENABLED   ( AV_MMR_ENABLED   )
 );
 
 // Sub-system register write bus.

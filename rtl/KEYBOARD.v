@@ -42,18 +42,21 @@ reg input_strobe;
 // (fm77avio.cpp, case FM77AVIO_KEYCODE_PRINTER_CASSETTE), so an idle read is
 // $7F where this returned $00.
 //
-// **b0 is deliberately left as `~fm8_switch` even though the reference reads
-// it back as 1.** Flipping it to match looks right -- CLKCTRL's own comment
-// says the switch flip-flop "is then used as bit zero of the main data bus",
-// and core.v wires SW2 = 1'b1 with "0 = FM-8 compatibility" -- and it takes
-// Luxsor disk 2 from 81.8% coverage in 37 colours to a BLANK SCREEN, and moves
-// Valis disk 2 as well. The undriven bits alone leave the gate bit-identical.
+// b0 reports the FM-8 compatibility DIP switch, and the Fujitsu FM-7 System
+// Specifications page 22 labels it in the I/O map as 0:1.2M / 1:2M -- it is the
+// main CPU's E clock, 1.2 MHz or 2 MHz. Page 38 is the matching prose: one
+// switch, set with the power off, moving BOTH CPUs together.
 //
-// The reason is in the reference's own condition: b0 is a CPU-SPEED bit, not a
-// static jumper, and this core really does run its AV main CPU at the FM-7
-// leg's 1.2288 MHz -- below the 1.5 MHz threshold -- so reporting 0 is honest
-// while the clock is what it is. b0 cannot be corrected independently of the
-// main CPU clock; see the clock item in TODO.md and REFERENCE.md trap 45.
+// **Still `~fm8_switch`, i.e. still reporting 1.2 MHz, and that is now KNOWN to
+// be wrong rather than merely suspected.** The clock mux has since been
+// corrected, so this core does run its main CPU at 2 MHz, and the honest value
+// here is 1. Setting it blanks Luxsor disk 2 at every frame sampled between
+// 1000 and 2400 -- not a phase artifact, genuinely blank -- while the clock fix
+// alone leaves that title at 81.9% coverage in 35 colours.
+//
+// 77AVEMU returns $7F here and runs Luxsor fine, so $7F is not inherently fatal
+// and the fault is a SECOND bug in this core that the bit merely exposes. Left
+// at 0 until that is found; flipping it is a one-line change once it is.
 assign MKDATA =
   ~RFD01n ? kdata :
   ~RFD00n ? { P0, 6'b111111, ~fm8_switch } : 8'h0;
