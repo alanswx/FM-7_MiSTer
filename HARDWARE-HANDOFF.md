@@ -6,6 +6,85 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# For the next build: the CPU clocks were wrong, and that was the big one
+
+Head is now `6a7030e`. Since the Woody Poco batch below, eleven commits. Two are
+RTL changes you should test carefully; the rest are simulation tooling and docs.
+
+## 1. `6a7030e` -- the main and sub CPU clocks (TEST THIS FIRST)
+
+**This core has been running the FM77AV's main CPU at the FM-8 rate.** The clock
+mux had its legs the wrong way round:
+
+    MCPUCLK = switch ? CLK4_9 : SCLK1     // SW2 tied high -> 4.8 MHz, E = 1.2 MHz
+    SCPUCLK = SCLK1                       //                 8   MHz, E = 2.0 MHz
+
+Fujitsu FM-7 System Specifications p.38 sec 1.4: **both** CPUs run at 8 MHz
+normally; the FM-8 compatibility DIP switch moves **both** (main to 4.9 MHz, sub
+to 4 MHz); and the manual says in as many words that they cannot be switched
+independently. Page 22's I/O map labels the `$FD00` bit that switch drives
+`0:1.2M / 1:2M`. So this core was in a main-FM-8 / sub-FM-7 pairing that no real
+machine can be in.
+
+Now: main and sub both on 8 MHz, and -- new -- the AV's **MMR-conditional drop**.
+FM-Techknow p.334: with MMR enabled the main CPU runs at 1.6 MHz rather than
+2 MHz, and turning MMR off is worth "a reliable 20%" (1.6/2.0 = 0.8, so the two
+figures corroborate). 6.4 MHz is not an integer divide of 48 MHz, so the MMR leg
+is 48/7 = 6.857 MHz, E = 1.714 MHz. It has to be dynamic -- the FM77AV demo disk
+disables MMR for its closing palette section precisely to go faster
+(FM-Techknow p.318).
+
+**The main CPU now runs 1.67x faster than any build you have tested.** That is a
+timing change across the whole machine, so it is worth a careful look on
+hardware: sound pitch, tape, FDC, and anything that felt "right" before.
+
+**Expected on the AV set** (simulated, phase-checked):
+
+    Mugen Senshi Valis disk 2   57.1%  -> 98.3% agreement
+    Deep Forest disk A          85.4%  -> 100.0%
+    Digital Devil Story         75.5%  -> 91.5%
+    Kugyokuden disk 1           95.1%  -> 100.0%
+    Woody Poco disk 1           unchanged
+
+**Do not judge it from a single screenshot at a fixed frame.** Everything now
+reaches a given scene sooner, so a shot taken at the old moment lands somewhere
+else. The FM77AV demo disk reads as a *solid screen* at frame 2000 and is
+completely fine at 1800 (92.8% coverage in 13 colours, 95.30% agreement) with
+full-screen images at 2400 and 2800. I called it "broken" twice on exactly that
+mistake before checking. Same for Tower of Druaga and Luxsor disk 2. If a title
+looks wrong, sample it earlier before reporting it.
+
+**Known not-fixed:** `$FD00` b0 should now read 1 (the machine really is at
+2 MHz) and is deliberately still 0. Setting it blanks Luxsor disk 2 at every
+frame from 1000 to 2400 -- genuine, not phase -- while 77AVEMU returns `$7F`
+there and runs the title fine. That is a second bug in this core that the bit
+exposes; left alone until it is found.
+
+## 2. `32e04b6` -- FDC: an empty drive runs out its busy period
+
+`STATE_WAIT_2` ended a command on the same cycle it was accepted when the drive
+was empty, so INTRQ was instant. The boot ROM's four-drive probe sees this: the
+reference polls `$FD1F` 99 times before the RESTORE completes, this core answered
+on the first poll. Now the existing `wait_time` runs. Watch the four-drive probe
+and anything that mounts fewer than four disks.
+
+## 3. Lower risk
+
+`794d016` and `9af9c4f` fix four main-I/O readbacks that disagreed with every
+reference: `$FD01` idles at `$FF` (77AVEMU: "Death Force Expects non-zero read
+from $FD01 on reset"), `$FD04` b2 reads 1 rather than sub-BUSY (the Fujitsu
+system manual tabulates bits 7..2 as unused), `$FD0B` was not decoded at all so
+every AV title was told it had booted DOS, and `$FD00`'s undriven bits 6:1 read 0
+and now read 1. All four are single-bit reads; the gate was bit-identical on each.
+
+`b7df560` makes the drawing ALU's registers readable through the MMR aperture --
+same family as the scroll fix below, needed by the same title.
+
+The rest (`9856db4`, `b2117a0`, `2519efd`, `5384aea`, `3103192`, `d0087d1`) are
+simulation tooling and documentation and cannot affect a hardware build.
+
+---
+
 # For the next build: Woody Poco's in-game playfield is fixed (4 commits)
 
 Head is now `c50a852`. Four commits since `c55f31d`, all FM77AV, all simulated
