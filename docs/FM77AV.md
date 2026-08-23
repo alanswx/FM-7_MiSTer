@@ -315,6 +315,70 @@ stubs. `$D432` b7 = latch ready, b0 = ACK. The mode that matters for software is
 mode with make/break codes — the FM-7 cannot sense key release at all (77AVEMU
 `readme.md`). Reset default is FM-7 mode (MAME `fm7.cpp:1829`), so software must opt in.
 
+## CPU clocks, from the Fujitsu manuals
+
+The primary sources settle this, and they disagree with what this core does and with
+what `CLKCTRL.v` says about it.
+
+**FM-7 System Specifications §1.4** (`refs/fm7-docs/archive-org-fm7-system-specifications`,
+page 38, 動作クロック周波数の切換え機能):
+
+> FM-7 は、メイン CPU、サブ CPU 共に、クロック周波数 8 MHz で動作しますが、FM-8 用に開発
+> された既存のソフトウェアを活用しようとした場合に…メイン CPU は 4.9 MHz に、サブ CPU は
+> 4 MHz に切換えて使用することができます。…切換えは、メイン CPU、サブ CPU 同時に切換わり
+> ます。メイン CPU、サブ CPU 単独に切換えることはできません。
+
+| | main CPU | sub CPU | main E |
+|---|---|---|---|
+| normal FM-7 | 8 MHz | 8 MHz | 2 MHz |
+| FM-8 compatibility | 4.9 MHz | 4 MHz | 1.2288 MHz |
+
+Three facts worth having in that order: normal is **8 MHz for both**; the FM-8 setting
+moves **both**; and the manual says outright they **cannot be switched independently**
+(it is one DIP switch, read back on `$FD00` b0, and it must be set with the power off).
+Page 22's I/O map labels that bit `0:1.2M / 1:2M`, so b0 reports the main CPU's E clock
+directly: 0 = 1.2 MHz, 1 = 2 MHz.
+
+**This core is in a state no real FM-7 can be in.** `MCPUCLK = switch ? CLK4_9 : SCLK1`
+with `SW2` tied high gives the main CPU 4.8 MHz -- the FM-8 rate -- while `SCPUCLK =
+SCLK1` gives the sub 8 MHz, the FM-7 rate. Main in FM-8 mode, sub in FM-7 mode. That
+pairing is exactly what the manual says is impossible.
+
+It is also self-consistent in one respect, which is why it has survived: `$FD00` b0 reads
+back `~fm8_switch` = 0, i.e. "1.2 MHz", which is the truth about this core. Correcting b0
+on its own therefore *lies* to software, and it blanks Luxsor disk 2 when tried
+(REFERENCE.md trap 53).
+
+**The FM77AV adds an MMR-conditional drop.** FM-Techknow page 334:
+
+> MMR 有効時の CPU クロックが 2MHz ではなく 1.6MHz に落ちる…MMR を無効にしておけば、
+> 処理速度が確実に 20% UP します
+
+2 MHz normal, 1.6 MHz with MMR enabled, and the 20% figure corroborates the pair exactly
+(1.6/2.0 = 0.8). CSP encodes the same drop as `MAINCLOCK_MMR 1565000`
+(`fm7_common.h:79-82`). This core models none of it.
+
+**Why raising the main clock alone fails.** Two flat rates have been tried, 2.016 MHz and
+1.714 MHz, and both break the FM77AV demo disk to a solid screen (trap 45). The reason is
+above: raising only the main clock changes the main:sub *ratio*, and the sub clock has
+already been shown to be load-bearing -- the comment in `CLKCTRL.v` records Thexder
+dropping roughly every other byte across the shared window when the sub ran at 4 MHz. That
+fix was right in direction and wrong in kind; per the manual both should have moved to
+8 MHz together.
+
+The demo is the sharpest test of this because FM-Techknow page 318 describes **that exact
+disk**: its closing 4096-colour palette section watches `$FD12` b1 for the display-timing
+edge, writes palette entries inside the 23.84 us horizontal blanking window, and *disables
+MMR and halts the sub CPU* to go fast enough. Confirmed in a trace: it writes `$FD93`
+with b7 set and clear. So it exercises the MMR-conditional clock, the main:sub ratio and
+the blanking window at once, and a flat main-clock change perturbs all three.
+
+The horizontal window itself is already right here: `MB60H010.v` gives 384 blanked pixels
+of 1024 at 15.75 kHz = 23.8 us, and `$FD12` b1 is `~(~VBLANKn | ~SBLANKn)`.
+
+**So the change to try is not another number.** It is: main and sub to 8 MHz together, and
+an MMR-conditional drop to ~1.6 MHz on the AV. Untried at time of writing.
+
 ## ROM set
 
 `refs/fm77av.zip` matches MAME's `ROM_START( fm77av )` (`refs/mame/src/mame/fujitsu/fm7.cpp:2211-2233`) exactly; there is no `NO_DUMP`:

@@ -91,10 +91,20 @@ always @(posedge CLKSYS)
 // corresponding procedure.
 assign MCPUCLK = switch ? CLK4_9 : SCLK1;
 
-// The FM-7/FM-8 switch changes the MAIN CPU's clock only. The sub CPU runs at
-// the same rate either way: MAME has it at 16.128MHz/2 = 8.064 MHz for both
-// (fm7.cpp `MC6809(config, m_sub, 16.128_MHz_XTAL / 2)`), giving E = 2.016 MHz,
-// while the FM-7's main CPU drops to 4.9152 MHz / E = 1.2288 MHz.
+// SUPERSEDED CLAIM: "the FM-7/FM-8 switch changes the MAIN CPU's clock only,
+// the sub runs at the same rate either way" -- disproven by the Fujitsu FM-7
+// System Specifications, page 38, section 1.4. Both CPUs run at 8 MHz normally
+// and the FM-8 setting moves BOTH, main to 4.9 MHz and sub to 4 MHz; the manual
+// says in as many words that they cannot be switched independently. It is one
+// DIP switch, read back on $FD00 b0, which page 22's I/O map labels 0:1.2M /
+// 1:2M. See docs/FM77AV.md.
+//
+// So this core currently sits in a combination no real FM-7 can be in: main on
+// the FM-8 leg at 4.8 MHz, sub on the FM-7 leg at 8 MHz. That is why raising
+// only the main clock breaks the FM77AV demo -- it moves the main:sub ratio,
+// and the paragraph below is the evidence that the ratio is load-bearing.
+// Per the manual the fix is to move BOTH to 8 MHz, plus the AV's MMR-conditional
+// drop to ~1.6 MHz (FM-Techknow p.334). Untried; see TODO.md.
 //
 // This used to hand the sub SCLK2 in FM-7 mode, which is 4 MHz -- E = 1 MHz,
 // half speed. SCLK2 is not the sub's clock at all; MB60H010.v labels it "clock

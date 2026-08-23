@@ -760,36 +760,43 @@ The other two shapes, for whoever picks this up:
 * **Little Box** executes garbage at `$61b8` with a dead main CPU
   (243 instructions/frame) — a runaway, and a different fault again.
 
-### The FM77AV main CPU clock is wrong, and changing it is not the fix
+### The CPU clocks are wrong, and the two must move together
 
-`CLKCTRL.v`'s `assign MCPUCLK = switch ? CLK4_9 : SCLK1` has no `machine_av`
-term, so the AV runs its main CPU at the FM-7 leg's 4.8/4 = 1.2 MHz E. Every
-reference disagrees: MAME's `fm77av` is 2.016 MHz
-(`refs/mame/src/mame/fujitsu/fm7.cpp:1986`), CSP has `MAINCLOCK_NORMAL 1798000`
-dropping to `MAINCLOCK_MMR 1565000` when MMR is on (`fm7_common.h:79-82`) with
-2016000 reserved for the AV20/AV40 (`fm7.h:254-258`), and 77AVEMU's own $FD00
-handler carries the comment "Catalog spec tells 2MHz. Actual measurement implies
-1.8MHz".
+**Settled from the primary sources** -- see the new clock section in
+docs/FM77AV.md for the quotations. FM-7 System Specifications page 38: both CPUs
+run at **8 MHz** normally, the FM-8 compatibility setting moves **both** (main to
+4.9 MHz, sub to 4 MHz), and they **cannot be switched independently**. Page 22
+labels `$FD00` b0 as `0:1.2M / 1:2M`. FM-Techknow page 334: on the AV, enabling
+MMR drops the main CPU from **2 MHz to 1.6 MHz**, "processing speed reliably 20%
+UP" with MMR off -- and 1.6/2.0 = 0.8 exactly.
 
-**Two rates have been tried and both break the FM77AV demo disk to a solid
-single-colour screen** (92.8% coverage in 13 colours -> 100.0% in 1):
+**This core is in a state no real machine can be in.** `MCPUCLK = switch ?
+CLK4_9 : SCLK1` with SW2 tied high puts the main CPU on the FM-8 leg (4.8 MHz)
+while `SCPUCLK = SCLK1` keeps the sub on the FM-7 leg (8 MHz).
 
-    E = 2.016 MHz   via SCLK1
-    E = 1.714 MHz   via a new 48/7 clk_en, the closest integer divide to CSP's
-                    1.798 and safely above the 1.5 MHz threshold 77AVEMU uses
-                    for $FD00 b0; also took Valis disk 2 87.2% -> 84.1%
+That explains the two failed attempts (trap 45): raising the main clock alone to
+2.016 or 1.714 MHz breaks the FM77AV demo, because it changes the main:sub
+*ratio*, and CLKCTRL's own comment already records that ratio being load-bearing
+-- Thexder dropped roughly every other byte across the shared window when the sub
+was slowed to 4 MHz. That fix was right in direction and wrong in kind.
 
-Both reverted. That the *slower, closer* rate fails identically means the demo
-is not calibrated to a particular frequency -- **something else in this core is
-coupled to the main CPU clock**. Find that coupling first; a third number is not
-the next thing to try. Candidates worth measuring: main-to-sub handshake timing,
-the FDC's fixed `wait_time`, and anything deriving a period from CLKSYS rather
-than from E.
+**What to try, in this order:**
 
-This blocks two other items. `$FD00` b0 is a CPU-SPEED bit -- 77AVEMU clears it
-below 1.5 MHz -- so it reads 0 here honestly and cannot be corrected on its own
-(trap 53), and it is currently the first divergence on Shounen Mike. The
-MMR-enabled drop to ~1.565 MHz is not modelled either.
+1. Move main AND sub to 8 MHz together (E = 2.016 both). This is the documented
+   normal FM-7 configuration and the only one the manual allows alongside a sub
+   at 8 MHz.
+2. Add the AV's MMR-conditional drop to ~1.6 MHz. The demo disk toggles MMR --
+   traced, `$FD93` written with b7 both set and clear -- so it exercises this.
+3. Only then revisit `$FD00` b0, which is a CPU-speed bit and currently reports
+   this core's real (wrong) 1.2 MHz honestly. Fixing it alone blanks Luxsor disk
+   2 (trap 53).
+
+**Why the demo is the test to watch.** FM-Techknow page 318 describes that exact
+disk: its closing 4096-colour palette section watches `$FD12` b1 for the
+display-timing edge and writes palette entries inside the 23.84 us horizontal
+blanking window, disabling MMR and halting the sub CPU to go fast enough. It
+exercises the MMR clock, the main:sub ratio and the blanking window at once. The
+window itself is already correct here (384 of 1024 pixels = 23.8 us).
 ### Undriven read bits return 0 where hardware returns 1
 
 Found by diffing the read streams against 77AVEMU over the same frames. Bits
