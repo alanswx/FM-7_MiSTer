@@ -6,6 +6,39 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Hardware: the clock-fix build passes everything, and the speedup is visible
+
+Built head `4281408` (RTL through `6a7030e`): 0 errors, 23,293 ALMs (56%),
+516/553 RAM blocks, all clocks positive slack. Deployed.
+
+- **F-BASIC and DOS both boot** normally — the FDC empty-drive busy period
+  (`32e04b6`) did not disturb the four-drive probe on a one-disk mount.
+- **Tone: 234.38 Hz, unchanged.** The PSG clock is confirmed independent of
+  the CPU clock change.
+- **The speedup is real and visible on hardware.** The FM77AV demo reaches its
+  END screen in ~160 s of wall clock where the previous build took ~280 s —
+  the 1.67x main-CPU change, corroborated end to end. It still plays through
+  perfectly: gradient intro, wireframe scenes, `THANK YOU FOR WATCHING!`.
+- **Woody Poco's in-game playfield is fixed on hardware.** Sky, mountains, a
+  full tree line, ground, rocks; walking right through the world reached a
+  new area with the house, a birdhouse, ponds and an enemy mob. And the
+  quantization tell is negative in the right direction: measured scroll steps
+  off the capture card come out at **4–16 byte offsets** (36/72/108/144
+  capture px), never the 32-byte rounding that a missing `$D430` b2 would
+  force. Pure 1-px-per-frame measurement wasn't attainable in gameplay — the
+  screen moves in the game's own repaint cadence and area slews — but nothing
+  anywhere shows misalignment or rounding.
+- **Dragon Buster is transformed.** Clean HUD, knight sprite, dungeon
+  platforms with stalactites, VITALITY bar — against the dark noise-texture
+  mush at `4fcecb8`. Its attract scrolls in the same 4–16 byte steps.
+- **Thexder's title is structurally intact** (61,944 bytes), reached sooner
+  as expected.
+
+The virtual pad drove Woody Poco's menu and character again on this build, so
+the joystick path rides fine on the new clocks.
+
+---
+
 # For the next build: the CPU clocks were wrong, and that was the big one
 
 Head is now `6a7030e`. Since the Woody Poco batch below, eleven commits. Two are
