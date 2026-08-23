@@ -340,6 +340,7 @@ reg       fdc_side  = 1'b0;
 reg       fdc_motor = 1'b0;
 reg [1:0] fdc_drv   = 2'd0;
 reg       empty_intrq = 1'b0;
+reg [12:0] empty_timer = 13'd0;
 
 wire drive0_sel = (fdc_drv == 2'd0);
 wire drive1_sel = (fdc_drv == 2'd1);
@@ -356,23 +357,47 @@ always @(posedge CLKSYS) begin
     fdc_motor <= 1'b0;
     fdc_drv   <= 2'd0;
     empty_intrq <= 1'b0;
+    empty_timer <= 13'd0;
   end
-  else if (aux_sel & wr_stb) begin
-    case (FD_RS[1:0])
-      2'd0: fdc_side <= FD_Din[0];
-      2'd1: begin
-        fdc_motor <= FD_Din[7];    // taken before any drive validation, per CSP
-        fdc_drv   <= FD_Din[1:0];
-        if (FD_Din[1:0] >= 2'd2) empty_intrq <= 1'b0;
-      end
-      default: ;
-    endcase
-  end
-  else if (core_sel & wr_stb & empty_sel) begin
-    // The FM-7 exposes four drive-select values, while this implementation
-    // has two mounted block-device slots. Empty selections still complete a
-    // command and raise INTRQ, just as 77AVEMU does for an absent drive.
-    empty_intrq <= 1'b1;
+  else begin
+    // The absent-drive command takes just as long as a real one. This used to
+    // set empty_intrq on the same cycle as the command write, so a RESTORE to
+    // drive 2 or 3 was answered before software could see it start; against
+    // 77AVEMU the reference polls $FD1F ninety-nine times on $3F before the
+    // seek completes and it reads $7F, and this core returned $7F on the first
+    // poll. Same shape as the wd1793 STATE_WAIT_2 fix in 32e04b6, on the path
+    // that fix could not reach: drives 2 and 3 have no controller instance at
+    // all, so they never enter that state machine.
+    //
+    // 4000 CLKSYS cycles, matching wd1793.sv's wait_time, so a present and an
+    // absent drive take the same time to answer.
+    if (empty_timer != 13'd0) begin
+      empty_timer <= empty_timer - 13'd1;
+      if (empty_timer == 13'd1) empty_intrq <= 1'b1;
+    end
+
+    if (aux_sel & wr_stb) begin
+      case (FD_RS[1:0])
+        2'd0: fdc_side <= FD_Din[0];
+        2'd1: begin
+          fdc_motor <= FD_Din[7];  // taken before any drive validation, per CSP
+          fdc_drv   <= FD_Din[1:0];
+          if (FD_Din[1:0] >= 2'd2) begin
+            empty_intrq <= 1'b0;
+            empty_timer <= 13'd0;
+          end
+        end
+        default: ;
+      endcase
+    end
+    else if (core_sel & wr_stb & empty_sel) begin
+      // The FM-7 exposes four drive-select values, while this implementation
+      // has two mounted block-device slots. Empty selections still complete a
+      // command and raise INTRQ, just as 77AVEMU does for an absent drive --
+      // but only after the busy period above, not instantly.
+      empty_intrq <= 1'b0;
+      empty_timer <= 13'd4000;
+    end
   end
 end
 
