@@ -31,6 +31,22 @@ export VSIM=$REPO/vsim
 export EXE=$REPO/vsim/obj_dir/Vemu
 export FRAMES
 export SHOT=$((FRAMES - 20))
+
+# Sample the run at SEVERAL points, not one.
+#
+# The reference renders every blessed shot at a fixed 20,000,000 6809 steps
+# (~22 s of machine time) while this sweep samples at a fixed frame (2000 =
+# 33 s). Those are different moments, and they only ever agreed by accident:
+# while this core clocked its AV main CPU at the FM-8 rate it did roughly 22 s
+# of work in 33 s of frames. `6a7030e` fixed the clock and the coincidence went
+# with it -- suddenly a third of the set "regressed", and almost none of it had.
+#
+# Sampling the same run at a spread of frames costs nothing (one extra PNG write
+# each, no extra emulation) and lets score.py take the best match instead of
+# whichever moment the reference happens to be frozen at. Ys II is the case that
+# makes the point: the reference is still on a near-blank loading screen at 20M
+# steps, and a faster, more correct core has moved past it to the real artwork.
+export SHOTLIST=$((FRAMES*55/100)),$((FRAMES*70/100)),$((FRAMES*85/100)),$SHOT
 export SHOTS=$OUT/shots
 export MACHINE=fm77av
 

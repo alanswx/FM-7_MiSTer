@@ -681,10 +681,18 @@ confident wrong answer at least once:
         post-fix                  13.61%       65.98%       97.70%
 
     So the title improved by 32 points and the sweep reported it as a 9-point regression.
-    **Before believing any sweep delta on a title with a moving camera, render the
-    reference at two or three step counts and check whether the score follows the phase.**
-    A useful tell costs nothing: if coverage and colour count are unchanged and only
-    agreement moved, the image shifted rather than degraded.
+    **Fixed in the tooling since.** The sweep now takes a spread of screenshots per run
+    (`SHOTLIST` in `av-sweep.sh`) and `score.py` scores the closest one, printing the frame
+    that won; it also flags a row `shift?` when coverage and colour count match the
+    reference but agreement does not, which is the signature of a picture that moved rather
+    than broke. On the FM77AV demo the old single-frame scoring read 0.00% and the new one
+    reads 94.60% at frame 1400, against a 94.20% baseline.
+
+    The root cause is worth keeping even though the tool now absorbs it: the reference is
+    frozen at 20,000,000 6809 steps (~22 s) and this sweep samples at a fixed frame
+    (2000 = 33 s). Those only ever matched by accident, because the AV main CPU was clocked
+    at the FM-8 rate and did roughly 22 s of work in 33 s of frames. `6a7030e` corrected the
+    clock and a third of the set "regressed" without a pixel being wrong.
 
 50. **Every reference render in this project was made with the disk WRITE
     PROTECTED, and the disks are not.** `tools/77avemu_headless.cpp:250` sets

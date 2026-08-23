@@ -23,9 +23,20 @@ cd "$VSIM" || exit 1
 # need the initiator ROM and the AV memory map -- so sweeping them without it
 # reports a uniform "nothing boots", which reads as a core failure rather than
 # as the wrong switch.
+# One run, several screenshots. $SHOTLIST is a spread of frames rather than a
+# single moment -- see the comment on it in av-sweep.sh. The last entry is $SHOT,
+# and that one is also copied to the canonical $safe.png so gallery.py and
+# anything else expecting one image per title keeps working unchanged.
 "$EXE" --headless --bootrom 0 --machine "${MACHINE:-fm7}" --disk "$img" \
-       --stop-at-frame "$FRAMES" --screenshot "$SHOT" \
-       --screenshot-name "$png" >"$log" 2>&1
+       --stop-at-frame "$FRAMES" --screenshot "${SHOTLIST:-$SHOT}" \
+       --screenshot-prefix "$SHOTS/$safe" >"$log" 2>&1
+# Fall back to the latest sample that DID get written. A run that is cut short --
+# by a timeout, or by a title that hangs -- otherwise leaves no canonical PNG at
+# all, and the title silently vanishes from gallery.py and from any tool keyed on
+# one image per title, which reads as "not swept" rather than "swept and stopped".
+canon="$SHOTS/${safe}_frame_${SHOT}.png"
+[ -f "$canon" ] || canon=$(ls "$SHOTS/${safe}_frame_"*.png 2>/dev/null | sort -t_ -k3 -n | tail -1)
+[ -n "${canon:-}" ] && [ -f "$canon" ] && cp "$canon" "$png"
 
 mainpf=$(grep -oE 'main 6809 *: [0-9]+ instructions  \([0-9]+ per frame\)' "$log" | grep -oE '\([0-9]+' | tr -d '(')
 subpf=$(grep -oE 'sub 6809 *: [0-9]+ instructions  \([0-9]+ per frame\)' "$log" | grep -oE '\([0-9]+' | tr -d '(')
