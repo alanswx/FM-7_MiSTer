@@ -211,6 +211,47 @@ tells you nothing. Fighter is ~146 s of tape and needs ~16000 frames to finish.
 **4. Settle the 1.846-vs-2.0 discrepancy** in the recorded bit widths against the
 manual's idealised waveform.
 
+### Crash Ball: the dump is good, the fault is ours, and it is NOT the obvious thing
+
+The hardware side reported it failing `Found: CRB` -> `Device I/O Error`, twice,
+deterministically. Settled and handed back: **the image is fine** -- the
+reference loads and plays it (74.0% coverage in 4 colours, `tape_ptr` ending at
+397946 of 1807930) -- and the failure reproduces exactly in simulation, so it can
+be chased here.
+
+**Where it fails.** After the header block is found, so the loader is reading a
+data block and rejecting it: a checksum or framing case, not sync.
+
+**The obvious lead, and why it is wrong.** Crash Ball's image is measurably
+unlike the tapes that work. Level bytes `$81` appear 9574 times against
+Sokoban's 192; durations spread across 22-55 where working tapes cluster at
+25/27/47/50; and most strikingly it holds **391 zero-duration entries** where
+every working tape has one or two:
+
+    Crash Ball  entries=903957  dur==0: 391   dur<=4: ~800
+    Sokoban     entries=646766  dur==0: 2     dur<=4: 11
+    Space Warp  entries=119251  dur==0: 1     dur<=4: 3
+    FM Racer    entries=234159  dur==0: 2     dur<=4: 9
+
+Zero-duration entries ARE handled differently here than in the reference.
+77AVEMU computes `dur * NANOSEC_PER_T77_ONE`, so a zero ends at the instant it
+begins and `MoveTapePointer`'s while-loop steps past without ever applying its
+level (fm77avtape.cpp:99-122); `t77_decode.v` latches it and holds the level for
+a full 9 us tick, injecting a transition the tape does not contain.
+
+**Fixing that as described BREAKS working tapes.** Tried: skip the entry, do not
+latch `s` or `len`. Crash Ball still fails, and snake-apple -- which loads and
+plays today -- degrades to `Found:` followed by garbage characters. Reverted. The
+likely reason is that skipping without latching leaves the PREVIOUS level held
+for the extra tick, which shifts the following segment rather than removing time.
+A correct fix has to consume the entry in **zero** time, which the current
+one-entry-per-`clk_9us` structure cannot express; it needs the fetch path to be
+able to retire several entries in a single tick, the way the reference's
+while-loop does.
+
+So: the zero-duration divergence is real and worth fixing properly, but it has
+not been shown to be Crash Ball's cause, and the naive fix is a regression.
+
 ### The magazine type-ins
 
 `magazines/Program Pochette 1984 03 (J OCR)/` has seven FM-7 type-in programs
