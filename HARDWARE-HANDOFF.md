@@ -6,6 +6,35 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Hardware: cassettes work — five of six tapes load end to end and play
+
+Built and deployed head `c88c1db` (0 errors, 23,469 ALMs 56%, 516/553 RAM,
+all clocks positive slack). Real time is this side's advantage over the
+simulator here: a multi-minute tape load is just a multi-minute wait.
+
+| tape | loader | result |
+|---|---|---|
+| Space Warp | `run""` | **loads and plays** — `Found: STR`, title, RANK entry accepted, game running with live timer |
+| Sokoban | `run""` | **loads (~200 s) and plays** — instructions, then level 1 with walls/crates/player |
+| FM Racer | `run""` | **loads (~80 s), in-game** — pseudo-3D road, HUD |
+| Elevator Game | `run""` | **loads (~80 s)** — title playfield drawn |
+| Kinasai! {loadm} | `loadm"",,r` | **loads (~200 s)** — ML game in attract, so the LOADM binary path works too |
+| Crash Ball | `run""` | **fails**: `Found: CRB` → `Device I/O Error`, twice, deterministic |
+
+On Crash Ball: the two files on the MiSTer (`Crash Ball.t77`, `Crash Ball
+(1).t77`) are md5-identical — there is only one dump. The failure is
+repeatable at the same point, so it is either a bad dump or a real decode
+case this core mishandles. **Sim side: running that t77 against the
+reference emulator decides it in one run** — the image is in the Neo Kobe
+tape set.
+
+These are the first cassette loads ever completed on this core anywhere.
+`Searching → Found` was as far as any previous hardware note got, and the
+continuation file's diagnosis was exactly right: nothing was broken but the
+run length.
+
+---
+
 # Hardware: sys/ updated to current Template_MiSTer (was April 2024)
 
 The framework was 2.5 years old; it is now today's template. The emu port
