@@ -403,8 +403,19 @@ end
 
 wire [7:0] aux_dout =
   (FD_RS[1:0] == 2'd0) ? { 7'h7f, fdc_side } :   // side | $fe
-  // { motor&ready, 0, 1111, drive } == CSP's 0x3c | drive | (motor ? 0x80 : 0)
-  (FD_RS[1:0] == 2'd1) ? { fdc_motor & ready_sel, 1'b0, 4'b1111, fdc_drv } :
+  // b7 is the MOTOR ON flag, and nothing else. It was `fdc_motor & ready_sel`,
+  // which no reference does and which the citation on the next line does not
+  // say either: FM-Techknow figure 8-18 calls b7 モーターオンフラグ, CSP builds
+  // 0x3c | drive | (motor ? 0x80 : 0), and 77AVEMU builds (motor ? 0x80 : 0) |
+  // currentDS. None of them gates it on drive-ready.
+  //
+  // The `& ready_sel` made b7 unreachable whenever no disk is mounted -- which
+  // is every cassette run. The FM-7 boot ROM probes the drives through $FD1D at
+  // $FE6A/$FE72 and reads 3C/3D/3E/3F here where the reference reads 80/81/82/83;
+  // it then never takes the branch that reaches the tape routine, which is why
+  // this core sat on `Searching` while playing an entire tape correctly.
+  // { motor, 0, 1111, drive } == CSP's 0x3c | drive | (motor ? 0x80 : 0)
+  (FD_RS[1:0] == 2'd1) ? { fdc_motor, 1'b0, 4'b1111, fdc_drv } :
   (FD_RS[1:0] == 2'd2) ? 8'hff :                 // mode: FM-7 always $ff
                          // $fd1f: DRQ in b7, IRQ in b6, and the six unused bits
                          // read back as ONES, not zeros. 77AVEMU builds the
