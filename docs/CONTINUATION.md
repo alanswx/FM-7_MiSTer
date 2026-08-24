@@ -113,6 +113,11 @@ unfinished.
 
 ### Ruled out, with measurements -- do not re-check
 
+* *The t77 tick.* Corrected to the reference's exact `NANOSEC_PER_T77_ONE = 9000`
+  in `e17550c` (was 9.125 us). The decode model now matches the reference in
+  every respect -- level rule, duration byte, 2-byte stride -- and tapes still do
+  not load.
+
 * *The images.* Commercial dumps (Fighter, Hydlide, Sokoban) fail exactly like
   the generated magazine tapes.
 * *The tape generator.* `tools/make_fm7_basic_t77.cpp` already uses 77AVEMU's own
@@ -143,15 +148,34 @@ derive a tape clock from the manual's microseconds until this is answered.
 
 ### Next steps
 
-1. **Finish the long run on this core** and see whether it reaches `Found:` like
-   the reference does. That is the open question and everything else waits on it.
-2. **If it does not, use `seqdiff.py`** -- available for tapes for the first time
-   now the reference harness works. The two machines agree at the screen level,
-   so the first `$FDxx` divergence is the whole question.
-3. **Give the tape tests their own time budget.** Whatever harness ends up
-   driving tapes should not inherit the disk sweep's frame counts; that
-   assumption is what produced years of "tapes do not work".
-4. Settle the 1.846-vs-2.0 discrepancy above.
+**1. `$FD05` b7 diverges at power-on, on the FM-7, at access #2.** This is the
+first thing `seqdiff.py` finds on a tape run and it blocks using the tool there
+at all:
+
+    frame 0   ours  R $FD05 FE pc=$FE1E      reference  R $FD05 7E pc=$FE1E
+
+b7 is sub-BUSY. `2fbd296` (the `$fd13` reapply) changed FLAGS.v from
+`if (~RESETBn) m44_8 <= 1'b0` to setting BUSY at reset, and that reaches **every**
+machine, FM-7 included. 77AVEMU sets `subSysBusy=true` on reset too
+(fm77av.cpp:624), so the polarity is probably right and what differs is how fast
+the sub monitor clears it -- it clears when the sub reaches its idle loop and
+reads `$d40a`. **Check this against the FM-7 gate before anything else**:
+`run_tests.sh` reports SCREEN+CNT on disk-Thexder and av-demo, and that has been
+attributed to the clock commit's 1.67x speedup without anyone separating the two
+changes. If `2fbd296` moved Thexder, it needs to be known.
+
+**2. Then the tape diff is usable.** Once power-on agrees, `seqdiff.py` on a tape
+run gives the same one-readback-at-a-time loop that has worked everywhere else.
+
+**3. Give tape tests their own time budget.** A tape load is minutes of machine
+time; a disk title is about twenty seconds. Sizing tape runs like disk runs is
+what produced years of "tapes do not work". Useful figures: snake-apple's tape is
+~41000 entries at ~9 us each, about 14 s, so this core reaches END OF TAPE by
+roughly frame 900 -- if it has not synced by then it never will, and a longer run
+tells you nothing. Fighter is ~146 s of tape and needs ~16000 frames to finish.
+
+**4. Settle the 1.846-vs-2.0 discrepancy** in the recorded bit widths against the
+manual's idealised waveform.
 
 ### The magazine type-ins
 
