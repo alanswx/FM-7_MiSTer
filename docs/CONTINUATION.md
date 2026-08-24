@@ -41,13 +41,35 @@ undefined bits 5:2 changes neither title (tested). The lead is what those titles
 do *after* it. Note they diverge at the same instruction as Shounen Mike did, so
 the `$FD05`/BUSY family is worth trying first.
 
-**3. `$FD00` b0 should read 1 and does not.** The manual is explicit (I/O map
-page 1-9: `0:1.2M / 1:2M`) and the clock is now genuinely 2 MHz, so 1 is the
-honest value. Setting it blanks Luxsor disk 2 at every frame sampled from 1000
-to 2400 -- genuinely blank, not phase. 77AVEMU returns `$7F` there and runs the
-title fine, so this is a second bug in this core that the bit merely exposes.
-**It is NOT what blocks the three titles above** -- building with b0 = 1 leaves
-all three unchanged to the decimal.
+**3. Luxsor disk 2 blanks with `$FD00` b0 = 1, and the cause is NOT any of the
+obvious candidates.** b0 = 1 is correct (see `c88c1db`) and is what makes
+cassettes work, so this is the price currently being paid for them. Luxsor goes
+from 81.9% coverage in 33 colours to blank at every frame from 1000 to 2400.
+
+Chased with `tools/seqdiff.py` against a full reference trace. **The two streams
+stay structurally aligned** -- same port and same PC -- through the entire boot
+and into Luxsor's own loader, with only two value differences the whole way:
+`$FD05` b7 and `$FD1D` b5:2. **Both were tested and neither is the cause:**
+
+* *`$FD1D` bits 5:2.* Built with 77AVEMU's form (cleared, so `$FD1D` matches the
+  reference exactly). Luxsor still blank.
+* *`$FD05` b7 / BUSY-on-reset.* Built with `2fbd296`'s reset behaviour backed out
+  so b7 matches the reference. Luxsor still blank.
+* *The FDC.* Not it either. Both machines issue an identical command history --
+  4x RESTORE at `$5159`, then the same seven READ SECTORs at `$01E3` -- with
+  identical register setups, and **both read `$FD18` status `00` seven times at
+  `$01F8`**, so every sector read completes successfully on this core too. A
+  `$FD1F` DRQ difference at `pc=$01E9` looks like a smoking gun and is not one;
+  it is polling phase, and the reads succeed either side of it.
+* *`$FD00` itself.* With b0 = 1 this core's 300 `$FD00` reads match the reference
+  exactly, value and PC, and they are all from boot ROM addresses (`$FF44`,
+  `$51CB`) -- Luxsor's own code never reads it.
+
+So b0 changes something in the **boot ROM's** path that this core then handles
+differently, and it is not visible in the main-CPU `$FDxx` stream at all. Next
+place to look is the `$D4xx` sub-system side, which `seqdiff.py` deliberately
+does not compare (see REFERENCE.md trap 43) -- or the video path, since the
+symptom is a blank screen on a machine whose disk reads all succeed.
 
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.
