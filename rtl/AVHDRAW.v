@@ -131,9 +131,32 @@ wire reg_write = reg_wr_sr[2] & ~reg_wr_sr[1];
 // Qualifying with E separates back-to-back VRAM bus cycles, which SUB_VRAM_SEL
 // alone does not: a `STA ,X+` run keeps the address decode asserted across
 // cycles.  The 6809 has its address valid before E rises, so the address
-// sampled here is the one belonging to this access.  SCASSEL is in the
-// qualifier because core.v stalls the sub clock until blanking hands the VRAM
-// address bus back, and only then is SVRADRS the sub CPU's own address.
+// sampled here is the one belonging to this access.
+//
+// SCASSEL is deliberately NOT in this qualifier, and must not be put back.
+// It used to be, on the grounds that core.v stalls the sub clock until the
+// VRAM address bus comes back and only then is SVRADRS the sub's own address.
+// That premise still holds, but it is now enforced by the stall rather than by
+// this term: SCASSEL hands the sub every cycle the raster is not fetching, so
+// it TOGGLES SEVERAL TIMES INSIDE ONE SUB BUS CYCLE, and with it in the
+// qualifier alu_access fell and rose again each time -- firing the ALU two or
+// three times for a single VRAM access, and a read-modify-write op run two or
+// three times on the same byte does not give the same answer once.
+//
+// Honesty about the evidence: this is reasoning about the trigger, NOT a
+// measured regression. Wizardry IV renders byte-identically with and without
+// the SCASSEL change (12522-byte PNG at frame 700 either way), so nothing in
+// the current gate set actually caught the extra edges -- most likely those
+// titles never enable the ALU from the sub side. It is removed because the
+// term is wrong once SCASSEL toggles inside a bus cycle, not because a title
+// was seen to break. A title that drives the ALU from the SUB CPU (rather
+// than through the aperture, which uses main_access below) would be the test.
+//
+// Without it the edge is still one per access. sub_vram_wait freezes the sub's
+// clock whenever it is addressing VRAM with SCASSEL low, so SEB can only RISE
+// while SCASSEL is high -- the address captured on the edge is the sub's. If
+// SCASSEL then drops mid-cycle, SEB is frozen high and alu_access simply stays
+// asserted, which is the whole point.
 // ---------------------------------------------------------------------------
 `ifdef DEBUG_AVDRAW
 reg av_vram_write_d;
@@ -143,7 +166,7 @@ always @(posedge CLKSYS) begin
     $display("AVDRAW V addr=$%04x bank=%0d enabled=%0d", AV_VRAM_ADDR, AV_VRAM_BANK, enabled);
 end
 `endif
-wire alu_access = enabled & SUB_VRAM_SEL & SCASSEL & SEB;
+wire alu_access = enabled & SUB_VRAM_SEL & SEB;
 reg  alu_access_d;
 wire alu_access_edge = alu_access & ~alu_access_d;
 

@@ -192,8 +192,42 @@ assign SVSYNCn = ~(yy >= 9'd224 && yy < 9'd233);
 
 assign HBLANKn = ~(xx > 10'd639);
 assign VBLANKn = ~(yy > 9'd199);
-assign SCASSEL = ~(HBLANKn & VBLANKn);
-assign SBLANKn = ~SCASSEL;
+// VRAM bus arbitration: the raster needs a SLOT, not the whole active line.
+//
+// SCASSEL hands the VRAM address bus to the sub CPU; core.v stalls the sub's
+// clock while it is low and the sub is addressing VRAM, and AVHDRAW qualifies
+// alu_access on it. It used to be exactly ~(HBLANKn & VBLANKn), i.e. the sub
+// got the bus only OUTSIDE the 640x200 active area -- 52.3% of the raster. A
+// VRAM-bound sub loop therefore ran at about half speed, which is a real bug
+// and not a small one: it is why the FM77AV boot loader's $FD05 BUSY handshake
+// at $5043 resolves the wrong way here and Luxsor disk 2, FM Sound Editor and
+// Pro Yakyuu Fan disk A all die at the same $FDxx access. See the sub-CPU VRAM
+// arbitration section of docs/FM77AV.md for the measurement and the citations.
+//
+// Both references default to NOT halting the sub at all (77AVEMU
+// CRTCHaltsSubCPU = false, XM7 cycle_steal = TRUE), because the FM77AV inherits
+// the FM-77's CYCLE STEAL rather than the FM-7's VRAM access wait. Removing the
+// arbitration outright is not the way to model that here -- SVRADRS below is a
+// real mux and the sub's write would land at the raster's address (tried: it
+// blanks Kohakuiro and shreds Wizardry IV). Steal the cycle instead.
+//
+// What the raster actually needs: char_x is xx[9:3] in 640 mode, so SRA is
+// stable for a whole 8-pixel cell = 24 CLKSYS, and CRTRAM only has to sample it
+// once. q follows addr by one CLKSYS and sftlodn_d is held off one more, so the
+// load window is the cell's first two pixel times; give the raster those and the
+// sub gets the other six. In 320 mode the cell is xx[9:4], 16 pixels, so the sub
+// gets fourteen. Sub VRAM duty goes from 52.3% to 88% / 94%.
+//
+// SBLANKn is deliberately NOT derived from SCASSEL any more. It is a display
+// blanking output ($FD12 b1 among others) and must keep meaning "in blanking",
+// not "the sub may touch VRAM"; wiring it to the new SCASSEL would strobe it
+// once per character cell. Its value is unchanged: HBLANKn & VBLANKn, exactly
+// what ~(~(HBLANKn & VBLANKn)) was.
+wire [3:0] cell_phase   = AV_MODE_320 ? xx[3:0] : {1'b0, xx[2:0]};
+wire       raster_fetch = (cell_phase == 4'd0) || (cell_phase == 4'd1);
+wire       in_blank     = ~(HBLANKn & VBLANKn);
+assign SCASSEL = in_blank | ~raster_fetch;
+assign SBLANKn = ~in_blank;
 assign SVDHALT =
   yy < 9'd200 ? (xx < 10'd639 || xx > 10'd930) :
   yy < 9'd261 ? 1'b0 :

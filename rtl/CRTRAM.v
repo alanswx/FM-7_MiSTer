@@ -140,9 +140,13 @@ module CRTRAM(
   // $FD37 bits 2:0 (FLAGS.v VPAGE1n/2n/3n), 1 = that gun is closed to the CPU.
   // 77AVEMU suppresses the store and returns $FF on the read, for either CPU
   // (fm77avmemory.cpp:830-878 and :539-575). The mask reached nothing here: the
-  // masked selects SUBCRTADDR builds are `SBLANKn & SDRAMVn & SCASSEL`, and
-  // SBLANKn is ~SCASSEL, so all three were identically zero and CRTRAM ignored
-  // them. The raster is deliberately NOT masked -- $FD37 bits 6:4 do that, and
+  // masked selects SUBCRTADDR builds are `SBLANKn & SDRAMVn & SCASSEL`, which
+  // were identically zero back when SBLANKn was ~SCASSEL, so CRTRAM ignored
+  // them. (SBLANKn and SCASSEL are no longer complements -- SCASSEL now hands
+  // the sub every cycle the raster is not fetching -- so SVCASBn/RRn/Gn are no
+  // longer always zero. They are still unused inside this module; the ports are
+  // kept only because core.v wires them.) The raster is deliberately NOT masked
+  // -- $FD37 bits 6:4 do that, and
   // PAL.v already handles them.
   input [2:0] VPAGE_MASK,
   input AV_DISPLAY_PAGE,
