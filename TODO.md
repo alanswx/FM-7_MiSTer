@@ -112,10 +112,35 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    on hardware in `bb10370` — PSG tone 234.5 Hz vs 234.65 predicted, keep
    `378fee6`; joystick works from both pads, the dead pad was MiSTer player
    assignment. Neither is a core defect.)
-2. **The gate lost an AV row's worth of coverage.** `av-kohakuiro`'s reference
-   was a picture of the dead palette; the corrected render is a black screen
-   that matches 77AVEMU exactly and tests almost nothing. Replace it with a
-   title that genuinely renders — see below.
+2. **The gate lost an AV row's worth of coverage, and a second row is now
+   sampled mid-animation.** Both are the same defect: `SHOT_AT` is one global
+   frame (`FRAMES - 20` = 600) and two of the three AV titles have nothing
+   worth photographing there.
+
+   * `av-kohakuiro`'s reference was a picture of the dead palette; the corrected
+     render is a black screen. It is **not** blank because the core fails to
+     draw it — this core paints the RIVERHILL SOFT logo at frame **199** and
+     fades it out by 400, which is exactly what 77AVEMU does at its own frames
+     200 and 400, and the reference is then black from 600 through 2400. The
+     gate simply photographs it 400 frames after the only thing it draws.
+     Shooting that row near frame 200 would restore the coverage without
+     changing the title.
+   * `av-wizardry4` is an attract *animation* — four portraits, then a
+     three-portrait "DISPELL" stage, then more — and after `6a7030e` made
+     everything 1.65x faster, frame 600 lands on a transition with no sprites
+     at all. Today's core at frame **400** reproduces the previous blessed shot
+     **byte for byte**, and at 800 it is on the same three-portrait stage
+     77AVEMU is on at its 800, so the two are in step; the picture moved, it did
+     not break (trap 16). The blessed shot is nonetheless mid-draw, which
+     `run_tests.sh`'s own comment says a gate row must not be.
+
+   The fix for both is a per-row shot frame rather than one `SHOT_AT`.
+
+   Separately, and older than either: on this title the core's **title text is
+   overprinted** ("THE RETURN OF WERDNA" doubled on itself) and the
+   `S) ゲームをはじめる` line of the bottom box is missing, where 77AVEMU draws
+   both cleanly. That is visible in the *previous* blessed shot too, so it is
+   long-standing, not new — see `vsim/shots-ref-77avemu/av-wizardry4.png`.
 3. **Six AV titles still render nothing**, in four distinct shapes, all recorded
    below rather than left to be re-derived.
 4. **The FM half of the YM2203 has never been compared to anything**, and its
@@ -388,6 +413,58 @@ the YM2203 has been added since — `jt12_exprom`/`jt12_logsin` are tables and t
 `tools/quartus-build.sh` and price the change from the map report's RAM summary
 before assuming anything below is reachable. The retired `ym2149_audio.v` gives
 a little back, but not much.
+
+### Why all eleven references were re-blessed (the CPU clock fix)
+
+**Blessed at `d09fe5d`, before the sub-CPU VRAM arbitration rework.** That
+change (`MB60H010.v` `SCASSEL` cycle-steal, with `SUBCRTADDR.v`, `AVHDRAW.v`,
+`CRTRAM.v`, `FDC.v`) speeds the sub CPU up on every machine and will move these
+counters again; this bless is the baseline it is measured against, and the two
+must not be confused for one another.
+
+`shots-ref/` was last blessed at `b6292e8` and the tree moved 45 commits after
+it. The one that matters is **`6a7030e`**, which put the CPU clock mux legs the
+right way round: the main CPU had been on the FM-8 leg at 4.8 MHz while the sub
+ran at 8 MHz, a state no real machine can be in. Everything now runs about
+**1.65x faster**, so every liveness counter moved and every fixed-frame
+screenshot lands somewhere else in each title's startup. `c88c1db`
+(`$FD00` b0), `f03d333` (CE_PIXEL is one pulse per pixel), `d8e5329` (the FDC
+INDEX pulse free-runs) and `3546ea4`/`32e04b6` (an absent drive takes as long to
+answer as a real one) contribute the rest.
+
+| row | main/frame | sub/frame | I/O cycles | screenshot |
+|---|---|---|---|---|
+| `boot-basic` | 5555 → **9165** | 9682 → 9517 | 1511195 → 2163395 | cursor blink phase only |
+| `boot-dos1` | 6566 → **11038** | 8709 = | 65535 = | unchanged |
+| `boot-dos2` | 6157 → **10094** | 8709 = | 204899 → 209839 | unchanged |
+| `boot-dos3` | 6707 → **11179** | 8709 = | 0 = | unchanged |
+| `basic-print` | 5552 → **9162** | 9609 → 9444 | 1506685 → 2158884 | unchanged |
+| `basic-keys` | 5552 → **9163** | 9592 → 9429 | 1507663 → 2159863 | unchanged |
+| `basic-shift` | 5550 → **9160** | 9520 → 9360 | 1503131 → 2155331 | unchanged |
+| `disk-Thexder [b]` | 4745 → **8523** | 6317 → 6744 | 601414 → 986091 | same title screen, animation moved |
+| `av-demo` | 5044 → **8463** | 5918 → 6376 | 507617 → 798307 | same colour grid, banner further along |
+| `av-kohakuiro` | 5309 → **9055** | 7195 → 7462 | 924729 → 1678717 | unchanged — blank, see item 2 above |
+| `av-wizardry4` | 4288 → **6975** | 8038 → 7946 | 532204 → 994045 | mid-animation, see item 2 above |
+
+9165/5555 = 1.650, which is the speed-up `6a7030e` measured end to end. Only
+**four** screenshots changed at all; the seven FM-7 text rows are the same
+pictures, which is the evidence that a 1.65x clock change moved timing and not
+rendering. The one screenshot that changed *in kind* is `av-wizardry4`, and it
+is not a regression: today's core at frame 400 reproduces the old blessed shot
+byte for byte.
+
+Two bugs in the harness itself were in the way and are fixed in the same commit:
+
+* **`run_tests.sh` found zero disk images in a git worktree.** `find "$DISKDIR"`
+  without a trailing slash does not descend into a symlink, and `software/` is a
+  real directory in the main checkout and a symlink in a worktree. Every disk row
+  silently vanished from the run and `BLESS=1` left its reference untouched —
+  a gate quietly not gating, which is trap 17 and trap 15 at once.
+* **A `pkill -f Vemu` from another shell in the same checkout SIGTERMs the
+  runs**, and a killed row reports `MAIN-STALLED SUB-STALLED NO-SCREENSHOT` with
+  `?` counters — indistinguishable from a core that cannot boot an AV disk, and
+  `BLESS=1` would have written `0 0 0` into `counters.tsv` for it. `EXE=` is now
+  overridable so a run can be given a name nothing else matches.
 
 ### Why the three AV references were re-blessed
 

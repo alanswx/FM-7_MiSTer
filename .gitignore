@@ -46,8 +46,13 @@ c5_pin_model_dump.txt
 #   verilog/   older scratch tree
 #
 # Several files in these exceed GitHub's 100 MB hard limit in any case.
-refs/
-software/
+#
+# No trailing slash on the first two: in a git worktree they are SYMLINKS to the
+# main checkout, and a pattern ending in `/` does not match a symlink, so they
+# showed up as untracked there -- one `git add -A` away from being committed as
+# absolute-path links.
+refs
+software
 verilog/
 
 # Verilator build output for the vsim harness (~67 MB, regenerate with `make`)

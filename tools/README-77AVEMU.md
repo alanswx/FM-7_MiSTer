@@ -72,8 +72,38 @@ For an FM-7 disk or tape, add `--fm7`. Tapes automatically use Mutsu's
 `--no-autostart` when comparing the raw boot/search path.
 
 The `REF` lines are deliberately simple key/value records so a later sweep
-wrapper can write TSV/JSON without parsing human-oriented CUI output. The first
-cut reports instruction/time/PC, motor and tape pointer, plus an optional final
-screenshot. It does not pretend to synchronize FM77AV's internal instruction
-count with Verilator frames; comparisons should align on observable milestones
-first, then on machine time where the two models expose it.
+wrapper can write TSV/JSON without parsing human-oriented CUI output. They
+report instruction/time/PC, motor and tape pointer; the closing `RESULT` line
+adds the machine-time `frame=` the run ended on.
+
+### Stopping at a frame, not at an instruction count
+
+`--stop-at-frame N` ends the run when `vm->state.fm77avTime / FRAME_NS >= N`, so
+the final screenshot is taken at a **known instant** rather than after however
+much work an arbitrary instruction count happened to be. Use it whenever a
+reference render is going to be compared against a vsim screenshot: the two are
+otherwise different moments in a title, and docs/REFERENCE.md traps 42 and 49
+are both that mistake.
+
+(Superseded claim, corrected: this file used to say the runner "does not pretend
+to synchronize FM77AV's internal instruction count with Verilator frames".
+Instruction counts still do not correspond, but **machine time does**, and
+`--stop-at-frame` is how to use it.)
+
+A frame here is exactly 1/60 s. A vsim frame is a 59.63740 Hz raster frame, so
+the two units differ by 0.61 %:
+
+    reference_frame = vsim_frame * 60 * 1024 * 262 / 16000000 = vsim_frame * 1.00608
+
+`vsim/sweep/ref-gate.py` applies that and renders the whole `run_tests.sh` gate
+into `vsim/shots-ref-77avemu/`; see the README there.
+
+`steps` stays as the backstop so a wedged run cannot spin forever, and is raised
+to 100,000 per requested frame when it is not given explicitly. If the backstop
+is hit first the run prints `WARNING: step backstop ... hit at frame N` — do not
+use that screenshot, it is not at the instant asked for.
+
+Modifiers on `--key` are a **prefix**, not a key: `--key 500:SHIFT+2`.
+`FM77AVKeyboard::Press` takes the modifier state as its first argument, so
+pressing `LEFT_SHIFT` as its own key types the unshifted character and looks
+like a keyboard fault in whatever is under test.

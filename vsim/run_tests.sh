@@ -49,7 +49,15 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
-EXE=./obj_dir/Vemu
+# Overridable so a second build can be gated side by side -- and because a
+# `pkill -f Vemu` from another shell in the same checkout will SIGTERM these
+# runs. That is not hypothetical: it killed two AV rows of a bless run here and
+# they reported as `MAIN-STALLED SUB-STALLED NO-SCREENSHOT`, i.e. exactly like a
+# core that cannot boot an AV disk. Running the identical workload from a copy
+# of the binary whose name does not contain "Vemu" completed normally, which is
+# what identified it. `bash run_tests.sh: line NNN: NNNNN Terminated: 15` in the
+# output is the tell -- a real stall does not print that.
+EXE=${EXE:-./obj_dir/Vemu}
 OUT=shots
 REF=${REF:-shots-ref}
 BLESS=${BLESS:-0}
@@ -148,7 +156,13 @@ if [ -d "$DISKDIR" ]; then
     disk_seen="$disk_seen|$base|"
     if [ "$ALLDISKS" != 1 ] && [ ! -f "$REF/disk-$base.png" ]; then continue; fi
     TESTS+=("disk-$base|--bootrom 0 --disk '$d'")
-  done < <(find "$DISKDIR" -maxdepth 3 -iname '*.d77' | sort)
+  # The trailing slash is load-bearing (docs/REFERENCE.md trap 17): `find` does
+  # not descend into a SYMLINK argument without one. software/ is a real
+  # directory in the main checkout and a symlink in a worktree, so without the
+  # slash this loop found 0 images there, every disk row silently vanished from
+  # the run, and a BLESS left their references untouched and stale -- a gate
+  # quietly not gating, which is the exact failure this suite exists to prevent.
+  done < <(find "$DISKDIR/" -maxdepth 3 -iname '*.d77' | sort)
 fi
 if [ ${#disk_dupes[@]} -gt 0 ]; then
   echo "note: skipped ${#disk_dupes[@]} disk(s) whose basename was already taken:"

@@ -458,6 +458,11 @@ confident wrong answer at least once:
     `find "$DISKS"` bare. Pointing `$OUT/disks` at a symlink made the sweep report "0 disk images"
     and exit successfully in seconds — a mis-set path looks like a clean fast run, not an error.
     Check the image count in the sweep's own output before trusting the results file.
+    `run_tests.sh` had the identical bug and it is worse there: `software/` is a real directory
+    in the main checkout and a **symlink in a git worktree**, so in a worktree every disk row
+    vanished from the run with no message, and a `BLESS=1` then left those references untouched
+    and stale while reporting success. Fixed with a trailing slash; the same `.gitignore` patterns
+    (`refs/`, `software/`) also fail to match the symlinks, so they showed up as untracked.
 
 18. **"The counters moved by the expected timing shift" is a diagnosis, and it needs the same
     evidence as any other.** `ca75bfe` converted `SRAM.v`'s shared-RAM window from a single-port
@@ -807,6 +812,24 @@ confident wrong answer at least once:
     elapsed before the tape ever started, against a measured excess of 844027. The tape
     plays at the correct rate. Subtract the pre-motor-on time before reading anything into
     that pair, or gate `dbg_tick_count` on `start`.
+
+55. **"Frame N" is not the same instant on the two machines, and nothing corrected for it.**
+    A vsim frame is a real raster frame off the core's video timing, 16 MHz over a
+    1024 x 262 raster (`sim_main.cpp:73`) = **59.63740 Hz**. A 77AVEMU frame is exactly
+    1/60 s of `vm->state.fm77avTime`. So
+
+        reference_frame = vsim_frame * 60 * 1024 * 262 / 16000000 = vsim_frame * 1.00608
+
+    exactly — +6 frames per 1000, i.e. 4 at the gate's 600, 12 at the sweep's 2000, 22 at
+    3700. `tools/77avemu_headless.cpp` claimed in its own header that the numbers "mean the
+    same thing here and in vsim"; they do not, and the claim is corrected in place. It only
+    starts to bite on a title that is still moving at the shot frame, which is trap 49 all
+    over again. `--stop-at-frame` on the harness plus `vsim/sweep/ref-gate.py` apply the
+    conversion; do not re-derive it.
+
+    A second trap sits behind the first: **the gate's shot frame is not its stop frame.**
+    `run_tests.sh` runs to `FRAMES` (620) but photographs at `SHOT_AT = FRAMES - 20` (600).
+    Converting 620 gives 624 and lands twenty frames after the picture being compared.
 
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.

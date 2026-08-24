@@ -13,11 +13,20 @@
 #
 #   ref-sweep.sh <sweep-outdir> [jobs] [steps] [--fm7]
 #
-# steps are 6809 instructions, not frames: the reference has no frame counter.
-# 20,000,000 is about 22 s of machine time, which is past every title's loader
-# in the set. The core's 2000-frame sweep is 33 s, so the reference is if
-# anything given LESS time -- deliberately, so "the reference drew it and we
-# did not" cannot be an artifact of letting the reference run longer.
+# steps are 6809 instructions, not frames. 20,000,000 is about 22 s of machine
+# time, which is past every title's loader in the set. The core's 2000-frame
+# sweep is 33 s, so the reference is if anything given LESS time -- deliberately,
+# so "the reference drew it and we did not" cannot be an artifact of letting the
+# reference run longer.
+#
+# (Superseded claim, corrected: this used to add "the reference has no frame
+# counter". It does -- vm->state.fm77avTime / FRAME_NS -- and the harness now
+# takes --stop-at-frame. Instruction counts are still the right unit for a
+# breadth sweep asking only "does this disk boot for anybody", because they cost
+# a fixed amount of wall clock per title. They are the WRONG unit the moment a
+# render is going to be scored against a vsim screenshot: those are different
+# moments in a title, which is traps 42 and 49. For that, see
+# vsim/sweep/ref-gate.py.)
 set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)

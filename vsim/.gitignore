@@ -8,9 +8,14 @@ pc_profile_sub.txt
 *.bin.known
 
 # Generated screenshots and traces. shots-ref/ IS tracked on purpose -- it is
-# the visual baseline run_tests.sh is compared against.
+# the visual baseline run_tests.sh is compared against, and
+# shots-ref-77avemu/ is the independent 77AVEMU render of the same rows at the
+# same instant, which is the only thing that can catch a fault the core's own
+# reference moves with (trap 25).
 shots/
 *.png
 !shots-ref/
 !shots-ref/*.png
+!shots-ref-77avemu/
+!shots-ref-77avemu/*.png
 .DS_Store
