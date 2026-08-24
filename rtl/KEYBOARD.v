@@ -47,19 +47,27 @@ reg input_strobe;
 // main CPU's E clock, 1.2 MHz or 2 MHz. Page 38 is the matching prose: one
 // switch, set with the power off, moving BOTH CPUs together.
 //
-// **Still `~fm8_switch`, i.e. still reporting 1.2 MHz, and that is now KNOWN to
-// be wrong rather than merely suspected.** The clock mux has since been
-// corrected, so this core does run its main CPU at 2 MHz, and the honest value
-// here is 1. Setting it blanks Luxsor disk 2 at every frame sampled between
-// 1000 and 2400 -- not a phase artifact, genuinely blank -- while the clock fix
-// alone leaves that title at 81.9% coverage in 35 colours.
+// It is now 1, and that is what makes CASSETTES work. The clock mux was
+// corrected in 6a7030e so this core really does run its main CPU at 2 MHz, and
+// the FM-7 boot ROM's tape path reads $FD00 at $FF44: this returned $7E where
+// the reference returns $7F. With b0 right -- and with $FD1D b7 no longer gated
+// on drive-ready (f97342d) -- a magazine tape now goes all the way through
+// `Searching`, `Found: snake-ap`, and into the running game, matching 77AVEMU's
+// own render of the same image.
 //
-// 77AVEMU returns $7F here and runs Luxsor fine, so $7F is not inherently fatal
-// and the fault is a SECOND bug in this core that the bit merely exposes. Left
-// at 0 until that is found; flipping it is a one-line change once it is.
+// **It costs Luxsor disk 2**, which goes from 81.9% coverage in 33 colours to
+// blank at every frame sampled between 1000 and 2400. Not a phase artifact.
+// Ablated: the $FD1D fix alone leaves the gate identical to baseline, and this
+// bit alone is what blanks it.
+//
+// Taken deliberately. 77AVEMU returns $7F here and runs Luxsor fine, so $7F is
+// not inherently fatal and the fault is a SECOND bug in this core that the bit
+// exposes rather than causes. Three sources and the corrected clock all say 1,
+// and it unblocks a 274-image cassette library against one AV title already at
+// 58% agreement. Top open item in docs/CONTINUATION.md.
 assign MKDATA =
   ~RFD01n ? kdata :
-  ~RFD00n ? { P0, 6'b111111, ~fm8_switch } : 8'h0;
+  ~RFD00n ? { P0, 6'b111111,  fm8_switch } : 8'h0;
 
 assign SKDATA =
   ~KACKNGn ? kdata :
