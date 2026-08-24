@@ -248,7 +248,16 @@ int main(int argc, char **argv)
     if (HasSuffix(media, ".t77") || HasSuffix(media, ".T77"))
     {
         param.t77Path = media;
-        param.autoLoadTapeFile = false;
+        // Let 77AVEMU start the tape itself. autoLoadTapeFile makes it watch the
+        // sub-system shared RAM for command $04 -- the machine saying BASIC has
+        // reached the point where a load command will take -- and type the start
+        // command exactly then (fm77avio.cpp:100-109). This was false, and the
+        // crude fallback below typed it after a fixed 500000 instructions
+        // instead, which is not the same moment: under that scheme the reference
+        // never got a tape moving at all (motor off, tape_ptr=0 on every image
+        // tried, commercial or generated), so there was no reference to compare
+        // this core's cassette path against.
+        param.autoLoadTapeFile = true;
     }
     else
     {
@@ -297,6 +306,22 @@ int main(int argc, char **argv)
         std::cerr << "77AVEMU setup failed\n";
         return 1;
     }
+
+    // SetUp does NOT give the data recorder its Outside_World, and the recorder
+    // dereferences it the moment a tape moves:
+    //
+    //     void FM77AVDataRecorder::Move(uint64_t t) {
+    //       if (state.motor && !state.primary.ptr.eot) {
+    //         ...
+    //         outside_world->indicatedTapePosition = state.primary.ptr.dataPtr;
+    //
+    // The only assignment upstream is in FM77AVThread (fm77avthread.cpp:45),
+    // which is the GUI runner this harness does not use, so the pointer stayed
+    // null (fm77avtape.h:103) and every tape run died of SIGSEGV the first time
+    // the motor turned. It is a tape-only path -- disks never touch it -- which
+    // is why this went unnoticed while every disk render worked, and why there
+    // has never been a reference tape screenshot to compare against.
+    vm->dataRecorder.outside_world = &world;
     // The disk boot path clears the reset-time busy latch through the normal
     // sub-monitor handshake; leave it clear so the headless run follows the
     // same path as the simulator.
