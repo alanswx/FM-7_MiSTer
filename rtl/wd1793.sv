@@ -288,15 +288,30 @@ end
 always @(posedge clk_sys) begin
 	integer cnt;
 	if(ce) begin
-		if(ready) begin
-			if(cnt) cnt <= cnt - 1;
-				else cnt <= 35000;
-		end else cnt <= 0;
-		// LOCAL CHANGE (FM-7_MiSTer): qualify with `ready`. The original leaves
-		// cnt at 0 when no disk is present, and 0 < 100, so INDEX reads as
-		// permanently asserted -- an empty drive claiming to have something
-		// spinning in it. A real drive gives no index pulses at all.
-		s_index <= ready & (cnt < 100);
+		// INDEX free-runs, and is NOT qualified on `ready`.
+		//
+		// The original code left cnt at 0 with no disk present, and 0 < 100, so
+		// INDEX read as permanently ASSERTED -- an empty drive claiming
+		// something was spinning in it. That was a real bug. Gating the whole
+		// pulse on `ready` fixed it by removing the pulse altogether, which is
+		// the opposite error: 77AVEMU's FM77AVFDC overrides the base class's
+		// always-false IndexHole() with a pure function of time --
+		// `fm77avTime % INDEXHOLE_INTERVAL < INDEXHOLE_DURATION`, 200 ms for
+		// 300 rpm (fm77avfdc.cpp:1114, fm77avfdc.h:24-25) -- with no reference
+		// to media, motor or ready at all.
+		//
+		// It matters on cassette runs, where no disk is mounted and `ready` is
+		// therefore never true. The FM-7 boot ROM polls $FD18 at $FEE9 waiting
+		// on INDEX: the reference alternates $84/$86 there while this core read
+		// a fixed $84 forty thousand times. Crash Ball is the title that fails
+		// on it -- `Found: CRB` then `Device I/O Error`, on hardware and in
+		// simulation, where the reference loads and plays the same image.
+		//
+		// Letting cnt free-run cannot bring back the stuck-at-0 case, because
+		// it is never reset to 0.
+		if(cnt) cnt <= cnt - 1;
+			else cnt <= 35000;
+		s_index <= (cnt < 100);
 	end
 end
 
