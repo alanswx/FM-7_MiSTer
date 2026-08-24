@@ -59,6 +59,19 @@ explanation is indistinguishable from an unnoticed regression later — which is
 exactly how `shots-ref/` once rotted three months behind the core while the
 suite compared nothing and still exited 0.
 
+**Check every row actually ran before accepting a bless.** A row whose sim was
+killed reports `?` counters plus `MAIN-STALLED SUB-STALLED NO-SCREENSHOT` — and
+`BLESS=1` writes `0 0 0` into `counters.tsv` for it, because the counter row
+falls back to zero while the screenshot copy is simply skipped. That is a
+poisoned reference that will then "pass" nothing. Two rows were killed this way
+by a `pkill -f Vemu` from another shell in the same checkout; `EXE=` exists to
+run around that.
+
+`shots-ref/` is the core's own output, so it cannot see a fault that moves the
+whole picture (trap 25). `vsim/shots-ref-77avemu/` holds an independent 77AVEMU
+render of the same rows at the same instant for exactly that reason —
+informational, never a gate, scored with `sweep/compare-ref.py`.
+
 ## The breadth sweep
 
 ```sh
@@ -162,10 +175,20 @@ patch that never reached the binary looks like.
 
 ## Driving the reference: keys and a joystick
 
-`refs/local/fm77av_headless` takes the same input options as `vsim`, and the
-frame numbers mean the same thing on both — a frame is 1/60 s of **machine
-time**, not a raster frame, because the two machines share no instruction count
-and do not even agree on the main CPU's clock.
+`refs/local/fm77av_headless` takes the same input options as `vsim`, keyed off
+**machine time** rather than an instruction count, because the two machines
+share no instruction count and do not even agree on the main CPU's clock.
+
+**The two frame units are not the same length** (superseded claim, corrected:
+this said "the frame numbers mean the same thing on both"). A reference frame is
+exactly 1/60 s; a vsim frame is a raster frame off the core's video timing,
+16 MHz over a 1024 x 262 raster, 59.63740 Hz. So
+
+    reference_frame = vsim_frame * 60 * 1024 * 262 / 16000000 = vsim_frame * 1.00608
+
++6 frames per 1000 — 4 at the gate's shot frame, 12 at the sweep's 2000, 22 at
+3700. It only matters where the picture is still moving, which is exactly the
+case trap 49 is about.
 
 ```sh
 refs/local/fm77av_headless refs/local/fm77av-roms game.d77 60000000 out.png --fm7 \
@@ -175,10 +198,19 @@ refs/local/fm77av_headless refs/local/fm77av-roms game.d77 60000000 out.png --fm
 * `--key F:NAME[:HOLD]` — `NAME` is 77AVEMU's own label. The FM-7 has three
   space bars (`LEFT_SPACE`, `MID_SPACE`, `RIGHT_SPACE`) and its function keys are
   `PF1`-`PF10`; there is no `SPACE` or `F1`, and an unknown name is reported
-  rather than silently ignored.
+  rather than silently ignored. Modifiers are a **prefix** — `SHIFT+2`,
+  `CTRL+C`, `GRAPH+A` — because `FM77AVKeyboard::Press` takes the modifier state
+  as an argument; pressing `LEFT_SHIFT` as its own key types the *unshifted*
+  character and reads as a keyboard fault in whatever is under test.
 * `--joystick F:B[:HOLD]` — `B` is `+`-separated: `up down left right a b`.
 * `--shot-every N` — a PNG every N frames, which is how you watch an attract
   sequence instead of guessing at it.
+* `--stop-at-frame N` — end the run at machine-time frame N instead of after
+  `steps` instructions, so a render can be compared against a vsim screenshot at
+  the same instant. `steps` stays as a backstop and the run warns loudly on
+  stderr if the backstop is what stopped it. `vsim/sweep/ref-gate.py` uses this
+  to render the whole `run_tests.sh` gate into `vsim/shots-ref-77avemu/`; see
+  the README there.
 
 **Answer questions about the software on the reference first.** "Which key
 starts this game" is a fact about the game, not about our RTL, and asking it on

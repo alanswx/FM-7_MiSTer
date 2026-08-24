@@ -4,6 +4,7 @@
 // refs/77AVEMU (refs/ is ignored).  build_77avemu_headless.sh compiles it
 // against a locally-built 77AVEMU tree.
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
@@ -72,9 +73,21 @@ public:
 // The two machines have no common instruction count -- they do not even agree
 // on the main CPU's clock -- but they do agree on wall-clock machine time, so a
 // "frame" here is 1/60 s of vm->state.fm77avTime rather than a raster frame.
-// That makes a sequence portable: the same numbers drive the reference and the
-// core, and "it starts on the reference at frame 700" is directly checkable
-// against vsim at frame 700.
+//
+// THE TWO FRAME UNITS ARE NOT THE SAME LENGTH, and this comment used to claim
+// they were ("a frame is 1/60 s of machine time, so the numbers mean the same
+// thing here and in vsim" -- wrong by 0.61 %). A frame here is exactly 1/60 s.
+// A vsim frame is a real raster frame off the core's video timing, 16 MHz over
+// a 1024 x 262 raster (sim_main.cpp:73), i.e. 59.63740 Hz. So
+//
+//     reference_frame = vsim_frame * 60 * 1024 * 262 / 16000000
+//                     = vsim_frame * 1.00608          (exact, not a rounding)
+//
+// which is +6 frames per 1000: below noise at the 620-frame gate (620 -> 624),
+// 12 frames at the sweep's 2000 (-> 2012), 22 at 3700 (-> 3722). Scale the
+// number before passing it to --key/--joystick/--shot-every/--stop-at-frame if
+// you want the same instant as a vsim frame; do not scale it if you are just
+// quoting machine time.
 //
 // Why this exists: finding out how to start a game is a question about the
 // SOFTWARE, not about our RTL, so it should be answered on the known-good
@@ -85,10 +98,34 @@ struct InputEvent
     unsigned long long frame;      // 1/60 s of machine time
     bool               isJoystick;
     int                keyCode;    // AVKEY_*, for key events
+    unsigned int       keyFlags;   // FM77AVKeyboard::KEYFLAG_SHIFT/_CTRL/_GRAPH
     unsigned int       buttons;    // bit0 up, 1 down, 2 left, 3 right, 4 A, 5 B
     bool               press;      // press or release
     bool               fired;
 };
+
+// SHIFT/CTRL/GRAPH are NOT keys you can press here. FM77AVKeyboard::Press takes
+// the modifier state as its first argument (fm77avkeyboard.cpp:498-500) and
+// pressing AVKEY_LEFT_SHIFT as an ordinary key sets heldDown[] and produces
+// nothing -- so scheduling a shift key around a character silently types the
+// UNSHIFTED one. That is not hypothetical: it turned `print 12+34` into
+// `print 12;34` and `print "HI!"` into `print 2hi12`, which looks like a
+// keyboard bug in whatever is being tested rather than a harness limitation.
+// Hence the "SHIFT+" / "CTRL+" / "GRAPH+" prefix on --key.
+static bool ParseKeyModifier(std::string &name, unsigned int &flags)
+{
+    for (;;)
+    {
+        const auto plus = name.find('+');
+        if (plus == std::string::npos || 0 == plus) return true;
+        const std::string mod = name.substr(0, plus);
+        if      (mod == "SHIFT") flags |= FM77AVKeyboard::KEYFLAG_SHIFT;
+        else if (mod == "CTRL")  flags |= FM77AVKeyboard::KEYFLAG_CTRL;
+        else if (mod == "GRAPH") flags |= FM77AVKeyboard::KEYFLAG_GRAPH;
+        else return false;
+        name = name.substr(plus + 1);
+    }
+}
 
 static const unsigned long long FRAME_NS = 1000000000ULL / 60ULL;
 
@@ -128,20 +165,56 @@ static void Usage(const char *argv0)
     std::cerr << "usage: " << argv0
               << " ROMDIR MEDIA [steps] [screenshot.png] [options]\n";
     std::cerr << "  MEDIA is a .d77/.d88 disk or .t77 tape image.\n";
+    std::cerr << "  steps are 6809 instructions and may be omitted entirely when\n";
+    std::cerr << "  --stop-at-frame is given; a positional that is not all digits is\n";
+    std::cerr << "  taken as the screenshot name.\n";
     std::cerr << "  --fm7                  run as an FM-7 rather than an FM77AV\n";
     std::cerr << "  --no-autostart         do not type the tape start command\n";
     std::cerr << "  --key F:NAME[:HOLD]    press a key at frame F for HOLD frames\n";
     std::cerr << "                         (default 20). NAME is 77AVEMU's own\n";
-    std::cerr << "                         label: SPACE RETURN A Z 1 F1 ...\n";
+    std::cerr << "                         label -- RETURN A Z 1 PF1 MINUS\n";
+    std::cerr << "                         SEMICOLON MID_SPACE ... (there is no\n";
+    std::cerr << "                         plain SPACE: the FM-7 has LEFT_SPACE,\n";
+    std::cerr << "                         MID_SPACE and RIGHT_SPACE, and the\n";
+    std::cerr << "                         function keys are PF1..PF10).\n";
+    std::cerr << "                         Modifiers are a PREFIX, not their own\n";
+    std::cerr << "                         key: SHIFT+2 CTRL+C GRAPH+A. Pressing\n";
+    std::cerr << "                         LEFT_SHIFT as a key does nothing.\n";
     std::cerr << "  --joystick F:B[:HOLD]  press stick 1 at frame F. B is\n";
     std::cerr << "                         '+'-separated: up down left right a b\n";
     std::cerr << "  --shot-every N         also write screenshot.NNNN.png every N frames\n";
+    std::cerr << "  --stop-at-frame N      end the run at machine-time frame N, so the\n";
+    std::cerr << "                         final screenshot is taken at a KNOWN instant\n";
+    std::cerr << "                         rather than after a given instruction count.\n";
+    std::cerr << "                         `steps` stays a backstop; without an explicit\n";
+    std::cerr << "                         steps it is raised to 100000 per frame asked\n";
+    std::cerr << "                         for, so a wedged run still cannot spin forever.\n";
     std::cerr << "  --trace-io             log every main-CPU $FDxx access, and every\n";
     std::cerr << "                         sub-CPU $D4xx one, as IOWRITE/IOREAD lines.\n";
     std::cerr << "                         Feed both sides to tools/iodiff.py to find\n";
     std::cerr << "                         where this core and the reference part company.\n";
-    std::cerr << "  A frame is 1/60 s of MACHINE time, so the numbers mean the same\n";
-    std::cerr << "  thing here and in vsim.\n";
+    std::cerr << "  A frame is 1/60 s of MACHINE time. That is NOT the same length as a\n";
+    std::cerr << "  vsim frame, which is a 59.63740 Hz raster frame: multiply a vsim frame\n";
+    std::cerr << "  number by 1.00608 to get the equivalent frame here (620 -> 624,\n";
+    std::cerr << "  2000 -> 2012, 3700 -> 3722).\n";
+}
+
+// The positional `steps` argument is optional, so a bare positional has to be
+// told apart from a file name rather than fed to strtoull and silently read as
+// zero.
+static bool IsNumber(const std::string &s)
+{
+    if (s.empty()) return false;
+    // strtoull(.., 0) only reads hex behind an explicit 0x, so anything else
+    // must be all decimal digits -- otherwise a screenshot called "ref.png"
+    // parses as 0 and the run does nothing.
+    const bool hex = (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'));
+    for (size_t i = (hex ? 2 : 0); i < s.size(); ++i)
+    {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        if (!(hex ? std::isxdigit(c) : std::isdigit(c))) return false;
+    }
+    return true;
 }
 
 static bool HasSuffix(const std::string &s, const char *suffix)
@@ -168,6 +241,15 @@ int main(int argc, char **argv)
     std::vector<InputEvent> events;
     unsigned long long shotEvery = 0;
 
+    // --stop-at-frame ends the run at a machine-time instant instead of after an
+    // instruction count, which is the only way to render the reference at the
+    // SAME moment as a vsim shot (docs/REFERENCE.md traps 42 and 49: comparing a
+    // fixed-step reference against a fixed-frame core render reported a 32-point
+    // improvement as a 9-point regression). `steps` remains the backstop.
+    unsigned long long stopAtFrame = 0;
+    bool stopAtFrameSet = false;
+    bool stepsGiven = false;
+
     bool traceIO = false;
     int positional = 0;
     for (int i = 3; i < argc; ++i)
@@ -192,14 +274,20 @@ int main(int argc, char **argv)
                 hold = std::strtoull(rest.substr(c2 + 1).c_str(), nullptr, 10);
                 rest = rest.substr(0, c2);
             }
+            unsigned int flags = 0;
+            if (!ParseKeyModifier(rest, flags))
+            {
+                std::cerr << "unknown key modifier in: " << rest << "\n";
+                return 2;
+            }
             const int code = FM77AVKeyLabelToKeyCode(rest);
             if (code <= 0)
             {
                 std::cerr << "unknown key name: " << rest << "\n";
                 return 2;
             }
-            events.push_back({f,        false, code, 0, true,  false});
-            events.push_back({f + hold, false, code, 0, false, false});
+            events.push_back({f,        false, code, flags, 0, true,  false});
+            events.push_back({f + hold, false, code, flags, 0, false, false});
         }
         else if (arg == "--joystick" && i + 1 < argc)
         {
@@ -213,21 +301,37 @@ int main(int argc, char **argv)
                 rest = rest.substr(0, c2);
             }
             const unsigned int b = ParseButtons(rest);
-            events.push_back({f,        true, 0, b, true,  false});
-            events.push_back({f + hold, true, 0, 0, false, false});
+            events.push_back({f,        true, 0, 0, b, true,  false});
+            events.push_back({f + hold, true, 0, 0, 0, false, false});
         }
         else if (arg == "--shot-every" && i + 1 < argc)
         {
             shotEvery = std::strtoull(argv[++i], nullptr, 10);
         }
+        else if (arg == "--stop-at-frame" && i + 1 < argc)
+        {
+            stopAtFrame = std::strtoull(argv[++i], nullptr, 10);
+            stopAtFrameSet = true;
+        }
         else if (arg == "--trace-io")
         {
             traceIO = true;
         }
-        else if (positional == 0)
+        else if (positional == 0 && IsNumber(arg))
         {
             steps = std::strtoull(arg.c_str(), nullptr, 0);
+            stepsGiven = true;
             ++positional;
+        }
+        else if (positional == 0)
+        {
+            // `steps` is optional now that --stop-at-frame exists, so
+            // `... --stop-at-frame 624 shot.png` has to work. Without this,
+            // strtoull("shot.png") returned 0, the run executed ZERO
+            // instructions, and the screenshot slot was never filled -- a
+            // successful exit with no output and no complaint.
+            screenshot = arg;
+            positional = 2;
         }
         else if (positional == 1)
         {
@@ -239,6 +343,18 @@ int main(int argc, char **argv)
             Usage(argv[0]);
             return 2;
         }
+    }
+
+    // The default `steps` (2,000,000) is ~2.2 s of machine time, i.e. about 130
+    // frames -- far short of any frame worth stopping at. If a stop frame was
+    // asked for and no explicit step count was given, size the backstop off the
+    // frame instead: 20,000,000 steps is ~1320 frames (trap 42), so ~15,000
+    // steps per frame is the real rate and 100,000 leaves a 6x margin for a
+    // title that runs the CPU slowly. The loop still exits on machine time; this
+    // only stops a pathological run from spinning forever.
+    if (stopAtFrameSet && !stepsGiven)
+    {
+        steps = stopAtFrame * 100000ULL + 1000000ULL;
     }
 
     FM77AVParam param;
@@ -330,7 +446,9 @@ int main(int argc, char **argv)
     unsigned long long mainCount = 0;
     unsigned long long lastShotBucket = ~0ULL;
     bool tapeStarted = false;
-    for (unsigned long long i = 0; i < steps; ++i)
+    bool hitStopFrame = false;
+    unsigned long long i = 0;
+    for (; i < steps; ++i)
     {
         const auto oldPc = vm->mainCPU.state.PC;
         vm->RunOneInstruction();
@@ -398,12 +516,13 @@ int main(int argc, char **argv)
             }
             else if (e.press)
             {
-                vm->keyboard.Press(0, e.keyCode);
-                std::cerr << "INPUT frame=" << e.frame << " press key=" << e.keyCode << "\n";
+                vm->keyboard.Press(e.keyFlags, e.keyCode);
+                std::cerr << "INPUT frame=" << e.frame << " press key=" << e.keyCode
+                          << " flags=" << e.keyFlags << "\n";
             }
             else
             {
-                vm->keyboard.Release(0, e.keyCode);
+                vm->keyboard.Release(e.keyFlags, e.keyCode);
             }
         }
 
@@ -418,6 +537,25 @@ int main(int argc, char **argv)
                       << " tape_ptr=" << vm->dataRecorder.state.primary.ptr.dataPtr
                       << "\n";
         }
+
+        // Last thing in the body, so everything scheduled for this frame -- the
+        // input events and the --shot-every capture above -- has already run.
+        if (stopAtFrameSet && frameNow >= stopAtFrame)
+        {
+            hitStopFrame = true;
+            ++i;                 // count the step we just executed
+            break;
+        }
+    }
+
+    const unsigned long long endFrame = vm->state.fm77avTime / FRAME_NS;
+    if (stopAtFrameSet && !hitStopFrame)
+    {
+        // Say so rather than silently handing back a screenshot from the wrong
+        // instant -- an early stop is exactly what a wedged run looks like.
+        std::cerr << "WARNING: step backstop (" << steps << ") hit at frame "
+                  << endFrame << " before --stop-at-frame " << stopAtFrame
+                  << "; the screenshot is NOT at the requested instant\n";
     }
 
     // Optional main-memory dump, the counterpart of the VRAM dump below.
@@ -491,7 +629,9 @@ int main(int argc, char **argv)
               << " port1_last_read=" << vm->gameport.state.ports[1].lastAccessTime
               << "\n";
 
-    std::cout << "RESULT steps=" << steps
+    std::cout << "RESULT steps=" << i
+              << " steps_cap=" << steps
+              << " frame=" << endFrame
               << " time=" << vm->state.fm77avTime
               << " main_count=" << mainCount
               << " pc=$" << std::hex << vm->mainCPU.state.PC

@@ -167,15 +167,28 @@ broken title with no shared cause. Untouched.
 commit, saying so, and check the two SCREEN+CNT rows (Thexder, av-demo) are phase
 shifts before accepting them.
 
-**`shots-ref/av-kohakuiro.png` is a solid black frame.** Kohakuiro no Yuigon disk
-1 also renders blank at HEAD today -- 3790 bytes at frames 700 and 900, this
-core's blank-PNG size -- while `sweep/results-av-f700.tsv` records 16857 bytes for
-it. So the title regressed on some earlier core AND the blank was then blessed,
-which is the one failure this gate exists to prevent: a row that can never fail
-because its reference is the failure. Do not bless a row without looking at the
-picture. Wizardry IV wants the same look -- its blessed shot has four detailed
-sprites and HEAD frame 700 renders three garbled ones, which may be a regression
-or may be a different animation instant; nobody has established which.
+**`shots-ref/av-kohakuiro.png` is a solid black frame -- and that is NOT a regression.**
+*(Superseded claim: "the title regressed on an earlier core and the blank was then
+blessed." Disproven by frame-by-frame comparison against 77AVEMU.)* Kohakuiro no Yuigon
+disk 1 paints the RIVERHILL SOFT logo at frame **199** and has faded it out by 400; the
+reference does the same at its own 200/400 and is then black from 600 through 2400. The
+gate photographs at `SHOT_AT = FRAMES - 20` = 600, which is 400 frames after the only
+thing the title draws. The core is right and the shot frame is wrong.
+
+`av-wizardry4` is the same story: today's core at frame 400 is **byte-identical** to the
+previous blessed shot, and at 800 it is on the same three-portrait "DISPELL" stage
+77AVEMU reaches at its 800. The 1.65x clock speed-up moved the attract animation past
+frame 600. Not a regression either.
+
+**What IS wrong is the gate's choice of instant.** Both rows are now blessed mid-nothing
+or mid-transition, which is a weak reference by `run_tests.sh`'s own stated criterion --
+"they render the SAME thing at 700 and 2000 frames". Give those two rows their own shot
+frame (Kohakuiro wants ~200) rather than the global `FRAMES - 20`, or drop them for
+titles that hold a stable picture. Open work.
+
+One genuine core-vs-reference difference did surface from the new 77AVEMU set: on
+Wizardry IV this core overprints the title text and drops the `S) ゲームをはじめる`
+line. It is in the OLD blessed shot too, so it is long-standing rather than new.
 
 **Trap for whoever picks this up:** `sweep/results-av-*.tsv` are NOT a valid
 baseline for today's tree. They predate the clock commit and several others.
@@ -183,6 +196,9 @@ Comparing a change against them attributes pre-existing state to the change --
 which happened here: Kohakuiro's blank and Wizardry IV's blobs were both read as
 damage from the VRAM arbitration change and are present at HEAD without it.
 Build the baseline from the same tree you are changing, in the same session.
+And note the second half of that mistake: neither is a REGRESSION either. Both
+are the attract animation at a different phase, because the shot frame is fixed
+and the core got 1.65x faster. Trap 49 again.
 
 **6. FDC lockouts are not modelled.** FM-Techknow page 180 documents fixed
 periods where the MB8877A will not start a read/write: 1 s after motor on, 60 ms

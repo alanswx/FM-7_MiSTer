@@ -458,6 +458,11 @@ confident wrong answer at least once:
     `find "$DISKS"` bare. Pointing `$OUT/disks` at a symlink made the sweep report "0 disk images"
     and exit successfully in seconds — a mis-set path looks like a clean fast run, not an error.
     Check the image count in the sweep's own output before trusting the results file.
+    `run_tests.sh` had the identical bug and it is worse there: `software/` is a real directory
+    in the main checkout and a **symlink in a git worktree**, so in a worktree every disk row
+    vanished from the run with no message, and a `BLESS=1` then left those references untouched
+    and stale while reporting success. Fixed with a trailing slash; the same `.gitignore` patterns
+    (`refs/`, `software/`) also fail to match the symlinks, so they showed up as untracked.
 
 18. **"The counters moved by the expected timing shift" is a diagnosis, and it needs the same
     evidence as any other.** `ca75bfe` converted `SRAM.v`'s shared-RAM window from a single-port
@@ -846,10 +851,47 @@ confident wrong answer at least once:
     with the change and without. Build the "before" from the same tree, in the same
     session, with the same binary you are about to modify: `git stash push rtl/`, `make`,
     run, `git stash pop`. It costs one rebuild and it is the difference between a
-    measurement and a story. The same applies to `shots-ref/` when it is stale, with the
-    extra hazard that a stale reference can be a blessed BLANK -- `shots-ref/av-kohakuiro.png`
-    is one -- so a row can be passing precisely because its reference already captured the
-    failure. Look at the picture, not the byte count.
+    measurement and a story. Look at the picture, not the byte count.
+
+    **And then do not over-read the picture.** Neither of those two was a regression at
+    all. Kohakuiro paints its logo at frame 199 and fades it by 400, and 77AVEMU does the
+    same and is black from 600 to 2400 -- the gate simply photographs 400 frames after the
+    only thing the title draws. Wizardry IV at frame 400 is byte-identical to its previous
+    blessed shot. Both moved because the 1.65x clock speed-up walked the attract animation
+    past a FIXED shot frame, which is trap 49. So the sequence of errors was: compare
+    against a stale record, conclude "my change broke it", discover it was already broken
+    at HEAD, conclude "then it regressed earlier" -- and that was wrong too. The only way
+    to settle a moving picture is to compare the SAME instant on both machines, which is
+    what `vsim/sweep/ref-gate.py` and trap 58 exist for.
+58. **"Frame N" is not the same instant on the two machines, and nothing corrected for it.**
+    A vsim frame is a real raster frame off the core's video timing, 16 MHz over a
+    1024 x 262 raster (`sim_main.cpp:73`) = **59.63740 Hz**. A 77AVEMU frame is exactly
+    1/60 s of `vm->state.fm77avTime`. So
+
+        reference_frame = vsim_frame * 60 * 1024 * 262 / 16000000 = vsim_frame * 1.00608
+
+    exactly — +6 frames per 1000, i.e. 4 at the gate's 600, 12 at the sweep's 2000, 22 at
+    3700. `tools/77avemu_headless.cpp` claimed in its own header that the numbers "mean the
+    same thing here and in vsim"; they do not, and the claim is corrected in place. It only
+    starts to bite on a title that is still moving at the shot frame, which is trap 49 all
+    over again. `--stop-at-frame` on the harness plus `vsim/sweep/ref-gate.py` apply the
+    conversion; do not re-derive it.
+
+    A second trap sits behind the first: **the gate's shot frame is not its stop frame.**
+    `run_tests.sh` runs to `FRAMES` (620) but photographs at `SHOT_AT = FRAMES - 20` (600).
+    Converting 620 gives 624 and lands twenty frames after the picture being compared.
+
+59. **`pkill -f Vemu` kills the OTHER agent's run too.** When a background agent is working
+    the same repository -- a re-bless in a git worktree, say -- its simulator is the same
+    binary name at a different path, and a broad `pkill -f 'obj_dir/Vemu'` to free the
+    machine takes it out as well. That is what happened during the reference rebuild in
+    this session: two AV rows were SIGTERMed mid-run and reported `MAIN-STALLED
+    SUB-STALLED NO-SCREENSHOT` with `?` counters, and a `BLESS=1` would have written
+    `0 0 0` into `counters.tsv` for them and called it a reference. From the victim's side
+    it looks like an environment fault with no cause, which is an expensive thing to debug.
+    Kill by PID, or match the full path, or give the run its own binary name -- `EXE=` on
+    `run_tests.sh` is overridable for exactly this. And treat any row reporting STALLED
+    with `?` counters as "something killed it", not as a core result.
 
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
