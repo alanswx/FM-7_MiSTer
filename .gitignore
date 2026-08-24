@@ -69,3 +69,6 @@ tools/hw/shots/
 # fixed or the collection changes, so they are not worth versioning -- the
 # per-title numbers that ARE worth keeping go in vsim/sweep/*.tsv, checked in.
 vsim/sweep/renders/
+
+# Agent worktrees and session scratch
+.claude/
