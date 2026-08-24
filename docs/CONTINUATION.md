@@ -66,10 +66,22 @@ and into Luxsor's own loader, with only two value differences the whole way:
   `$51CB`) -- Luxsor's own code never reads it.
 
 So b0 changes something in the **boot ROM's** path that this core then handles
-differently, and it is not visible in the main-CPU `$FDxx` stream at all. Next
-place to look is the `$D4xx` sub-system side, which `seqdiff.py` deliberately
-does not compare (see REFERENCE.md trap 43) -- or the video path, since the
-symptom is a blank screen on a machine whose disk reads all succeed.
+differently, and it is not visible in the main-CPU `$FDxx` stream at all.
+
+**The `$D4xx` side says the title never starts drawing.** Over comparable
+windows this core issues 3 writes to `$D41B` where the reference issues 383659,
+3 to `$D41C`/`$D41D` against 129329 each, and 6 to `$D410` against 44862. It is
+not drawing wrongly; it stops before the drawing phase begins. That rules out
+the video path as the cause and puts it back in whatever the loader does between
+its last successful sector read and its first ALU write.
+
+**Documentation note that matters here** (see the new `$FD00` section in
+docs/FM77AV.md): on the FM77AV, `$FD00` b0 is **not** a DIP switch. haserin09's
+FM-7/AV difference table defines only D8 on the AV's `$FD00` read; the
+`0:1.2M / 1:2M` labelling comes from the FM-7 manual and describes FM-7 hardware.
+This core drives b0 from `fm8_switch` on both machines. For the AV the bit is
+undriven and reads 1 either way, so the current value is right by accident rather
+than by derivation -- and the reason Luxsor cares about it is still unexplained.
 
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.

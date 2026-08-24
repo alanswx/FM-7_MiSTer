@@ -312,6 +312,28 @@ stubs. `$D432` b7 = latch ready, b0 = ACK. The mode that matters for software is
 mode with make/break codes — the FM-7 cannot sense key release at all (77AVEMU
 `readme.md`). Reset default is FM-7 mode (MAME `fm7.cpp:1829`), so software must opt in.
 
+## `$FD00` is not the same register on the AV
+
+haserin09's FM-7/AV difference table (`refs/haserin09/difference.html`, the
+`FD00` row) tabulates the AV's `$FD00` as:
+
+* **read** -- キーデータ, main CPU, and **only D8 is defined**. Bits 6:0 are blank
+  in the table, annotated 「サブ側 D400 と同じ」 (the same as the sub side's `$D400`).
+* **write** -- カセット/プリンタ: b7 プリンタ SLCTIN, b6 プリンタ STRB,
+  b1 カセットリモート (the motor), b0 カセット MIC (tape data out).
+
+**The FM-8 compatibility DIP switch is an FM-7 feature.** The System
+Specifications' `0:1.2M / 1:2M` labelling of `$FD00` b0 (page 1-9, prose page 38)
+is from the FM-7 manual and describes FM-7 hardware; the AV table does not carry
+that bit at all. This core drives b0 from `fm8_switch` on both machines
+(`KEYBOARD.v`), which is right for the FM-7 and is at best coincidental for the
+AV -- where the bit is simply undriven and reads 1, which is also what 77AVEMU
+returns (`byteData=0x7F`, cleared only below 1.5 MHz).
+
+Worth knowing before anyone reasons about `$FD00` b0 on an AV title: on that
+machine it is not reporting a switch, and the manual page that appears to define
+it is about a different machine.
+
 ## FDC registers, from the Fujitsu manuals
 
 FM-Techknow 図8-18 (page 180 of the scan, `refs/fm7-docs/archive-org-fm-techknow`)
