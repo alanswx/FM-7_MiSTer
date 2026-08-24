@@ -70,12 +70,26 @@ Editor and Pro Yakyuu Fan disk A all diverge at access 20,604, `R $FD05 FE` agai
 `$7E`, at `pc=$5043`, which is in the shared FM77AV disk boot loader and not in any
 title's own code. `$FD1D` bits 5:2 was the second, also shared. Both are fixed.
 
-**And all three titles are still blank.** Luxsor enters the same runaway loop at
-`$3B7A`-`$3B99` at frame ~375, executing misaligned bytes with B decrementing by $5A
-from an odd value so `BNE` never falls through, and the `$FD90` write counts either side
-of the fix are identical -- 25 each at `$3B52`/`$3B5F`/`$3B6C`, then unbounded at
-`$3B7B`. The boot handshake now resolves the way the reference resolves it and the
-title's own code still crashes.
+**And all three titles are still blank.** Luxsor enters the same non-terminating loop
+at `$3B7A`-`$3B99` at frame ~375, and the `$FD90` write counts either side of the fix
+are identical -- 25 each at `$3B52`/`$3B5F`/`$3B6C`, then unbounded at `$3B7B`. The boot
+handshake now resolves the way the reference resolves it and the title's own code still
+fails.
+
+*Superseded claim 3 (also mine): "it is executing misaligned bytes / garbage."* Traced
+into, it is not. `$3B49`-`$3B76` is a clean, correctly terminating loop that copies three
+bytes per pass through the MMR window -- `CLR $fd90` / `LDD ,X` / `STA ,U` /
+`STB $2000,U`, then `$fd90 <- 1`, then `$fd90 <- 2`, `PULS B,X` / `DECB` / `BNE $3b49`.
+It runs its 25 passes and exits. `$3B78` is then `LDB #$0f` -- B enters the next loop as
+**15**, a perfectly ordinary count -- and falls into `$3B7A`, which is the same shape.
+
+**`$FD90` is the MMR segment select, so the bytes at a given logical address change as
+this loop runs.** That is why a disassembly of `$3B8F`-`$3B99` shows `STB $c486`,
+`FCB $02`, `STD $906f`, `SUBB #$5a`: the disassembler reads whatever bank is mapped when
+it looks, which need not be the bank the CPU fetched from. Register values in the trace
+are real (B genuinely walks d3, 79, ..., 5d, 03), but the instruction text is not
+trustworthy inside an MMR-banked loop. Do not read "illegal opcode in a hot loop" as
+"the CPU has crashed" here -- check the mapping first.
 
 *So what the arbitration fix bought* is a correct sub-CPU speed, agreement with the
 reference through two more readbacks, and the removal of the first divergence so the
@@ -93,10 +107,19 @@ things worth doing before anything else:
     (3F,3F,3F... against 3F,3F,BF) does not collapse to the same key on both sides, so
     one status poll desynchronises the rest of the trace. Until that is fixed the tool
     cannot answer "is there a later divergence".
-  * Find out what jumps to `$3B7A` and with what B. The loop is misaligned code, so the
-    question is not what the loop does but what got there. `--trace-cpu --trace-from 370
-    --trace-until 380` on this core, and the same window on the reference, is the
-    obvious next measurement and has not been done.
+  * **Check the MMR mapping for logical `$3xxx`, which is the strongest lead now.** This
+    loop's whole job is to bank-switch `$FD90` and copy through the window, it does not
+    terminate, and the reference never executes `$3Bxx` at all -- its own `$FD90` writes
+    are at `$40xx`-`$44xx` and `$69xx`. If this core returns the wrong physical page for
+    a logical address under some `$FD90` value, the CPU fetches the wrong bytes and this
+    is exactly what it looks like. Dump what each `$FD90` setting maps `$3000`-`$3FFF`
+    to, on both machines, and compare. `--trace-mem 3b40-3ba0` with the decode lines
+    tells a bad read apart from a bad chip select (see the tracing options in
+    vsim/sim_main.cpp).
+  * The two machines are running **different code** by this point, which no readback
+    difference explains, so the question is how they came to be in different places. The
+    main-CPU `$FDxx` stream cannot answer it -- see the seqdiff limitation above.
+    `--dump-shadow` on both sides of the loader, compared, is the untried instrument.
 
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.
