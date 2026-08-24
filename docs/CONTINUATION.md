@@ -107,19 +107,33 @@ things worth doing before anything else:
     (3F,3F,3F... against 3F,3F,BF) does not collapse to the same key on both sides, so
     one status poll desynchronises the rest of the trace. Until that is fixed the tool
     cannot answer "is there a later divergence".
-  * **Check the MMR mapping for logical `$3xxx`, which is the strongest lead now.** This
-    loop's whole job is to bank-switch `$FD90` and copy through the window, it does not
-    terminate, and the reference never executes `$3Bxx` at all -- its own `$FD90` writes
-    are at `$40xx`-`$44xx` and `$69xx`. If this core returns the wrong physical page for
-    a logical address under some `$FD90` value, the CPU fetches the wrong bytes and this
-    is exactly what it looks like. Dump what each `$FD90` setting maps `$3000`-`$3FFF`
-    to, on both machines, and compare. `--trace-mem 3b40-3ba0` with the decode lines
-    tells a bad read apart from a bad chip select (see the tracing options in
-    vsim/sim_main.cpp).
-  * The two machines are running **different code** by this point, which no readback
-    difference explains, so the question is how they came to be in different places. The
-    main-CPU `$FDxx` stream cannot answer it -- see the seqdiff limitation above.
-    `--dump-shadow` on both sides of the loader, compared, is the untried instrument.
+**The MMR is NOT the fault, and here is the evidence so nobody re-runs it.** Two
+checks, both negative:
+
+  * *The code page cannot move under it.* The boot ROM at `$E49E`/`$E4A3` programs all
+    four segments identically -- `$FD90 <- 0`, then `$FD80`-`$FD8F` = `$30`-`$3F`, and
+    again for segments 1, 2 and 3 -- so logical page 3 maps to physical `$33000` in every
+    segment and the `$FD90` writes inside the loop cannot change the bytes being fetched.
+  * *The whole MMR enable sequence matches the reference exactly.* Every `$FD93` write
+    agrees in PC and value on both machines, in order: `6006 01`, `6109 BF`, `6119 3F`,
+    `FC79 00`, `E085 00`, `E497 00`, `EBBE 80`, `E4C4 80`, `E4CC 00`, `E4D5 00`,
+    `E12E 00`, `E231 80`, `E27B 00`, `EBBE 80` x6, `E1D8 80`, `E213 00`, `EE54 00`,
+    `EE77 00`, **`EEA1 3E`**. `$FD93` b7 is `mmr_enable`, so that last one DISABLES MMR
+    immediately before the loop runs -- on both machines. The `$FD90` writes inside the
+    loop are no-ops on both. The reference's next `$FD93` write is `E5B0 00`, which this
+    core never reaches because it is still in the loop.
+
+**So the two machines agree on the entire main-CPU `$FDxx` stream up to `$EEA1` and
+diverge only in what happens after.** With MMR off, the loop's `LDD ,X` at `X=$05DE`
+reads through the plain FM-7 layout at physical `$305DE` and returns `$0000` here; the
+loop then copies those zeros. The remaining question is therefore about MEMORY CONTENTS,
+not about any register: what should be at `$05DE` by frame 375, and why is it zero here?
+
+*The instrument for that has not been built.* `--dump-shadow` gives the main-CPU bus
+shadow on this core, and `tools/77avemu_headless.cpp` has no equivalent. Adding a memory
+dump to the reference harness -- the same shape as `--stop-at-frame` -- would make the
+two directly comparable and is probably the highest-value tooling work left on the disk
+side. Do that before spending more time reading traces.
 
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.
