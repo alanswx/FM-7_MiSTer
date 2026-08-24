@@ -72,3 +72,7 @@ vsim/sweep/renders/
 
 # Agent worktrees and session scratch
 .claude/
+
+# Magazine scans and type-in work (hundreds of MB, and one 212 MB PDF that
+# exceeds GitHub's 100 MB hard limit). Kept on disk, never committed.
+magazines/
