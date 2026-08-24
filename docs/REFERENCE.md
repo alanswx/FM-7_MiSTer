@@ -835,6 +835,22 @@ confident wrong answer at least once:
     2,760, this core loses it. That is a measurement; "the sub looks slow" is not.
     `head -N ref.log | grep -c 'MAIN:'` is the whole technique.
 
+57. **`vsim/sweep/results-av-*.tsv` is a record, not a baseline.** Those files are checked
+    in and look exactly like the "before" numbers you want, and they are not: they were
+    produced on whatever the core was that day, and the AV set has moved through the clock
+    commit and several others since. Judging a change against them attributes every
+    pre-existing regression to the change. That happened here, twice in one session: the
+    sub-CPU VRAM arbitration change was read as blanking Kohakuiro no Yuigon (TSV 16857,
+    measured 3790) and shredding Wizardry IV (TSV 17884, measured 12522), and BOTH are the
+    state of HEAD without it -- Wizardry IV in fact renders a byte-identical 12522-byte PNG
+    with the change and without. Build the "before" from the same tree, in the same
+    session, with the same binary you are about to modify: `git stash push rtl/`, `make`,
+    run, `git stash pop`. It costs one rebuild and it is the difference between a
+    measurement and a story. The same applies to `shots-ref/` when it is stale, with the
+    extra hazard that a stale reference can be a blessed BLANK -- `shots-ref/av-kohakuiro.png`
+    is one -- so a row can be passing precisely because its reference already captured the
+    failure. Look at the picture, not the byte count.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

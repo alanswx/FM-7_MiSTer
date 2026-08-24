@@ -41,57 +41,88 @@ undefined bits 5:2 changes neither title (tested). The lead is what those titles
 do *after* it. Note they diverge at the same instruction as Shounen Mike did, so
 the `$FD05`/BUSY family is worth trying first.
 
-**3. Luxsor disk 2: root cause found -- the sub CPU is 2x too slow, not `$FD00`.**
+**3. Luxsor disk 2: two real bugs found and fixed, and it is STILL BLANK.**
 
-The old framing in this file ("blanks with `$FD00` b0 = 1, and the cause is not any of
-the obvious candidates") was wrong and is superseded. b0 = 1 is correct and matches
-77AVEMU exactly. What b0 does is select a delay constant in the boot ROM's `$FF42`
-routine (224 iterations against 153); b0 = 0 was not fixing Luxsor, it was perturbing a
-race this core loses for an unrelated reason. See REFERENCE.md trap 55.
+Read this whole entry before working on the title. It has now produced two confident
+wrong answers in a row and the second one was mine.
 
-The real fault: `core.v:835` stalls the sub CPU's clock on any VRAM access during active
-display, which costs it ~48% of its cycles, so its VRAM-clear loop runs 2x slow relative
-to the main CPU. It therefore reaches the `$D40A` read that clears `$FD05` BUSY *after*
-the main CPU polls `$FD05` at `$5043`, where the reference reaches it 2,760 main-CPU I/O
-accesses *before*. The main reads `$FE` where the reference reads `$7E`, branches the
-other way, and ends up executing misaligned bytes in an infinite loop at `$3B7A`-`$3B99`
-with the sub frozen in its `$D380` command wait. Full measurement and the reference
-citations are in the new "Sub-CPU VRAM arbitration" section of docs/FM77AV.md.
+*Superseded claim 1:* "blanks with `$FD00` b0 = 1, and the cause is not any of the
+obvious candidates." Wrong. b0 = 1 is correct and matches 77AVEMU exactly
+(`fm77avio.cpp:806`). What b0 selects is a delay constant in the AV boot ROM's `$FF42`
+routine -- `LDY #$00E0 / LDA <$00 / ASRA / BCS` with `DP=$FD`, so b0 = 1 keeps Y = 224
+and b0 = 0 loads Y = $99 = 153. b0 = 0 was not fixing Luxsor, it was perturbing a race.
+See REFERENCE.md trap 55.
 
-**Both references default to no CRTC halt on the AV** (77AVEMU `CRTCHaltsSubCPU = false`,
-XM7 `cycle_steal = TRUE`), and both gate it on the `$D409` VRAM-access flag rather than
-on the sub's address decode. The AV cycle-steals; the blanking wait is FM-7 behaviour.
+*Superseded claim 2 (mine):* "root cause found -- the sub CPU is 2x too slow." The
+finding is real and the fix is in, but it is **not** the cause of Luxsor being blank.
 
-*What is done:* the diagnosis, and an experiment (`sub_vram_wait & ~machine_av`) that
-moves the first `seqdiff` divergence from access 20,604 to 23,759, proving it.
+What is solid, and is fixed: `MB60H010.v` gave the sub CPU the VRAM address bus only
+outside the 640x200 active area, 52.3% of the raster, so a VRAM-bound sub loop ran at
+half speed. Both references default to no CRTC halt at all on an AV (77AVEMU
+`CRTCHaltsSubCPU = false`, XM7 `cycle_steal = TRUE`) because the AV inherits the FM-77's
+cycle steal. Measured against main-CPU `$FDxx` accesses as the shared yardstick, the
+sub's `$D40A` read at `$E13B` -- which clears `$FD05` BUSY -- lands at access 17,844 on
+the reference and after 21,084 here, against a main-CPU poll at access 20,604 on both.
+Details and citations in the "Sub-CPU VRAM arbitration" section of docs/FM77AV.md.
 
-*Why it cannot ship, measured:* built that way, Kohakuiro no Yuigon disk 1 drops from a
-16857-byte render at frame 700 to the 3790-byte blank and Wizardry IV from 17884 to 12021
-with its graphics shredded into horizontal streaks. Reverted; do not re-try the one-liner.
+That was the FIRST divergence for **three** titles at once -- Luxsor disk 2, FM Sound
+Editor and Pro Yakyuu Fan disk A all diverge at access 20,604, `R $FD05 FE` against
+`$7E`, at `pc=$5043`, which is in the shared FM77AV disk boot loader and not in any
+title's own code. `$FD1D` bits 5:2 was the second, also shared. Both are fixed.
 
-*What is left:* the experiment cannot ship -- `AVHDRAW.v:146` gates `alu_access` on
-`SCASSEL` and `CRTRAM`'s port A is time-shared with the raster via `MB60H010.v:149`, so
-without the stall a sub VRAM access during active display is dropped or lands at the
-raster's address. The fix has to hand the sub a slot the raster is not using. The raster
-needs `SVRADRS` only on the CLKSYS edge that latches each character byte, roughly one in
-24 at 640x200, and `CRTRAM` port B is idle on the FM-7 and only used on the AV while the
-sub is halted. Do this against a freshly blessed gate, and expect it to move every AV
-timing counter.
+**And all three titles are still blank.** Luxsor enters the same runaway loop at
+`$3B7A`-`$3B99` at frame ~375, executing misaligned bytes with B decrementing by $5A
+from an odd value so `BNE` never falls through, and the `$FD90` write counts either side
+of the fix are identical -- 25 each at `$3B52`/`$3B5F`/`$3B6C`, then unbounded at
+`$3B7B`. The boot handshake now resolves the way the reference resolves it and the
+title's own code still crashes.
 
-*Next divergence after that one:* `$FD1D` bits 5:2, at `pc=$01E6`. We return CSP's
-`0x3C` there, 77AVEMU returns 0 (`fdc/fm77avfdc.cpp:946` -- `motor?0x80:0` OR'd with
-`currentDS` and nothing else). `FDC.v`'s own comment already records that the reference
-reads `80/81/82/83` during the boot ROM's four-drive probe where this core reads
-`BC/BD/BE/BF`. Retest it once the arbitration is fixed; it was tried standalone before
-and did nothing, which is expected -- it was not the first divergence then.
+*So what the arbitration fix bought* is a correct sub-CPU speed, agreement with the
+reference through two more readbacks, and the removal of the first divergence so the
+next one can be seen. It bought no pixels. Do not let the commit message make you think
+Luxsor is close.
+
+*Where to look next.* The main-CPU `$FDxx` stream is close to exhausted as an instrument
+here: after the two fixes the only difference left in the first 40 frames is `$FD1F`
+DRQ polling phase at `pc=$01E9` (the reference gets DRQ on its third poll, this core is
+still spinning), which shifts `seqdiff`'s alignment and hides anything after it. Two
+things worth doing before anything else:
+
+  * Teach `seqdiff.py` to collapse polling reads properly. It already collapses runs of
+    identical accesses and has `VALUE_UNCOMPARABLE = {'FD1B'}`; a run whose VALUES differ
+    (3F,3F,3F... against 3F,3F,BF) does not collapse to the same key on both sides, so
+    one status poll desynchronises the rest of the trace. Until that is fixed the tool
+    cannot answer "is there a later divergence".
+  * Find out what jumps to `$3B7A` and with what B. The loop is misaligned code, so the
+    question is not what the loop does but what got there. `--trace-cpu --trace-from 370
+    --trace-until 380` on this core, and the same window on the reference, is the
+    obvious next measurement and has not been done.
 
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.
 
-**5. `vsim/shots-ref/` is stale.** `run_tests.sh` reports COUNTERS on every FM-7
-row -- main 5555 -> 9387 per frame -- which is `6a7030e`'s 1.67x speedup, not a
-regression. Re-bless in its own commit, saying so, and check the two SCREEN+CNT
-rows (Thexder, av-demo) are phase shifts before accepting them.
+**5. `vsim/shots-ref/` is stale, and one of its rows is a BLESSED BLANK.**
+`run_tests.sh` reports COUNTERS on every FM-7 row -- main 5555 -> 9387 per frame
+-- which is `6a7030e`'s 1.67x speedup, not a regression. Re-bless in its own
+commit, saying so, and check the two SCREEN+CNT rows (Thexder, av-demo) are phase
+shifts before accepting them.
+
+**`shots-ref/av-kohakuiro.png` is a solid black frame.** Kohakuiro no Yuigon disk
+1 also renders blank at HEAD today -- 3790 bytes at frames 700 and 900, this
+core's blank-PNG size -- while `sweep/results-av-f700.tsv` records 16857 bytes for
+it. So the title regressed on some earlier core AND the blank was then blessed,
+which is the one failure this gate exists to prevent: a row that can never fail
+because its reference is the failure. Do not bless a row without looking at the
+picture. Wizardry IV wants the same look -- its blessed shot has four detailed
+sprites and HEAD frame 700 renders three garbled ones, which may be a regression
+or may be a different animation instant; nobody has established which.
+
+**Trap for whoever picks this up:** `sweep/results-av-*.tsv` are NOT a valid
+baseline for today's tree. They predate the clock commit and several others.
+Comparing a change against them attributes pre-existing state to the change --
+which happened here: Kohakuiro's blank and Wizardry IV's blobs were both read as
+damage from the VRAM arbitration change and are present at HEAD without it.
+Build the baseline from the same tree you are changing, in the same session.
 
 **6. FDC lockouts are not modelled.** FM-Techknow page 180 documents fixed
 periods where the MB8877A will not start a read/write: 1 s after motor on, 60 ms
