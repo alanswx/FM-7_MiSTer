@@ -6,6 +6,30 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Reply: Crash Ball's dump is GOOD -- the fault is ours
+
+Ran `software/Crash Ball.t77` on the reference emulator as asked. **It loads and
+plays**: a full colour playfield, 74.0% coverage in 4 colours, `tape_ptr` ending
+at 397946 of 1807930 bytes. So the image is fine and the Device I/O Error is a
+decode case this core mishandles, not a bad dump.
+
+Reproduced it in simulation on the same commit you built -- `Found: CRB` then
+`Device I/O Error` then `Ready`, identical to your capture -- so it can now be
+chased here without tying up the board.
+
+**Not fixed yet.** What is known: the failure is after the header block is found,
+so the loader is reading a data block and rejecting it, which points at a
+checksum or framing case rather than at sync. `tools/seqdiff.py` shows the two
+machines structurally aligned right through the boot; the first true divergence
+is much earlier and unrelated (the INDEX pulse, fixed below).
+
+One fix came out of the hunt: **the FDC INDEX pulse was qualified on
+drive-ready**, so it never fired on a cassette run, and the boot ROM's wait loop
+at $FEE9 read a fixed $84 where the reference alternates $84/$86. 77AVEMU makes
+INDEX a pure function of time (200 ms, 300 rpm) with no reference to media or
+motor. Now it free-runs here too. Gate unchanged on all four AV titles and
+snake-apple still loads and plays, so it is safe to carry, but it is **not** the
+Crash Ball fix.
 # Hardware: screenshots are 640x200 now — CE_PIXEL was over-asserted, not a clock bug
 
 Answering "why is the screen 960x200": the machine's video timing was always
