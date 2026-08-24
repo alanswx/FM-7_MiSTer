@@ -66,9 +66,24 @@ period. Possibly relevant to Pro Yakyuu Fan.
 
 ## Cassettes
 
-**Nothing loads, on either machine, from any image.** But the picture changed
-substantially with `cc9e464` and the harness fix below -- the two machines now
-agree, which they did not before.
+**Tapes are NOT broken. Every run ever made here was far too short.**
+
+With the harness fixed (below), the reference on a commercial dump (Fighter) at
+60,000,000 steps reaches:
+
+    Searching
+    Found: Fighter
+
+`tape_ptr` climbs past 344000. At 8,000,000 steps the same run shows only
+`Searching` with `tape_ptr=11220` -- which is the state every previous
+investigation stopped at and recorded as failure, including this project's own
+`magazines/.../commercial-tape-test/` control and its conclusion that "the
+cassette-image decoding/loading path" was at fault. **It was not; the runs were
+just short.** A tape load is minutes of machine time, not the ~20 s a disk title
+needs, and every tape harness default here is sized for disks.
+
+Budget accordingly: 60M reference steps to reach `Found:`, and on this core the
+equivalent is many thousands of frames (a 3700-frame run is nowhere near).
 
 ### The harness bug that hid everything
 
@@ -86,10 +101,15 @@ triggers on sub-system command `$04` rather than at a fixed instruction count.
 
 ### What is true now
 
-On a commercial dump (Fighter), **both machines reach F-BASIC `Searching` and
-stop there**. The reference: exit 0, motor turning, `tape_ptr` advancing past
-11000. This core: motor on 87.8% of the run, 162019 cassette-bit edges, 37% of
-the image consumed. They agree.
+On Fighter both machines behave the same way and neither is wrong: they boot
+F-BASIC, accept `RUN""`, start the motor and search. The reference, given enough
+steps, finds the file. This core has not yet been run long enough to say -- a
+16100-frame run was still in flight when this was written; **finish it and
+record the result here.**
+
+Numbers from this core on a 3700-frame run, for scale: motor on 87.8% of the
+run, 162019 cassette-bit edges, 37% of the image consumed. All healthy, just
+unfinished.
 
 ### Ruled out, with measurements -- do not re-check
 
@@ -123,23 +143,24 @@ derive a tape clock from the manual's microseconds until this is answered.
 
 ### Next steps
 
-1. **Run both machines long enough to finish a load.** Every run so far stopped
-   while the tape was still moving. The reference at 8M steps had only reached
-   `tape_ptr=11220`; give it 60M and see whether `Searching` ever resolves. If
-   neither ever loads, that is a different and much more specific problem than
-   "tapes do not work".
-2. **Then use `seqdiff.py`.** It is available for tapes for the first time. The
-   two machines agree at the screen level, so the first `$FDxx` divergence is
-   the whole question.
-3. Settle the 1.846-vs-2.0 discrepancy above.
+1. **Finish the long run on this core** and see whether it reaches `Found:` like
+   the reference does. That is the open question and everything else waits on it.
+2. **If it does not, use `seqdiff.py`** -- available for tapes for the first time
+   now the reference harness works. The two machines agree at the screen level,
+   so the first `$FDxx` divergence is the whole question.
+3. **Give the tape tests their own time budget.** Whatever harness ends up
+   driving tapes should not inherit the disk sweep's frame counts; that
+   assumption is what produced years of "tapes do not work".
+4. Settle the 1.846-vs-2.0 discrepancy above.
 
 ### The magazine type-ins
 
 `magazines/Program Pochette 1984 03 (J OCR)/` has seven FM-7 type-in programs
-with `program.bas` and `program.t77` each. All seven sit at F-BASIC `Searching`,
-for the reasons above -- **not** because the programs or the transcriptions are
-wrong. Their own `commercial-tape-test/` control reached the same conclusion
-independently.
+with `program.bas` and `program.t77` each. All seven sit at F-BASIC `Searching` --
+but so did every commercial tape until the runs were made long enough, so this
+is very likely the same run-length problem and **not** evidence about the
+programs or the transcriptions. Re-run them at the budget above before
+concluding anything about the listings.
 
 If they need to run before cassettes work, the disk route sidesteps it entirely:
 77AVEMU's `D77FileSystem::SaveFMFile(disk, data, filename)` takes exactly the
