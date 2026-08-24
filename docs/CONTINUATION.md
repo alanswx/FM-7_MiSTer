@@ -55,14 +55,47 @@ at `$86xx` and is executing it as a `NEG <$00` sled. The old sweep row flagged i
 `RUNAWAY-INTO-IO`, which agrees. The question is what transferred control there.
 
 ***Pro Yakyuu Fan disk A is the most tractable of the three and should be taken first.***
-It is not crashed and not lost: it is sitting in the boot ROM's own FDC data-request
-poll, `$FE93 LDA $FD1F / $FE96 BPL`, waiting for a DRQ that never arrives. That is a
-bounded, well-specified FDC question with a known-good reference to compare against,
-unlike the other two. Note the trap: the `$FD1F` difference at `pc=$01E9` on Luxsor IS
-only polling phase and was correctly dismissed as such -- but "it was polling phase on
-that title" is not a statement about this one. Check whether DRQ ever asserts here at
-all. Item 6 below (FDC lockout periods are not modelled: 1 s after motor on, 60 ms after
-head load, drive-register write or step) is the obvious first suspect.
+
+*(Superseded claim: "waiting for a DRQ that never arrives." Wrong -- read off a
+16-instruction tail snapshot, which is a picture of wherever the run happened to stop,
+not evidence of a hang. DRQ asserts 149,750 times.)*
+
+The title's own probe routine, disassembled from a `--dump-shadow` at frame 30:
+
+```
+$0430  LDB $FFE0 / ORB #$80 / STB $FD1D   ; drive from $FFE0, motor on
+$0438  LDA $FD18 / BITA #$C1 / BEQ $0481  ; ready and idle? -> done
+$043F  LDA #$D0 / STA $FD18               ; force interrupt
+$0446  LDX #$0000
+$0449  LDA $FD18 / BITA #$81              ; poll NOT READY (b7) | BUSY (b0)
+$044E  BEQ $0455                          ; clear -> done
+$0450  LEAX -1,X / BNE $0449              ; else spin, X wraps = 65536 times
+```
+
+`$FFE0` is the boot ROM's current-drive byte, loaded at `$FEF5` from `$FD1D` b1:0. Both
+machines select drive 1 here, which is EMPTY, read `$84` (not ready, track 0) and time
+out -- `BITA #$81` cannot clear with b7 set. **That half is identical and correct on
+both. Do not "fix" the empty-drive status**; `$84` matches the reference exactly.
+
+The two measured differences, at frame 500:
+
+| | `$FD18` = `$84` | `$FD18` = `$86` (+DRQ) | polls at `$0449` |
+|---|---|---|---|
+| reference | 65,530 | 6 | 65,536 = 1 x 2^16 |
+| this core | 457,443 | 1,309 | 458,752 = **7** x 2^16 |
+
+  1. *We call the routine seven times where the reference calls it once.* The loop is a
+     fixed-count timeout, so this is the CALLER retrying, not the FDC. `$0430` is
+     reached via `$0343 LBSR $0430` from `$0308 BSR $0343`. Nobody has looked at what
+     decides to retry.
+  2. *Per call, DRQ asserts ~187 times here against 6 on the reference* -- on a drive
+     with no disk in it, after a Force Interrupt. That is an FDC-side difference and the
+     better lead of the two. `FDC.v`'s `empty_core_dout` answers `$84` for the status
+     register, but the DRQ path is not obviously gated the same way.
+
+Note the trap that nearly caught this twice: the `$FD1F` difference at `pc=$01E9` on
+Luxsor genuinely IS polling phase and was right to dismiss. That is a statement about
+Luxsor. Same register, same-looking difference, different title, different question.
 
 **3. Luxsor disk 2: two real bugs found and fixed, and it is STILL BLANK.**
 
