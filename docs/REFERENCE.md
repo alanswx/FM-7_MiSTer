@@ -103,6 +103,39 @@ MAME is not a reliable oracle for AV40SX behaviour either.
 
 ---
 
+## 1b. The FM-7 cassette format, from the Fujitsu manual
+
+Written down because `rtl/t77_decode.v` describes the format in terms that do not match
+it, and because tape loading does not currently work at all -- see TODO.md.
+
+**FM-7 System Specifications section 1.12.4, 記録方式** (page 1-45, page 59 of the scan in
+`refs/fm7-docs/archive-org-fm7-system-specifications`):
+
+* The FM-7 records by **varying pulse WIDTH**, not by shifting between two carrier
+  frequencies. A bit is exactly **one wave**:
+  * bit **0** = one full cycle at **2400 Hz** = 416.7 us
+  * bit **1** = one full cycle at **1200 Hz** = 833.3 us
+* Frame: **start bit (=0), 8 data bits LSB first (b0..b7), then TWO stop bits (=1)**.
+* Because the two bit values take different times, the baud rate depends on the data.
+  The manual gives `baud = (m1+m2) / (m1*T1 + m2*T2)` with `T1 = 1/2400`, `T2 = 1/1200`,
+  which for equal counts of 0s and 1s is the quoted **1600 baud** average (section 1.12.1).
+
+`t77_decode.v` calls these "a 1200 baud half-bit" and "a 2400 baud half-bit", which is the
+Kansas-City / FSK mental model and is the wrong one for this machine. The widths it uses
+are right -- 77AVEMU's own decoder defines `0x1A+0x1A` as the off bit and `0x30+0x30` as
+the on bit, and both commercial and generated images contain exactly those -- but the
+naming will mislead the next reader.
+
+**An unresolved discrepancy, recorded rather than guessed at.** If bit 1 is one 1200 Hz
+wave and bit 0 is one 2400 Hz wave, bit 1 must take exactly TWICE as long as bit 0. In the
+t77 images it does not: `0x30`/`0x1A` = 48/26 = **1.846**, not 2.0. So either the t77 tick
+is not linear in time, or the images encode something slightly different from the manual's
+idealised waveform. Do not derive a tape clock from the manual's microseconds alone until
+this is settled -- at the current 9.125 us tick the average works out to 1481 baud against
+the documented 1600, and forcing the tick to 8.458 us to hit 1600 changes nothing that
+matters (measured: cassette-bit edges 162019 -> 174939, image consumption 37% -> 40%,
+screen still on `Searching`).
+
 ## 2. The RDQEn two-strobe mechanism
 
 **The single most valuable insight in this repo.** `RDQEn` (MCPU.v:55) is

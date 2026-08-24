@@ -44,6 +44,38 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
 
 **Open, in priority order:**
 
+0. **Cassette loading does not work, for any tape, and there is no reference to
+   diff against.** Every layer below the CPU is provably fine -- on a commercial
+   dump (Fighter) our core mounts the image, runs the motor 87.8% of the run,
+   emits 162019 cassette-bit edges at the right average rate, and consumes 37%
+   of the image -- and F-BASIC still sits on `Searching`. The bit-level sync
+   between the decoded waveform and the FM-7's tape routine is where it fails.
+
+   **Ruled out, with measurements:**
+   * *The images.* Commercial dumps (Fighter, Hydlide, Sokoban) fail exactly like
+     the generated magazine tapes.
+   * *The tape generator.* `tools/make_fm7_basic_t77.cpp` already calls 77AVEMU's
+     own `T77Encoder::EncodeFromFMFile` via `FM7Lib::TextTo0A0`, so the tapes are
+     built by the reference implementation.
+   * *Pulse decode.* `DEBUG_TAPE=1` shows clean alternating entries at exactly the
+     `0x1A`/`0x30` widths 77AVEMU's decoder defines for off/on bits.
+   * *The port interface.* `PERIPHERAL.v` matches MAME's `fm7.cpp` structurally:
+     motor from the `$FD00` write latch bit 1 (`m10[1]`), tape out on `CN3[4]`,
+     `$FD02` read bit 7 = cassette in with bits 6:1 high.
+   * *Playback rate.* Forcing the tick from 9.125 us to 8.458 us -- the value that
+     hits the manual's documented 1600 baud -- moves edges 162019 -> 174939 and
+     consumption 37% -> 40% and changes nothing else.
+
+   **No reference.** `tools/77avemu_headless.cpp` never gets the tape moving at all
+   (`tape_ptr=0`, motor off, and a device I/O error on Hydlide), so `seqdiff.py` --
+   the technique carrying every other investigation here -- does not apply. Fixing
+   the harness's tape path is the prerequisite for working on this efficiently, and
+   it is our code, not the emulator's.
+
+   See section 1b of REFERENCE.md for the format as the Fujitsu manual states it,
+   including an unresolved 1.846-vs-2.0 discrepancy in the t77 bit widths that
+   should be settled before anyone derives a tape clock from microseconds.
+
 0. **The sweep cannot score a scrolling title, and now several of them scroll.**
    Every blessed reference in `sweep/renders/ref-shots/` is captured at a fixed
    20,000,000 reference steps (~22 s) while the core samples at a fixed frame
