@@ -104,34 +104,107 @@ def fmt(key, n):
     return f"{d} ${port} {val} pc=${pc}" + (f" x{n}" if n > 1 else "")
 
 
+def fill(buf, it, n):
+    """Top `buf` up to n entries from `it`. Returns False at end of stream."""
+    while len(buf) < n:
+        try:
+            buf.append(next(it))
+        except StopIteration:
+            return False
+    return True
+
+
+# How far to look for a re-sync point, and how many consecutive matches count as
+# one. CONFIRM > 1 stops a single coincidentally-equal entry (a $FD05 poll, say)
+# from being taken as alignment restored.
+WINDOW = 40
+CONFIRM = 3
+
+
+def resync(a, b, ia, ib):
+    """Smallest (da, db) that realigns a[ia+da:] with b[ib+db:], or None.
+
+    Prefers the smallest total skip, so a one-sided insertion is reported as an
+    insertion rather than as a long run of substitutions.
+    """
+    for total in range(1, 2 * WINDOW + 1):
+        for da in range(0, min(total, WINDOW) + 1):
+            db = total - da
+            if db > WINDOW:
+                continue
+            if ia + da + CONFIRM > len(a) or ib + db + CONFIRM > len(b):
+                continue
+            if all(a[ia + da + k][0] == b[ib + db + k][0] for k in range(CONFIRM)):
+                return da, db
+    return None
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
         return 2
     limit = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+    ga, gb = collapse(ours(sys.argv[1])), collapse(ref(sys.argv[2]))
+    a, b = [], []
     i = shown = 0
     ctx = []
+    lost = False
     print(f"{'#':>8} {'frame':>6}  {'OURS':<34} {'REFERENCE':<34}")
-    for (ka, na, fra), (kb, nb, _) in zip(collapse(ours(sys.argv[1])),
-                                          collapse(ref(sys.argv[2]))):
+    while True:
+        oka = fill(a, ga, WINDOW + CONFIRM + 1)
+        okb = fill(b, gb, WINDOW + CONFIRM + 1)
+        if not a or not b:
+            break
+        (ka, na, fra), (kb, nb, _) = a[0], b[0]
         i += 1
-        ctx.append((i, fra, ka, na, kb, nb))
-        if len(ctx) > 6:
-            ctx.pop(0)
-        if ka != kb:
-            if shown == 0:
-                for j, f2, x, xn, y, yn in ctx[:-1]:
-                    print(f"{j:8d} {str(f2):>6}  {fmt(x, xn):<34} {fmt(y, yn):<34}")
-            print(f"{i:8d} {str(fra):>6}  {fmt(ka, na):<34} {fmt(kb, nb):<34}  <<<")
+        if ka == kb:
+            ctx.append((i, fra, ka, na, kb, nb))
+            if len(ctx) > 6:
+                ctx.pop(0)
+            a.pop(0); b.pop(0)
+            continue
+
+        if shown == 0:
+            for j, f2, x, xn, y, yn in ctx:
+                print(f"{j:8d} {str(f2):>6}  {fmt(x, xn):<34} {fmt(y, yn):<34}")
+        ctx = []
+
+        r = resync(a, b, 0, 0)
+        if r is None:
+            print(f"{i:8d} {str(fra):>6}  {fmt(ka, na):<34} {fmt(kb, nb):<34}  <<< LOST")
+            lost = True
             shown += 1
-            if shown >= limit:
-                break
+            break
+        da, db = r
+        if da and not db:
+            tag = f"<<< {da} extra HERE"
+        elif db and not da:
+            tag = f"<<< {db} extra on REFERENCE"
+        else:
+            tag = "<<<"
+        print(f"{i:8d} {str(fra):>6}  {fmt(ka, na):<34} {fmt(kb, nb):<34}  {tag}")
+        for k in range(1, max(da, db)):
+            xa = fmt(*a[k][:2]) if k < da else ""
+            xb = fmt(*b[k][:2]) if k < db else ""
+            print(f"{'':8} {'':>6}  {xa:<34} {xb:<34}")
+        shown += 1
+        del a[:da]; del b[:db]
+        if shown >= limit:
+            break
+        if not (oka or okb):
+            break
+
     if shown == 0:
         print("\nno divergence in the overlapping prefix")
     else:
-        print(f"\n{shown} shown. Read the FIRST one or two only -- once the streams")
-        print("desynchronise, 'ours' row N lines up against 'reference' row N-1 and")
-        print("every later row is an artifact of the offset, not a real difference.")
+        print(f"\n{shown} divergence(s). These are RE-SYNCHRONISED: after each one the")
+        print(f"tool realigns the two streams (look-ahead {WINDOW}, {CONFIRM} matches to")
+        print("confirm), so unlike the old strict-positional version every row printed")
+        print("is a real difference rather than an artifact of an earlier offset.")
+        if lost:
+            print("\nThe last row is marked LOST: the streams could not be realigned")
+            print(f"within {WINDOW} entries, so they have genuinely gone different ways")
+            print("and nothing past it is comparable.")
     return 0
 
 
