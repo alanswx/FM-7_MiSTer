@@ -436,6 +436,75 @@ of 1024 at 15.75 kHz = 23.8 us, and `$FD12` b1 is `~(~VBLANKn | ~SBLANKn)`.
 **So the change to try is not another number.** It is: main and sub to 8 MHz together, and
 an MMR-conditional drop to ~1.6 MHz on the AV. Untried at time of writing.
 
+## Sub-CPU VRAM arbitration: the AV cycle-steals, it does not wait
+
+`core.v` stalls the sub CPU's clock on any VRAM access that lands during active
+display:
+
+```verilog
+wire sub_vram_sel  = ~(SDRAMBn & SDRAMGn & SDRAMRn);
+wire sub_vram_wait = sub_vram_sel & ~SCASSEL;
+wire SCPUCLK_w     = SCPUCLK & ~sub_vram_wait;
+```
+
+`MB60H010.v` builds `SCASSEL = ~(HBLANKn & VBLANKn)` with `HBLANKn = ~(xx > 639)`
+and `VBLANKn = ~(yy > 199)`, so the sub owns the VRAM address bus only outside the
+640x200 active area -- **47.7% of the raster is active, so a VRAM-bound sub loop
+runs at about 52% speed.**
+
+**Both references default to NOT doing this**, and both gate it on the `$D409`
+VRAM-access flag rather than on the sub's address decode:
+
+| | flag | default | condition when enabled |
+|---|---|---|---|
+| 77AVEMU | `state.CRTCHaltsSubCPU` (`fm77av.h:169`) | **false** | `CRTCHaltsSubCPU && crtc.state.VRAMAccessFlag && !crtc.InBlank()` (`fm77av.cpp:661`) |
+| XM7 | `cycle_steal` (`VM_schedule.c:71`) | **TRUE** (= no stall) | `cycle_steal \|\| subclock_mode \|\| !(vrama_flag && !blank_flag)` (`VM_schedule.c:572`) |
+
+77AVEMU sets `CRTCHaltsSubCPU = true` only in `SetFM8Speed`/`SetFM7Speed` and
+explicitly **false** in `SetFM77Speed` (`fm77av.cpp:576-593`), and its GUI names the
+three modes "FM-8 (1.2MHz, VRAM Access Wait)", "FM-7 (2MHz VRAM Access Wait)" and
+"FM-77 (2MHz Cycle Steal)". The FM77AV descends from the FM-77, so **cycle steal is
+the AV's behaviour and the blanking wait is the FM-7's.** Nothing calls
+`SetFM7Speed` in the headless harness, so every reference render in this repo was
+produced with no CRTC halt at all.
+
+**What it costs.** Measured on Luxsor Disk 2, counting main-CPU `$FDxx` accesses as
+the common yardstick between the two machines (see REFERENCE.md for the method):
+
+| landmark | reference | this core |
+|---|---|---|
+| sub reaches `$E13B` (`$D40A` read, clears BUSY) | 17,844 | > 21,084 |
+| main polls `$FD05` at `$5043` | 20,604 | 20,604 |
+
+The reference's sub wins that race by 2,760 accesses; ours loses it. The main CPU
+reads `$FD05` = `$FE` (busy) where the reference reads `$7E` (idle), takes the other
+branch, and the title never recovers. Per-bank the sub's VRAM clear loop costs
+~10,540 main accesses here against the reference's ~5,240 -- the 2x the duty cycle
+above predicts.
+
+**Why the one-line fix is not a fix.** Dropping the stall for AV mode alone
+(`sub_vram_wait & ~machine_av`) does move the first divergence from access 20,604 to
+23,759, which is what identified all of the above. But it cannot ship as written:
+
+* `AVHDRAW.v:146` -- `alu_access = enabled & SUB_VRAM_SEL & SCASSEL & SEB`, so an ALU
+  access during active display simply never fires.
+* `CRTRAM`'s port A is time-shared: `MB60H010.v:149` makes `SVRADRS` follow the raster
+  (`SRA`) whenever `SCASSEL` is low, and `AVCRTRAM_COLOR` drives `addr0..3` and
+  `wren_a` from it. A sub write during active display therefore lands at the raster's
+  address.
+
+Measured, at 620-2000 frames with `sub_vram_wait & ~machine_av` built in: Kohakuiro no
+Yuigon disk 1 goes from a 16857-byte render at frame 700 to the 3790-byte blank, and
+Wizardry IV from 17884 to 12021 with its graphics shredded into horizontal streaks of
+wrong-coloured noise -- writes landing at the raster's address, exactly as the two gates
+above predict. Do not re-try this one-liner.
+
+The real fix has to give the sub a VRAM slot the raster is not using rather than
+remove the arbitration. The raster needs `SVRADRS` only on the CLKSYS edge that
+latches each character byte -- one in roughly 24 at 640x200 -- so the bandwidth is
+there; `CRTRAM`'s port B is also idle on the FM-7 and, on the AV, is used by the MMR
+aperture and the ALU only while the sub is halted and therefore not competing.
+
 ## ROM set
 
 `refs/fm77av.zip` matches MAME's `ROM_START( fm77av )` (`refs/mame/src/mame/fujitsu/fm7.cpp:2211-2233`) exactly; there is no `NO_DUMP`:

@@ -808,6 +808,33 @@ confident wrong answer at least once:
     plays at the correct rate. Subtract the pre-motor-on time before reading anything into
     that pair, or gate `dbg_tick_count` on `start`.
 
+55. **A register that flips a title between working and blank is not necessarily the
+    register at fault.** Luxsor Disk 2 renders at 81.9% coverage with `$FD00` b0 = 0 and
+    blanks with b0 = 1, which reads as "b0 is the bug" and cost a long investigation that
+    eliminated `$FD1D` b5:2, `$FD05` BUSY-on-reset, the FDC and `$FD00` itself, one at a
+    time, all correctly and all beside the point. b0 = 1 is *right* -- 77AVEMU builds the
+    same value (`fm77avio.cpp:806`, b0 clear only when `mainCPU.state.freq < 1500000`) and
+    with b0 = 1 this core's 300 `$FD00` reads match the reference exactly. What b0 actually
+    does is pick a delay constant: the AV boot ROM at `$FF42` is `LDY #$00E0 / LDA <$00 /
+    ASRA / BCS` with `DP=$FD` (set at `$FE0B`), so b0 = 1 keeps Y = 224 and b0 = 0 loads
+    Y = $99 = 153, a 1.46x shorter wait. **b0 = 0 was not fixing anything; it was
+    perturbing a race this core was losing for an unrelated reason** (the sub-CPU VRAM
+    stall -- see docs/FM77AV.md). The tell that the framing was wrong was available from
+    the start and was not read: with b0 = 1 the two machines run entirely different code,
+    the reference in `$40xx-$44xx` and this core stuck in `$3Bxx`, which no single readback
+    value explains.
+
+56. **When two CPUs race, compare their progress against a shared yardstick, not against
+    frames.** 77AVEMU has no frame counter and its `--trace-io` lines carry no timestamp, so
+    "our sub CPU is 64 frames late" cannot be checked against it at all. What both machines
+    do log is the main CPU's `$FDxx` accesses, in order, and `tools/seqdiff.py` already
+    aligns the two streams on exactly that. So count **main-CPU I/O accesses before the
+    landmark** on each side and compare those two integers. On Luxsor Disk 2 the sub's
+    `$D40A` read at `$E13B` lands at access 17,844 on the reference and after 21,084 here,
+    against a main-CPU poll at access 20,604 on both -- the reference wins the race by
+    2,760, this core loses it. That is a measurement; "the sub looks slow" is not.
+    `head -N ref.log | grep -c 'MAIN:'` is the whole technique.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

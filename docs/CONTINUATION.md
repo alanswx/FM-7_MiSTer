@@ -41,47 +41,49 @@ undefined bits 5:2 changes neither title (tested). The lead is what those titles
 do *after* it. Note they diverge at the same instruction as Shounen Mike did, so
 the `$FD05`/BUSY family is worth trying first.
 
-**3. Luxsor disk 2 blanks with `$FD00` b0 = 1, and the cause is NOT any of the
-obvious candidates.** b0 = 1 is correct (see `c88c1db`) and is what makes
-cassettes work, so this is the price currently being paid for them. Luxsor goes
-from 81.9% coverage in 33 colours to blank at every frame from 1000 to 2400.
+**3. Luxsor disk 2: root cause found -- the sub CPU is 2x too slow, not `$FD00`.**
 
-Chased with `tools/seqdiff.py` against a full reference trace. **The two streams
-stay structurally aligned** -- same port and same PC -- through the entire boot
-and into Luxsor's own loader, with only two value differences the whole way:
-`$FD05` b7 and `$FD1D` b5:2. **Both were tested and neither is the cause:**
+The old framing in this file ("blanks with `$FD00` b0 = 1, and the cause is not any of
+the obvious candidates") was wrong and is superseded. b0 = 1 is correct and matches
+77AVEMU exactly. What b0 does is select a delay constant in the boot ROM's `$FF42`
+routine (224 iterations against 153); b0 = 0 was not fixing Luxsor, it was perturbing a
+race this core loses for an unrelated reason. See REFERENCE.md trap 55.
 
-* *`$FD1D` bits 5:2.* Built with 77AVEMU's form (cleared, so `$FD1D` matches the
-  reference exactly). Luxsor still blank.
-* *`$FD05` b7 / BUSY-on-reset.* Built with `2fbd296`'s reset behaviour backed out
-  so b7 matches the reference. Luxsor still blank.
-* *The FDC.* Not it either. Both machines issue an identical command history --
-  4x RESTORE at `$5159`, then the same seven READ SECTORs at `$01E3` -- with
-  identical register setups, and **both read `$FD18` status `00` seven times at
-  `$01F8`**, so every sector read completes successfully on this core too. A
-  `$FD1F` DRQ difference at `pc=$01E9` looks like a smoking gun and is not one;
-  it is polling phase, and the reads succeed either side of it.
-* *`$FD00` itself.* With b0 = 1 this core's 300 `$FD00` reads match the reference
-  exactly, value and PC, and they are all from boot ROM addresses (`$FF44`,
-  `$51CB`) -- Luxsor's own code never reads it.
+The real fault: `core.v:835` stalls the sub CPU's clock on any VRAM access during active
+display, which costs it ~48% of its cycles, so its VRAM-clear loop runs 2x slow relative
+to the main CPU. It therefore reaches the `$D40A` read that clears `$FD05` BUSY *after*
+the main CPU polls `$FD05` at `$5043`, where the reference reaches it 2,760 main-CPU I/O
+accesses *before*. The main reads `$FE` where the reference reads `$7E`, branches the
+other way, and ends up executing misaligned bytes in an infinite loop at `$3B7A`-`$3B99`
+with the sub frozen in its `$D380` command wait. Full measurement and the reference
+citations are in the new "Sub-CPU VRAM arbitration" section of docs/FM77AV.md.
 
-So b0 changes something in the **boot ROM's** path that this core then handles
-differently, and it is not visible in the main-CPU `$FDxx` stream at all.
+**Both references default to no CRTC halt on the AV** (77AVEMU `CRTCHaltsSubCPU = false`,
+XM7 `cycle_steal = TRUE`), and both gate it on the `$D409` VRAM-access flag rather than
+on the sub's address decode. The AV cycle-steals; the blanking wait is FM-7 behaviour.
 
-**The `$D4xx` side says the title never starts drawing.** Over comparable
-windows this core issues 3 writes to `$D41B` where the reference issues 383659,
-3 to `$D41C`/`$D41D` against 129329 each, and 6 to `$D410` against 44862. It is
-not drawing wrongly; it stops before the drawing phase begins. That rules out
-the video path as the cause and puts it back in whatever the loader does between
-its last successful sector read and its first ALU write.
+*What is done:* the diagnosis, and an experiment (`sub_vram_wait & ~machine_av`) that
+moves the first `seqdiff` divergence from access 20,604 to 23,759, proving it.
 
-**Documentation note that matters here** (see the new `$FD00` section in
-docs/FM77AV.md): on the FM77AV, `$FD00` b0 is **not** a DIP switch. haserin09's
-FM-7/AV difference table defines only D8 on the AV's `$FD00` read; the
-`0:1.2M / 1:2M` labelling comes from the FM-7 manual and describes FM-7 hardware.
-This core drives b0 from `fm8_switch` on both machines. For the AV the bit is
-undriven and reads 1 either way, so the current value is right by accident rather
-than by derivation -- and the reason Luxsor cares about it is still unexplained.
+*Why it cannot ship, measured:* built that way, Kohakuiro no Yuigon disk 1 drops from a
+16857-byte render at frame 700 to the 3790-byte blank and Wizardry IV from 17884 to 12021
+with its graphics shredded into horizontal streaks. Reverted; do not re-try the one-liner.
+
+*What is left:* the experiment cannot ship -- `AVHDRAW.v:146` gates `alu_access` on
+`SCASSEL` and `CRTRAM`'s port A is time-shared with the raster via `MB60H010.v:149`, so
+without the stall a sub VRAM access during active display is dropped or lands at the
+raster's address. The fix has to hand the sub a slot the raster is not using. The raster
+needs `SVRADRS` only on the CLKSYS edge that latches each character byte, roughly one in
+24 at 640x200, and `CRTRAM` port B is idle on the FM-7 and only used on the AV while the
+sub is halted. Do this against a freshly blessed gate, and expect it to move every AV
+timing counter.
+
+*Next divergence after that one:* `$FD1D` bits 5:2, at `pc=$01E6`. We return CSP's
+`0x3C` there, 77AVEMU returns 0 (`fdc/fm77avfdc.cpp:946` -- `motor?0x80:0` OR'd with
+`currentDS` and nothing else). `FDC.v`'s own comment already records that the reference
+reads `80/81/82/83` during the boot ROM's four-drive probe where this core reads
+`BC/BD/BE/BF`. Retest it once the arbitration is fixed; it was tried standalone before
+and did nothing, which is expected -- it was not the first divergence then.
 
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.
