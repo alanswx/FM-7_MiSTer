@@ -797,6 +797,17 @@ confident wrong answer at least once:
     wrong elsewhere. **Ablate a two-part fix into its parts before believing either half**
     -- the undriven-bits half of the same edit is bit-identical on the gate.
 
+54. **`T77SUM`'s tick counter starts at simulation time zero; its length counter starts
+    when the tape does.** Comparing them looks like a clean "intended versus actual
+    playback duration" measurement and is not one. On snake-apple it reports
+    `summed_len=1763058 ticks_elapsed=2607085`, a 1.48x overrun that reads as ~20 ticks of
+    dead time inserted between every pulse -- exactly the shape of a decoder stalling on
+    an SDRAM prefetch, and exactly the bug you would go and "fix". It is not there. The
+    run was 1500 frames with the motor on 69.8% of it, so 7.55 s -- about 838000 ticks --
+    elapsed before the tape ever started, against a measured excess of 844027. The tape
+    plays at the correct rate. Subtract the pre-motor-on time before reading anything into
+    that pair, or gate `dbg_tick_count` on `start`.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
