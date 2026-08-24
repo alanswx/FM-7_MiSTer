@@ -34,12 +34,35 @@ output -- only the first divergence or two are real.
 CPU restarts.
 
 **2. FM Sound Editor (69.8% reference, 0.0% here) and Pro Yakyuu Fan disk A
-(40.2%, 0.0%).** Both diverge at `$FD1D` pc=$FEF0 in the boot ROM. **Do not chase
-`$FD1D` itself** -- the Fujitsu manuals define b0/b1, b6 and b7 only, both
-references agree on all of those, and building with 77AVEMU's form for the
-undefined bits 5:2 changes neither title (tested). The lead is what those titles
-do *after* it. Note they diverge at the same instruction as Shounen Mike did, so
-the `$FD05`/BUSY family is worth trying first.
+(40.2%, 0.0%): SAME first divergence as Luxsor, THREE DIFFERENT failures.**
+
+Both diverged at `$FD05` b7, `pc=$5043`, main-CPU I/O access 20,604 -- byte for byte
+the same divergence as Luxsor disk 2, in the shared FM77AV boot loader rather than in
+either title's own code. That is fixed (see item 3). `$FD1D` bits 5:2 was the second
+shared divergence and is also fixed. Neither title renders.
+
+**Do not treat the three as one bug from here on.** Traced to frame 500 with the fixes
+in, they end up in three unrelated places:
+
+| title | where it ends up | `$FD90` writes |
+|---|---|---|
+| Luxsor disk 2 | non-terminating MMR copy loop at `$3B7A`-`$3B99` | `$3B52`/`$3B5F`/`$3B6C`, then unbounded at `$3B7B`/`$3B87` |
+| FM Sound Editor | `$863D` onward, executing `00 00` as `NEG <$00` over and over | 4 at `$0174`, 1 at `$0185` |
+| Pro Yakyuu Fan A | boot ROM FDC poll at `$FE93`-`$FEA0`: `LDA $FD1F` / `BPL` | 7 at `$DFB8` |
+
+*FM Sound Editor is a genuine runaway* -- the main CPU has walked off into zeroed memory
+at `$86xx` and is executing it as a `NEG <$00` sled. The old sweep row flagged it
+`RUNAWAY-INTO-IO`, which agrees. The question is what transferred control there.
+
+***Pro Yakyuu Fan disk A is the most tractable of the three and should be taken first.***
+It is not crashed and not lost: it is sitting in the boot ROM's own FDC data-request
+poll, `$FE93 LDA $FD1F / $FE96 BPL`, waiting for a DRQ that never arrives. That is a
+bounded, well-specified FDC question with a known-good reference to compare against,
+unlike the other two. Note the trap: the `$FD1F` difference at `pc=$01E9` on Luxsor IS
+only polling phase and was correctly dismissed as such -- but "it was polling phase on
+that title" is not a statement about this one. Check whether DRQ ever asserts here at
+all. Item 6 below (FDC lockout periods are not modelled: 1 s after motor on, 60 ms after
+head load, drive-register write or step) is the obvious first suspect.
 
 **3. Luxsor disk 2: two real bugs found and fixed, and it is STILL BLANK.**
 
