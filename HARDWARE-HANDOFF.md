@@ -6,6 +6,37 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Hardware: screenshots are 640x200 now — CE_PIXEL was over-asserted, not a clock bug
+
+Answering "why is the screen 960x200": the machine's video timing was always
+right — `MB60H010.v` runs a 1024-dot 64 us line at 16 MHz with exactly 640
+active dots. What was wrong is the framework handshake: `CE_PIXEL` got
+`SFTCLK` verbatim, a square wave `clk_en` holds high two of every three
+48 MHz cycles, and ascal samples every high cycle. 640 real pixels per line
+therefore became **1280** samples on the pre-2026 framework and **960** on
+the current one — the two historical widths are just two ascal versions'
+readings of the same over-asserted enable. The picture always survived
+because each pixel was merely duplicated fractionally.
+
+`vsim/sim.v` has edge-detected this signal into a one-pulse-per-pixel enable
+all along (its comment even says a two-thirds-duty enable is not what
+`ce_pix` expects) — which is why sim screenshots were always 640 wide while
+hardware's were not. The top now carries the same edge-detect, verified on
+hardware: F-BASIC and Thexder's title both capture at **640x200**,
+structurally identical and visibly crisper.
+
+**Every stored hardware screenshot reference is now a different size.** All
+byte-count comparisons against older captures are void, and any matcher fed
+a 960- or 1280-wide reference will report resolution mismatch rather than a
+verdict — re-bless on first use, per the trap this project already paid for
+once. Sim references are unaffected.
+
+(Residual, noted while in here: the dot clock is 48/3 = 16 MHz against the
+real 16.128 MHz, so lines run 15.625 kHz against 15.75 kHz — same 0.8%-class
+rounding family as the PSG's 2.3%, cosmetic on any modern display.)
+
+---
+
 # Hardware: cassettes work — five of six tapes load end to end and play
 
 Built and deployed head `c88c1db` (0 errors, 23,469 ALMs 56%, 516/553 RAM,

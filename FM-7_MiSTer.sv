@@ -420,7 +420,16 @@ pcm pcm(
 );
 
 assign CLK_VIDEO = clk_sys;
-assign CE_PIXEL = ce_pix;// SVIDEOCLK;
+// One-cycle pulse per pixel. ce_pix is SFTCLK, a 16 MHz square wave that
+// clk_en holds high two of every three CLK_VIDEO cycles, and ascal samples
+// every high cycle -- which is how 640 active pixels per line became 960 in
+// the scaler (and 1280 on the pre-2026 framework: the two widths are the two
+// ascal versions' readings of the same over-asserted enable). Same
+// edge-detect vsim/sim.v has always used, which is why sim screenshots were
+// 640 wide while hardware's were not.
+reg ce_pix_d;
+always @(posedge clk_sys) ce_pix_d <= ce_pix;
+assign CE_PIXEL = ce_pix & ~ce_pix_d;
 assign VGA_DE = ~(HBlank | VBlank);
 assign VGA_HS = HSync;
 assign VGA_VS = VSync;
