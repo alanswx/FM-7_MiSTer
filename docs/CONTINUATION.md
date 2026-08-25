@@ -173,6 +173,40 @@ lists, where the reference walks tracks `0C 0D 00 05 06 0E 0F 10 11 12` while th
 loops on `0C 0D 00`. So the question is not a corrupted register but **why this core's
 loader stops walking tracks**, which puts it back with the 7x drive-scan repetition.
 
+*What a direct instrument then showed, and what it did NOT settle.* `WDMATCH` (in
+`wd1793.sv`, `DEBUG_FDC_SCAN`) prints the actual track/side/sector of every read the
+controller matches -- the authoritative list, unlike anything reconstructed from register
+writes. Over 120 frames this core reads
+
+    0:1 0:2 0:3 0:4 0:5 0:1 0:2 12:2 12:3 12:4 12:5 12:1 ...
+
+with **zero WDNOMATCH**, i.e. nothing fails; and separately, walking both machines'
+main-CPU `$FDxx` streams from the last shared read with `$FD1B`/`$FD1F` excluded, they are
+**identical for 400 consecutive accesses**. Those two facts do not sit together, and the
+reason is measurement error on my part, recorded here because it is the trap of this whole
+investigation:
+
+  * the `WDMATCH` list came from a 120-frame run, the reference's from its full trace;
+  * the reference's list was RECONSTRUCTED by pairing `$FD19`/`$FD1A` writes with `$80`
+    commands -- the same reconstruction the sector-register probe had already disproved
+    for this core;
+  * the register probe itself came from a 70-frame run and shows a write of sector 6 that
+    the 120-frame `WDMATCH` list never reads.
+
+Three windows, two instruments, no two of them comparable. **Any conclusion drawn from
+that set is worthless**, including two I published and retracted.
+
+*How to do it properly next time.* One run, one instrument, matched windows: build with
+`DEBUG_FDC=1`, run BOTH machines to the same machine-time frame (`--stop-at-frame N` here,
+`round(N*1.00608)` there), and compare only `WDMATCH` against the reference's own read
+sequence -- and if the reference cannot produce an equivalent list, add the print to
+`tools/77avemu_headless.cpp` rather than reconstructing one.
+
+*What survives all of it, because it is byte-exact and single-run:* this core's
+transferred data from byte 7,208 matches the reference's at exactly +1024 bytes = +4
+sectors, 100.0%. Four sectors of data are genuinely missing. That is the symptom to
+explain; every mechanism proposed for it so far has been wrong.
+
 *Honest status: NOT FIXED.* Luxsor is fixed (item 3b); these two are not.
 
 *Next:* find which four. This core issues 274 READ SECTOR commands against the

@@ -928,6 +928,19 @@ confident wrong answer at least once:
     pointer, would have cost a minute: an S of `$FFED` in ROM space is a dead giveaway and
     was visible in the very first sub trace taken.
 
+63. **Two instruments and three window lengths will agree on nothing, and you will believe
+    whichever you looked at last.** On Pro Yakyuu Fan disk A, within one session, a
+    reconstructed read list (paired `$FD19`/`$FD1A` writes against `$80` commands), a
+    `WDMATCH` list from a 120-frame run, and a sector-register probe from a 70-frame run
+    each told a different story -- a skipped sector, a missing five-sector pass, and a
+    perfectly contiguous register. Two of the three became published findings and both had
+    to be retracted. None of them was a lie; they were answers to three different
+    questions asked over three different intervals. **Before comparing anything against
+    the reference, write down which instrument produced each side and over what window,
+    and if they differ, fix that before reading the numbers.** A reconstruction is not an
+    instrument: if the reference cannot produce the same measurement directly, add the
+    print to `tools/77avemu_headless.cpp` instead of inferring one.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
