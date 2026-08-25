@@ -210,6 +210,70 @@ its sub CPU parked at `$c099` -- the same `$D380` command wait ours sits in -- s
 findings. Use it to confirm that something you suspect is the SAME, or to look at a
 region neither machine has written yet.
 
+**3b. ROOT CAUSE CANDIDATE FOR ALL THREE BLANK AV TITLES: a spurious sub-attention
+FIRQ steals the timer interrupt.** Found after items 2 and 3 above had exhausted every
+other instrument. Read this before touching any of the three.
+
+*The symptom, measured on all three:*
+
+| `$FD03` reads (timer-IRQ handler) | reference | this core |
+|---|---|---|
+| Luxsor disk 2 | 22,554 | **0** |
+| Pro Yakyuu Fan disk A | 9,809 | **0** |
+| FM Sound Editor | 7,662 | **0** |
+
+`$FD03` read acknowledges the timer/printer IRQ (77AVEMU `fm77avio.cpp:663-666`, "RFD03
+seems to clear timer and printer irq"). The reference runs its handler at
+`$E5AB`/`$E5B7`/`$E5DA`/`$E5E6` 11,277 times on Luxsor; **this core reaches those
+addresses zero times.** All three titles write `$FD02 <- $05` at `pc=$E51D` -- bit 0
+keyboard plus bit 2 timer -- identically on both machines, so the enable is not the
+problem, and `TMMASK = ~m77[2]` decodes it correctly.
+
+*The branch, caught in a `--trace-cpu` window at frame 370:*
+
+```
+$eea1  STA $fd93   cc=eFhInzvc   ; I set, interrupts masked (both machines agree here)
+$eea4  PULS CC,A,DP,PC           ; cc -> efhinzvc, I CLEAR
+$efe1  LDX $804c                 ; S drops by 3 = a FIRQ push (PC+CC), not an IRQ's 12
+$3b1a  BNE $3b15   cc=eFhInzvc   ; F and I set: we are IN the FIRQ handler
+```
+
+`$3B1A` is the FIRQ vector and `$E5A9` the IRQ vector, and **both vectors are identical
+on both machines** (checked in the memory dumps). The instant the loader unmasks, this
+core has a FIRQ pending and the reference has an IRQ pending. FIRQ outranks IRQ on a
+6809, so whoever has FIRQ pending takes it.
+
+*Why we have one and the reference does not:*
+
+`TIMER.v:143-155` -- `attn_pend` is SET when the sub CPU reads `$D404` and cleared only
+when the main CPU finishes reading `$FD04`; `FIRQn = m45_q8n & BREAKn` with
+`m45_q8n = ~attn_pend`. Both machines read `$FD04` exactly twice, at `pc=$6120` and
+`pc=$5013`, early in boot, and never again. So one stray `$D404` read leaves FIRQ
+asserted for the rest of the run.
+
+| sub-CPU `$D404` accesses | |
+|---|---|
+| reference, whole run | **0** |
+| this core, first 100 frames | **23** |
+
+**So the bug to find is why this core's SUB CPU reads `$D404` at all.** Two candidates,
+untested: a genuine sub-ROM path the reference does not take, or an address-decode alias
+routing some other sub access onto `$D404`. Favour the alias -- the sub monitor is the
+same ROM on both. Trust the ADDRESS, not the PC: `--trace-mem-sub` reported `pc=$d408`
+for a `$d40a` read elsewhere in this same investigation, so its PC column is unreliable
+on that path.
+
+*Why nothing caught it:* no working test exercises the timer IRQ. F-BASIC writes
+`$FD02 <- $40`, the 2019 AV demo polls and reads `$FD03` zero times. A dead timer
+interrupt is invisible to the entire gate.
+
+*What was ruled out first, so it is not re-run:* every main-CPU `$FDxx` access agrees up
+to `$EEA1`; all 7,168 sector bytes transferred through `$01EE` are IDENTICAL (100.00%
+once the reference's one-position pre-side-effect log shift is undone -- see
+`VALUE_UNCOMPARABLE` in seqdiff.py); `$05DE` is `$00` on both; `$3B7A`-`$3B99` is byte
+identical; of 126 observed bytes in the `$3xxx` page none differ. The FDC, the loaded
+data and the executed code are all the same. Only the interrupt differs.
+
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.
 
