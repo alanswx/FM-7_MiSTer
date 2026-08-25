@@ -33,182 +33,52 @@ output -- only the first divergence or two are real.
 `$FD05` handshake was the breakthrough; look next at what it does after the sub
 CPU restarts.
 
-**2. FM Sound Editor (69.8% reference, 0.0% here) and Pro Yakyuu Fan disk A
-(40.2%, 0.0%): SAME first divergence as Luxsor, THREE DIFFERENT failures.**
+**2. FM Sound Editor and Pro Yakyuu Fan disk A: both still blank AFTER the NMI fix, and
+both now have a HEALTHY sub CPU.** Re-measured from scratch on the fixed build -- the
+earlier traces for these two were taken with a wrecked sub CPU and everything derived
+from them was retracted.
 
-Both diverged at `$FD05` b7, `pc=$5043`, main-CPU I/O access 20,604 -- byte for byte
-the same divergence as Luxsor disk 2, in the shared FM77AV boot loader rather than in
-either title's own code. That is fixed (see item 3). `$FD1D` bits 5:2 was the second
-shared divergence and is also fixed. Neither title renders.
+*Both sub CPUs are fine now.* At frame 500 each is parked in the ROM idle loop at
+`$E13E`-`$E148` polling `$D382`/`$D380`, exactly like the reference. So these are genuine
+MAIN-CPU faults, not knock-on from item 3b. (Check this first on any new title --
+REFERENCE.md trap 62.)
 
-**Do not treat the three as one bug from here on.** Traced to frame 500 with the fixes
-in, they end up in three unrelated places:
+*Where each one ends up:*
 
-| title | where it ends up | `$FD90` writes |
-|---|---|---|
-| Luxsor disk 2 | non-terminating MMR copy loop at `$3B7A`-`$3B99` | `$3B52`/`$3B5F`/`$3B6C`, then unbounded at `$3B7B`/`$3B87` |
-| FM Sound Editor | `$863D` onward, executing `00 00` as `NEG <$00` over and over | 4 at `$0174`, 1 at `$0185` |
-| Pro Yakyuu Fan A | boot ROM FDC poll at `$FE93`-`$FEA0`: `LDA $FD1F` / `BPL` | 7 at `$DFB8` |
+| | main CPU at frame 500 |
+|---|---|
+| FM Sound Editor | runaway: `NEG <$00` sled from `$863B` |
+| Pro Yakyuu Fan A | boot ROM DRQ poll, `$FE93 LDA $FD1F / BPL` |
 
-*FM Sound Editor is a genuine runaway* -- the main CPU has walked off into zeroed memory
-at `$86xx` and is executing it as a `NEG <$00` sled. The old sweep row flagged it
-`RUNAWAY-INTO-IO`, which agrees. The question is what transferred control there.
+**Both share one shape: the reference runs a transfer routine this core never enters at
+all, and this core falls back to a slower path.**
 
-***Pro Yakyuu Fan disk A is the most tractable of the three and should be taken first.***
+*FM Sound Editor* -- every FDC transfer this core makes matches the reference exactly:
+`$FF98` 69,120 both, `$FED3`/`$FEDA` 270 both, `$521F` 256 both, `$518D`/`$5194` 1 both.
+The reference ALSO runs a routine across `$F650`-`$F7EE` -- 411,632 accesses at `$F650`
+alone -- reading 20,992 bytes at `$F6F1` and 82 iterations each at `$F72C`/`$F733`. **This
+core executes nothing in `$F6xx`-`$F7xx` whatsoever.** The initiate ROM is `$FF` across
+that whole span, so it is RAM-resident code; the question is what loads it and why we
+never get there.
 
-*(Superseded claim: "waiting for a DRQ that never arrives." Wrong -- read off a
-16-instruction tail snapshot, which is a picture of wherever the run happened to stop,
-not evidence of a hang. DRQ asserts 149,750 times.)*
+*Pro Yakyuu Fan A* -- `$FF98` 4,096 both, `$521F` 1,024 both, `$FEDA`/`$FED3` 4 both. The
+reference reads 60,416 bytes at `$E142` and **this core reads none there**, while this
+core reads 248,654 at `$FE98` against 20,480 and 26,624 at `$0174` against 2,048 -- twelve
+to thirteen times as many, i.e. heavy retrying on the slow path. FDC commands issued tell
+the same story: 274 read-sector against 86, 39 RESTORE against 5, 37 SEEK against 9, 13
+FORCE INTERRUPT against 1. Still ZERO `$FD03` reads, so it never gets a timer IRQ either,
+unlike Luxsor which the NMI fix cured.
 
-The title's own probe routine, disassembled from a `--dump-shadow` at frame 30:
+Note `$E142` holds `20 18 96 0b` (`BRA $E15C`) in our initiate ROM, which is NOT a
+`$FD1B` read -- and `$E142` is below `$FC00`, hence MMR-mappable. The reference is running
+RAM-resident code there too.
 
-```
-$0430  LDB $FFE0 / ORB #$80 / STB $FD1D   ; drive from $FFE0, motor on
-$0438  LDA $FD18 / BITA #$C1 / BEQ $0481  ; ready and idle? -> done
-$043F  LDA #$D0 / STA $FD18               ; force interrupt
-$0446  LDX #$0000
-$0449  LDA $FD18 / BITA #$81              ; poll NOT READY (b7) | BUSY (b0)
-$044E  BEQ $0455                          ; clear -> done
-$0450  LEAX -1,X / BNE $0449              ; else spin, X wraps = 65536 times
-```
-
-`$FFE0` is the boot ROM's current-drive byte, loaded at `$FEF5` from `$FD1D` b1:0. Both
-machines select drive 1 here, which is EMPTY, read `$84` (not ready, track 0) and time
-out -- `BITA #$81` cannot clear with b7 set. **That half is identical and correct on
-both. Do not "fix" the empty-drive status**; `$84` matches the reference exactly.
-
-The two measured differences, at frame 500:
-
-| | `$FD18` = `$84` | `$FD18` = `$86` (+DRQ) | polls at `$0449` |
-|---|---|---|---|
-| reference | 65,530 | 6 | 65,536 = 1 x 2^16 |
-| this core | 457,443 | 1,309 | 458,752 = **7** x 2^16 |
-
-  1. *We call the routine seven times where the reference calls it once.* The loop is a
-     fixed-count timeout, so this is the CALLER retrying, not the FDC. `$0430` is
-     reached via `$0343 LBSR $0430` from `$0308 BSR $0343`. Nobody has looked at what
-     decides to retry.
-  2. *Per call, DRQ asserts ~187 times here against 6 on the reference* -- on a drive
-     with no disk in it, after a Force Interrupt. That is an FDC-side difference and the
-     better lead of the two. `FDC.v`'s `empty_core_dout` answers `$84` for the status
-     register, but the DRQ path is not obviously gated the same way.
-
-Note the trap that nearly caught this twice: the `$FD1F` difference at `pc=$01E9` on
-Luxsor genuinely IS polling phase and was right to dismiss. That is a statement about
-Luxsor. Same register, same-looking difference, different title, different question.
-
-**3. Luxsor disk 2: two real bugs found and fixed, and it is STILL BLANK.**
-
-Read this whole entry before working on the title. It has now produced two confident
-wrong answers in a row and the second one was mine.
-
-*Superseded claim 1:* "blanks with `$FD00` b0 = 1, and the cause is not any of the
-obvious candidates." Wrong. b0 = 1 is correct and matches 77AVEMU exactly
-(`fm77avio.cpp:806`). What b0 selects is a delay constant in the AV boot ROM's `$FF42`
-routine -- `LDY #$00E0 / LDA <$00 / ASRA / BCS` with `DP=$FD`, so b0 = 1 keeps Y = 224
-and b0 = 0 loads Y = $99 = 153. b0 = 0 was not fixing Luxsor, it was perturbing a race.
-See REFERENCE.md trap 55.
-
-*Superseded claim 2 (mine):* "root cause found -- the sub CPU is 2x too slow." The
-finding is real and the fix is in, but it is **not** the cause of Luxsor being blank.
-
-What is solid, and is fixed: `MB60H010.v` gave the sub CPU the VRAM address bus only
-outside the 640x200 active area, 52.3% of the raster, so a VRAM-bound sub loop ran at
-half speed. Both references default to no CRTC halt at all on an AV (77AVEMU
-`CRTCHaltsSubCPU = false`, XM7 `cycle_steal = TRUE`) because the AV inherits the FM-77's
-cycle steal. Measured against main-CPU `$FDxx` accesses as the shared yardstick, the
-sub's `$D40A` read at `$E13B` -- which clears `$FD05` BUSY -- lands at access 17,844 on
-the reference and after 21,084 here, against a main-CPU poll at access 20,604 on both.
-Details and citations in the "Sub-CPU VRAM arbitration" section of docs/FM77AV.md.
-
-That was the FIRST divergence for **three** titles at once -- Luxsor disk 2, FM Sound
-Editor and Pro Yakyuu Fan disk A all diverge at access 20,604, `R $FD05 FE` against
-`$7E`, at `pc=$5043`, which is in the shared FM77AV disk boot loader and not in any
-title's own code. `$FD1D` bits 5:2 was the second, also shared. Both are fixed.
-
-**And all three titles are still blank.** Luxsor enters the same non-terminating loop
-at `$3B7A`-`$3B99` at frame ~375, and the `$FD90` write counts either side of the fix
-are identical -- 25 each at `$3B52`/`$3B5F`/`$3B6C`, then unbounded at `$3B7B`. The boot
-handshake now resolves the way the reference resolves it and the title's own code still
-fails.
-
-*Superseded claim 3 (also mine): "it is executing misaligned bytes / garbage."* Traced
-into, it is not. `$3B49`-`$3B76` is a clean, correctly terminating loop that copies three
-bytes per pass through the MMR window -- `CLR $fd90` / `LDD ,X` / `STA ,U` /
-`STB $2000,U`, then `$fd90 <- 1`, then `$fd90 <- 2`, `PULS B,X` / `DECB` / `BNE $3b49`.
-It runs its 25 passes and exits. `$3B78` is then `LDB #$0f` -- B enters the next loop as
-**15**, a perfectly ordinary count -- and falls into `$3B7A`, which is the same shape.
-
-**`$FD90` is the MMR segment select, so the bytes at a given logical address change as
-this loop runs.** That is why a disassembly of `$3B8F`-`$3B99` shows `STB $c486`,
-`FCB $02`, `STD $906f`, `SUBB #$5a`: the disassembler reads whatever bank is mapped when
-it looks, which need not be the bank the CPU fetched from. Register values in the trace
-are real (B genuinely walks d3, 79, ..., 5d, 03), but the instruction text is not
-trustworthy inside an MMR-banked loop. Do not read "illegal opcode in a hot loop" as
-"the CPU has crashed" here -- check the mapping first.
-
-*So what the arbitration fix bought* is a correct sub-CPU speed, agreement with the
-reference through two more readbacks, and the removal of the first divergence so the
-next one can be seen. It bought no pixels. Do not let the commit message make you think
-Luxsor is close.
-
-*Where to look next.* The main-CPU `$FDxx` stream is close to exhausted as an instrument
-here: after the two fixes the only difference left in the first 40 frames is `$FD1F`
-DRQ polling phase at `pc=$01E9` (the reference gets DRQ on its third poll, this core is
-still spinning), which shifts `seqdiff`'s alignment and hides anything after it. Two
-things worth doing before anything else:
-
-  * Teach `seqdiff.py` to collapse polling reads properly. It already collapses runs of
-    identical accesses and has `VALUE_UNCOMPARABLE = {'FD1B'}`; a run whose VALUES differ
-    (3F,3F,3F... against 3F,3F,BF) does not collapse to the same key on both sides, so
-    one status poll desynchronises the rest of the trace. Until that is fixed the tool
-    cannot answer "is there a later divergence".
-**The MMR is NOT the fault, and here is the evidence so nobody re-runs it.** Two
-checks, both negative:
-
-  * *The code page cannot move under it.* The boot ROM at `$E49E`/`$E4A3` programs all
-    four segments identically -- `$FD90 <- 0`, then `$FD80`-`$FD8F` = `$30`-`$3F`, and
-    again for segments 1, 2 and 3 -- so logical page 3 maps to physical `$33000` in every
-    segment and the `$FD90` writes inside the loop cannot change the bytes being fetched.
-  * *The whole MMR enable sequence matches the reference exactly.* Every `$FD93` write
-    agrees in PC and value on both machines, in order: `6006 01`, `6109 BF`, `6119 3F`,
-    `FC79 00`, `E085 00`, `E497 00`, `EBBE 80`, `E4C4 80`, `E4CC 00`, `E4D5 00`,
-    `E12E 00`, `E231 80`, `E27B 00`, `EBBE 80` x6, `E1D8 80`, `E213 00`, `EE54 00`,
-    `EE77 00`, **`EEA1 3E`**. `$FD93` b7 is `mmr_enable`, so that last one DISABLES MMR
-    immediately before the loop runs -- on both machines. The `$FD90` writes inside the
-    loop are no-ops on both. The reference's next `$FD93` write is `E5B0 00`, which this
-    core never reaches because it is still in the loop.
-
-**So the two machines agree on the entire main-CPU `$FDxx` stream up to `$EEA1` and
-diverge only in what happens after.**
-
-*Superseded claim 4 (mine): "the loop reads `$05DE` and gets `$0000` here, so what should
-be there and why is it zero?"* The premise was wrong. `FM77AV_CPU_DUMP` now exists on the
-reference harness (logical 64 KB, the counterpart of `--dump-shadow`) and the answer is
-that **`$05DE` reads `$00` on the reference too**, and `$3B7A`-`$3B99` is **byte identical
-on both** (`4f f7 02 fd c0 26`). Of the 126 bytes our CPU observed in the whole `$3xxx`
-page, none differ; of 4096 in `$E000`, six do. So neither the data the loop copies nor
-the code it runs is the difference. That retires the memory-contents hypothesis for the
-loop itself.
-
-*How to use the new dump, and its one big caveat.*
-
-```
-FM77AV_CPU_DUMP=ref.bin refs/local/fm77av_headless ROMS disk.d77 200000000 \
-    /dev/null --stop-at-frame 382
-vsim/obj_dir/Vemu --headless --machine fm77av --disk disk.d77 \
-    --stop-at-frame 380 --dump-shadow ours.bin
-```
-
-Frame 380 here is frame 382 there (x1.00608, trap 58). Compare only bytes the core
-actually observed -- `--dump-shadow` writes a `.known` mask beside the image for exactly
-that. **A difference is weak evidence and agreement is strong evidence**: once the two
-machines take different branches their RAM diverges for entirely uninteresting reasons,
-and at frame 380 they already have. At that instant the reference is at `pc=$ff9c` with
-its sub CPU parked at `$c099` -- the same `$D380` command wait ours sits in -- so the
-`$5xxx`, `$8000`-`$C000` and `$9000`+ differences in a raw diff are execution drift, not
-findings. Use it to confirm that something you suspect is the SAME, or to look at a
-region neither machine has written yet.
+*The one benign difference to ignore in both traces:* `W $FD1B` at `pc=$FED6`. That is the
+data-register write/read-back test at `$FECA` and both machines pass it; only the
+register's idle content differs. It repeats every ~780 accesses and dominates `seqdiff`
+output. Worth reading anyway: ours ping-pongs between `$FD` and `$02`, exact complements,
+meaning nothing writes our data register between probes, while the reference's values
+vary because its FDC is transferring in between.
 
 **3b. FIXED (Luxsor disk 2): the 6809 core never masked NMI after reset.**
 
