@@ -33,203 +33,42 @@ output -- only the first divergence or two are real.
 `$FD05` handshake was the breakthrough; look next at what it does after the sub
 CPU restarts.
 
-**2. FM Sound Editor and Pro Yakyuu Fan disk A: both still blank AFTER the NMI fix, and
-both now have a HEALTHY sub CPU.** Re-measured from scratch on the fixed build -- the
-earlier traces for these two were taken with a wrecked sub CPU and everything derived
-from them was retracted.
+**2. Pro Yakyuu Fan disk A is FIXED. FM Sound Editor is not, and its cause is a third,
+unrelated one.**
 
-*Both sub CPUs are fine now.* At frame 500 each is parked in the ROM idle loop at
-`$E13E`-`$E148` polling `$D382`/`$D380`, exactly like the reference. So these are genuine
-MAIN-CPU faults, not knock-on from item 3b. (Check this first on any new title --
-REFERENCE.md trap 62.)
+*Pro Yakyuu Fan disk A -- FIXED.* The SECTOR register belongs to the CONTROLLER, not to a
+drive. A real FM-7 has one WD1793 whose track/sector/data registers are shared by every
+drive; this core instantiates one `wd1793` per drive, each with its own register file, so
+a sector-register write made while another drive is selected never reaches the drive that
+needs it. The loader keeps its place with `LDA $FD1A / INCA / STA $FD1A` at `$FE65` and
+the boot ROM's drive scan selects drive 1 in the middle of it, so drive 0's register was
+one behind and sector `12:0:1` was never read. Every later byte then landed 1024 out of
+place, which is why the driver it builds at `$E142`/`$E18A` came out as garbage and never
+reached the `STA <$02` that enables its timer IRQ. `FDC.v` now mirrors sector-register
+writes to both instances -- addr 2 only. Frame-900 PNG 3790 (blank) -> 12258, real
+graphics.
 
-*Where each one ends up:*
-
-| | main CPU at frame 500 |
-|---|---|
-| FM Sound Editor | runaway: `NEG <$00` sled from `$863B` |
-| Pro Yakyuu Fan A | boot ROM DRQ poll, `$FE93 LDA $FD1F / BPL` |
-
-**Both share one shape: the reference runs a transfer routine this core never enters at
-all, and this core falls back to a slower path.**
-
-*FM Sound Editor* -- every FDC transfer this core makes matches the reference exactly:
-`$FF98` 69,120 both, `$FED3`/`$FEDA` 270 both, `$521F` 256 both, `$518D`/`$5194` 1 both.
-The reference ALSO runs a routine across `$F650`-`$F7EE` -- 411,632 accesses at `$F650`
-alone -- reading 20,992 bytes at `$F6F1` and 82 iterations each at `$F72C`/`$F733`. **This
-core executes nothing in `$F6xx`-`$F7xx` whatsoever.** The initiate ROM is `$FF` across
-that whole span, so it is RAM-resident code; the question is what loads it and why we
-never get there.
-
-*Pro Yakyuu Fan A* -- `$FF98` 4,096 both, `$521F` 1,024 both, `$FEDA`/`$FED3` 4 both. The
-reference reads 60,416 bytes at `$E142` and **this core reads none there**, while this
-core reads 248,654 at `$FE98` against 20,480 and 26,624 at `$0174` against 2,048 -- twelve
-to thirteen times as many, i.e. heavy retrying on the slow path. FDC commands issued tell
-the same story: 274 read-sector against 86, 39 RESTORE against 5, 37 SEEK against 9, 13
-FORCE INTERRUPT against 1. Still ZERO `$FD03` reads, so it never gets a timer IRQ either,
-unlike Luxsor which the NMI fix cured.
-
-Note `$E142` holds `20 18 96 0b` (`BRA $E15C`) in our initiate ROM, which is NOT a
-`$FD1B` read -- and `$E142` is below `$FC00`, hence MMR-mappable. The reference is running
-RAM-resident code there too.
-
-*The sharpest fact for each, and it is the same fact:* **neither title ever executes the
-code that ENABLES the timer IRQ**, because that code lives in a RAM-resident driver the
-reference installs and this core does not.
-
-  * *Pro Yakyuu Fan A* makes **zero** `$FD02` writes. The reference makes one,
-    `VALUE:05` at `MAIN:E18B` -- bit 0 keyboard plus bit 2 timer. Memory dumps at the
-    same instant (ours frame 500, reference 503) show why: at `$E18A` the reference holds
-    `86 05 97 02` = `LDA #$05 / STA <$02`, and with `DP=$FD` that IS the `$FD02` write.
-    This core holds `cc c0 00 fd` there. Likewise `$E142`, where the reference reads
-    60,416 sector bytes, holds `b6 fd 1b a7 80 20 f4` = `LDA $FD1B / STA ,X+ / BRA` on the
-    reference and `20 27 04 97` here. **Both machines have RAM at `$E1xx`** -- both differ
-    from the initiate ROM, which is `$FF` across `$E180`-`$E19F` -- so this is not a
-    mapping question, it is that we have different BYTES there.
-  * *FM Sound Editor* makes the same two `$FD02` writes as the reference (`$10` at
-    `$016A`, `$40` at `$8347`) and the reference makes 163 MORE, alternating `$40` and
-    `$44` at `$F916` -- bit 2 again -- inside the same RAM-resident region as the `$F650`
-    routine.
-
-*What is NOT the difference:* the boot loader. `$5000`-`$50FF` is byte identical between
-the two machines, 640 observed bytes and zero differing. And the MMR: this core writes
-each `$FD8x` exactly once with the boot ROM's identity map (`$30`-`$3F`), while the
-reference remaps `$FD80`/`$FD81` repeatedly (`$00 $10 $12 $14 $18` / `$01 $11 $13 $15`)
-to load into different physical banks -- but that remapping is done BY the driver we
-never install, so it is downstream, not upstream.
-
-*Pro Yakyuu Fan's first real `seqdiff` divergence is unchanged by the NMI fix*: access
-42288, where this core runs the empty-drive poll at `$0449` seven times (28 extra
-collapsed entries) and the reference proceeds directly to `W $FD1A 01 pc=$FE4C`. Item 2's
-earlier analysis of that scan still stands -- both machines select empty drive 1, both
-read `$84`, both time out identically on a fixed 16-bit counter. The difference is that
-the reference runs the scan once and this core runs it seven times.
-
-**PRO YAKYUU FAN A: FOUND IT -- the load is missing exactly 4 sectors.**
-
-Comparing the two machines' sector-data streams (every `$FD1B` read in order, any PC,
-with the reference's one-position pre-side-effect shift undone):
-
-| transferred bytes | agreement |
-|---|---|
-| 0 - 4,000 | 99.85% |
-| 4,000 - 8,000 | 79.83% |
-| 8,000 - 12,000 | 1.68% |
-
-Sustained divergence begins at transferred byte **7,208** -- byte 40 of the load's sector
-28 -- with BOTH machines reading at the same PCs (`$0174` and `$FE98`), so the loader
-code is the same and running in the same place.
-
-And the alignment is exact: **this core's bytes from 7,208 match the reference's stream at
-offset +1024, i.e. +4 sectors, at 100.0%.** We are AHEAD by four sectors. The reference
-reads 1,024 bytes there that this core does not.
-
-That is the whole explanation for everything above. A load short by 1,024 bytes in the
-middle puts every subsequent byte 4 sectors out of place, so the driver that should land
-at `$E142`/`$E18A` is built from the wrong data -- which is why `$E142` holds `20 27 04 97`
-here against the reference's `b6 fd 1b a7 80 20 f4` (`LDA $FD1B / STA ,X+ / BRA`), and why
-`$E18A` holds `cc c0 00 fd` against `86 05 97 02` (`LDA #$05 / STA <$02` = the `$FD02`
-timer-IRQ enable). Nothing is wrong with the FDC's DATA -- the first 7,207 bytes are
-byte-perfect -- and nothing is wrong with the MMR. **Four sectors simply never get read.**
-
-*Narrowed further, and this is where the trail currently ends.* The skipped sector is
-immediately adjacent to the drive scan. Comparing READ SECTOR requests (track:sector) in
-order, the two machines agree for seven reads and part company on the eighth:
+*FM Sound Editor -- NOT fixed, and the FDC is exonerated.* With the same matched-window,
+same-instrument comparison (`WDMATCH` here, `--trace-fdc` there), **its read sequence is
+byte-identical to the reference** for every read in the window -- including the
+`1:12:7:2:13:8:3:14:9...` interleave across its 16-sector tracks -- with zero NOMATCH. It
+gets all its data correctly. It then diverges on a COMPUTED value:
 
 ```
-ours: 00:01 00:02 00:03 00:04 00:05 00:01 00:02 00:01 [00:03] 00:04 00:05 0c:01 ...
-ref : 00:01 00:02 00:03 00:04 00:05 00:01 00:02 00:01 [00:02] 00:03 00:04 00:05 0c:01 ...
+$FD88 writes (logical page 8 mapping)
+  ours: 38 38 38 38 38 00 01 0f 38 38 00 [24]
+  ref : 38 38 38 38 38 00 01 0F 38 38 00 [38] 00 38 00 38 07 06 07 38 ...
 ```
 
-The loader reads the sector register and increments it -- `seqdiff` catches both machines
-in the SAME code, `R $FD1A ... pc=$FE65` then `W $FD1A ... pc=$FE69` -- so the CPU is not
-choosing to skip; **our sector register already holds a higher value when it is read
-back.** The obvious suspect, auto-increment on a single-record read, is NOT it:
-`wd1793.sv:585,623` gate the increment on `multisector`, which is `din[4]` and clear for
-`$80`.
+Eleven identical writes, then this core maps page 8 to physical `$24` where the reference
+maps it to `$38` -- and immediately executes at `$863B`, INSIDE that page, into a
+`NEG <$00` sled, where it stays. Its sub CPU is healthy and it services zero timer IRQs
+because it never gets that far. It does reach `$F920` (so part of the RAM-resident code
+runs) but never `$F650`.
 
-*What is ruled out around it:* the empty-drive status is qualitatively identical -- the
-same value SETS on both (`$84`/`$86` at `$0449`, `$3F`/`$7F` at `$0478`), only counts
-differ, in proportion to this core running the scan seven times against the reference's
-one. `$FFE0`, the scan's drive counter, advances 0 -> 1 correctly here. So it is not the
-empty-drive answer and not the counter.
-
-*And the sector register is NOT being corrupted -- measured, not argued.* `wd1793.sv` now
-carries a `DEBUG_FDC_SCAN` probe that prints every change of `wdreg_sector` with the
-instance name and the controller state. On drive 0 the sequence is
-`01 02 03 04 05 01 02 03 04 05 06 01 02` -- every transition is +1 or a wrap, and every
-one is at `state=0` (IDLE), i.e. **a CPU write**. The controller never touches it.
-
-That kills the read-back hypothesis above, and with it the `00:01 -> 00:03` "skip" in the
-request list: that list was built by pairing the most recent `$FD19`/`$FD1A` writes at
-each READ SECTOR command, and the register probe shows no such jump ever happens. **Do
-not trust that pairing; trust the probe.**
-
-*What still stands, because it is byte-exact:* this core's transferred data from byte
-7,208 matches the reference's stream at exactly +1024 bytes = +4 sectors, 100.0%. Four
-sectors' worth of data is genuinely missing. Since the sector register is clean, the
-reference must be READING sectors this core never asks for -- consistent with the request
-lists, where the reference walks tracks `0C 0D 00 05 06 0E 0F 10 11 12` while this core
-loops on `0C 0D 00`. So the question is not a corrupted register but **why this core's
-loader stops walking tracks**, which puts it back with the 7x drive-scan repetition.
-
-*What a direct instrument then showed, and what it did NOT settle.* `WDMATCH` (in
-`wd1793.sv`, `DEBUG_FDC_SCAN`) prints the actual track/side/sector of every read the
-controller matches -- the authoritative list, unlike anything reconstructed from register
-writes. Over 120 frames this core reads
-
-    0:1 0:2 0:3 0:4 0:5 0:1 0:2 12:2 12:3 12:4 12:5 12:1 ...
-
-with **zero WDNOMATCH**, i.e. nothing fails; and separately, walking both machines'
-main-CPU `$FDxx` streams from the last shared read with `$FD1B`/`$FD1F` excluded, they are
-**identical for 400 consecutive accesses**. Those two facts do not sit together, and the
-reason is measurement error on my part, recorded here because it is the trap of this whole
-investigation:
-
-  * the `WDMATCH` list came from a 120-frame run, the reference's from its full trace;
-  * the reference's list was RECONSTRUCTED by pairing `$FD19`/`$FD1A` writes with `$80`
-    commands -- the same reconstruction the sector-register probe had already disproved
-    for this core;
-  * the register probe itself came from a 70-frame run and shows a write of sector 6 that
-    the 120-frame `WDMATCH` list never reads.
-
-Three windows, two instruments, no two of them comparable. **Any conclusion drawn from
-that set is worthless**, including two I published and retracted.
-
-*How to do it properly next time.* One run, one instrument, matched windows: build with
-`DEBUG_FDC=1`, run BOTH machines to the same machine-time frame (`--stop-at-frame N` here,
-`round(N*1.00608)` there), and compare only `WDMATCH` against the reference's own read
-sequence -- and if the reference cannot produce an equivalent list, add the print to
-`tools/77avemu_headless.cpp` rather than reconstructing one.
-
-*What survives all of it, because it is byte-exact and single-run:* this core's
-transferred data from byte 7,208 matches the reference's at exactly +1024 bytes = +4
-sectors, 100.0%. Four sectors of data are genuinely missing. That is the symptom to
-explain; every mechanism proposed for it so far has been wrong.
-
-*Honest status: NOT FIXED.* Luxsor is fixed (item 3b); these two are not.
-
-*Next:* find which four. This core issues 274 READ SECTOR commands against the
-reference's 86, 39 RESTORE against 5 and 37 SEEK against 9, so it is retrying heavily
-around there; the likely candidates are a multi-sector read terminating early, or a
-sector the table scan placed wrongly so the read is satisfied from the wrong place. Cross
-the `FLOPPY DMA:` lines (which print drive/LBA/track/sector per access) against the
-transferred-byte index -- byte 7,208 is the 29th sector of the load -- and compare the LBA
-sequence with the reference's `$FD1A`/`$FD1C` writes.
-
-*So the question for both is: what installs the driver at `$E1xx`/`$F6xx`, and what does
-this core put there instead?* Compare `--dump-shadow` against `FM77AV_CPU_DUMP` at
-several frames through the load and find the first frame at which `$E142` differs; that
-brackets the write. Do NOT read anything into the whole-image page diff -- by frame 500
-the two have long since diverged and almost everything differs for uninteresting reasons
-(REFERENCE.md trap 60).
-
-*The one benign difference to ignore in both traces:* `W $FD1B` at `pc=$FED6`. That is the
-data-register write/read-back test at `$FECA` and both machines pass it; only the
-register's idle content differs. It repeats every ~780 accesses and dominates `seqdiff`
-output. Worth reading anyway: ours ping-pongs between `$FD` and `$02`, exact complements,
-meaning nothing writes our data register between probes, while the reference's values
-vary because its FDC is transferring in between.
+*Next for it:* find what computes the 12th `$FD88` value. The write is at a known PC in
+this core's trace; trace the main CPU across it and compare the inputs. Do NOT go back to
+the FDC -- it is measured clean.
 
 **3b. FIXED (Luxsor disk 2): the 6809 core never masked NMI after reset.**
 
