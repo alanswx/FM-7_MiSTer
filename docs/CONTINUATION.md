@@ -105,6 +105,41 @@ earlier analysis of that scan still stands -- both machines select empty drive 1
 read `$84`, both time out identically on a fixed 16-bit counter. The difference is that
 the reference runs the scan once and this core runs it seven times.
 
+**PRO YAKYUU FAN A: FOUND IT -- the load is missing exactly 4 sectors.**
+
+Comparing the two machines' sector-data streams (every `$FD1B` read in order, any PC,
+with the reference's one-position pre-side-effect shift undone):
+
+| transferred bytes | agreement |
+|---|---|
+| 0 - 4,000 | 99.85% |
+| 4,000 - 8,000 | 79.83% |
+| 8,000 - 12,000 | 1.68% |
+
+Sustained divergence begins at transferred byte **7,208** -- byte 40 of the load's sector
+28 -- with BOTH machines reading at the same PCs (`$0174` and `$FE98`), so the loader
+code is the same and running in the same place.
+
+And the alignment is exact: **this core's bytes from 7,208 match the reference's stream at
+offset +1024, i.e. +4 sectors, at 100.0%.** We are AHEAD by four sectors. The reference
+reads 1,024 bytes there that this core does not.
+
+That is the whole explanation for everything above. A load short by 1,024 bytes in the
+middle puts every subsequent byte 4 sectors out of place, so the driver that should land
+at `$E142`/`$E18A` is built from the wrong data -- which is why `$E142` holds `20 27 04 97`
+here against the reference's `b6 fd 1b a7 80 20 f4` (`LDA $FD1B / STA ,X+ / BRA`), and why
+`$E18A` holds `cc c0 00 fd` against `86 05 97 02` (`LDA #$05 / STA <$02` = the `$FD02`
+timer-IRQ enable). Nothing is wrong with the FDC's DATA -- the first 7,207 bytes are
+byte-perfect -- and nothing is wrong with the MMR. **Four sectors simply never get read.**
+
+*Next:* find which four. This core issues 274 READ SECTOR commands against the
+reference's 86, 39 RESTORE against 5 and 37 SEEK against 9, so it is retrying heavily
+around there; the likely candidates are a multi-sector read terminating early, or a
+sector the table scan placed wrongly so the read is satisfied from the wrong place. Cross
+the `FLOPPY DMA:` lines (which print drive/LBA/track/sector per access) against the
+transferred-byte index -- byte 7,208 is the 29th sector of the load -- and compare the LBA
+sequence with the reference's `$FD1A`/`$FD1C` writes.
+
 *So the question for both is: what installs the driver at `$E1xx`/`$F6xx`, and what does
 this core put there instead?* Compare `--dump-shadow` against `FM77AV_CPU_DUMP` at
 several frames through the load and find the first frame at which `$E142` differs; that
