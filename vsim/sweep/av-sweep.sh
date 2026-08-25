@@ -23,6 +23,20 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 
 OUT=${1:?usage: av-sweep.sh <outdir> [jobs] [frames]}
+
+# Make OUT absolute BEFORE anything uses it.
+#
+# sweep_one.sh has to run from vsim/ -- the Verilog loads its ROMs with
+# $readmem on the relative path ./roms/..., and from anywhere else every ROM
+# silently comes up empty. So a relative OUT resolves against vsim/ inside the
+# worker and against vsim/sweep/ out here, and the two disagree: the TSV lands
+# in one place while every --screenshot-prefix write vanishes into a directory
+# that does not exist. The run still completes and still reports plausible
+# instruction counts, with PNG=0 on every row -- which reads as "the core drew
+# nothing" rather than "the sweep wrote nothing". Cost 16 minutes of a 68-title
+# run before anyone looked at the PNG column.
+mkdir -p "$OUT"
+OUT=$(cd "$OUT" && pwd)
 JOBS=${2:-8}
 FRAMES=${3:-700}
 DISKDIR=${DISKDIR:-$REPO/software/D77}
