@@ -189,6 +189,8 @@ static void Usage(const char *argv0)
     std::cerr << "                         `steps` stays a backstop; without an explicit\n";
     std::cerr << "                         steps it is raised to 100000 per frame asked\n";
     std::cerr << "                         for, so a wedged run still cannot spin forever.\n";
+    std::cerr << "  --trace-fdc            log every FDC command with its C/H/R, the\n";
+    std::cerr << "                         reference's equivalent of wd1793.sv's WDMATCH.\n";
     std::cerr << "  --trace-io             log every main-CPU $FDxx access, and every\n";
     std::cerr << "                         sub-CPU $D4xx one, as IOWRITE/IOREAD lines.\n";
     std::cerr << "                         Feed both sides to tools/iodiff.py to find\n";
@@ -251,6 +253,7 @@ int main(int argc, char **argv)
     bool stepsGiven = false;
 
     bool traceIO = false;
+    bool traceFDC = false;
     int positional = 0;
     for (int i = 3; i < argc; ++i)
     {
@@ -312,6 +315,10 @@ int main(int argc, char **argv)
         {
             stopAtFrame = std::strtoull(argv[++i], nullptr, 10);
             stopAtFrameSet = true;
+        }
+        else if (arg == "--trace-fdc")
+        {
+            traceFDC = true;
         }
         else if (arg == "--trace-io")
         {
@@ -438,6 +445,20 @@ int main(int argc, char **argv)
     // is why this went unnoticed while every disk render worked, and why there
     // has never been a reference tape screenshot to compare against.
     vm->dataRecorder.outside_world = &world;
+
+    // --trace-fdc: the reference's counterpart of wd1793.sv's WDMATCH print.
+    //
+    // Comparing what the two machines actually READ off the disk used to mean
+    // reconstructing the reference's list by pairing its $FD19/$FD1A writes
+    // against its $80 commands. That reconstruction is not an instrument and it
+    // produced two wrong findings on Pro Yakyuu Fan disk A before the core's own
+    // sector-register probe disproved it -- see REFERENCE.md trap 63. The FDC
+    // already knows the answer: monitorFDC makes it print one line per command
+    // with "C <track> H <side> R <sector>" for a read, so ask it.
+    if (traceFDC)
+    {
+        vm->fdc.monitorFDC = true;
+    }
     // The disk boot path clears the reset-time busy latch through the normal
     // sub-monitor handshake; leave it clear so the headless run follows the
     // same path as the simulator.

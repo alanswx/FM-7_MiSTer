@@ -344,6 +344,37 @@ reg [12:0] empty_timer = 13'd0;
 
 wire drive0_sel = (fdc_drv == 2'd0);
 wire drive1_sel = (fdc_drv == 2'd1);
+
+// The SECTOR register belongs to the CONTROLLER, not to a drive.
+//
+// A real FM-7 has ONE WD1793 whose track/sector/data registers are shared by
+// every drive; only the media and the head position are per-drive. This core
+// instantiates one wd1793 per drive, so each carries its own register file,
+// and a sector-register write made while another drive is selected is lost to
+// the drive that needs it.
+//
+// Pro Yakyuu Fan disk A dies on exactly that. Its loader keeps its place with
+// a read-modify-write on $FD1A -- `LDA $FD1A / INCA / STA $FD1A` at $FE65 --
+// and the boot ROM's drive scan selects drive 1 in between:
+//
+//     $FD1D <- $81   select drive 1
+//     $FD1A <- $01   sector 1  -> lands in DRIVE 1's register
+//     $FD1D <- $80   back to drive 0
+//     LDA $FD1A      reads DRIVE 0's register, still holding 2
+//     INCA / STA     -> 3, so track 12 side 0 sector 1 is never read
+//
+// Measured against 77AVEMU over the same machine-time window, with both sides
+// reporting the sectors their own controller actually matched (wd1793.sv's
+// WDMATCH here, --trace-fdc there): the first seven reads agree exactly, then
+// this core skips 12:0:1 and everything after is shifted by one.
+//
+// Mirror sector-register writes to both instances so they cannot drift. Only
+// addr 2 is mirrored: addr 0 is the command, addr 1 the track register, which
+// this design also uses as the per-drive head position, and addr 3 the data
+// register, which is live during a transfer. Those are left per-drive until
+// something demonstrates otherwise -- see REFERENCE.md on not widening a fix
+// past its evidence.
+wire sector_reg_wr = acc_wr & (acc_addr == 2'd2);
 wire empty_sel  = (fdc_drv >= 2'd2);
 wire ready0, ready1;
 wire drq0, drq1, intrq0, intrq1;
@@ -520,7 +551,7 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_0
   // access to $fd18-$fd1b.
   .io_en        ( 1'b1              ),
   .rd           ( acc_rd & drive0_sel ),
-  .wr           ( acc_wr & drive0_sel ),
+  .wr           ( (acc_wr & drive0_sel) | sector_reg_wr ),
   .addr         ( acc_addr          ),
   .din          ( acc_din           ),
   .dout         ( core_dout0        ),
@@ -566,7 +597,7 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_1
   .reset        ( reset             ),
   .io_en        ( 1'b1              ),
   .rd           ( acc_rd & drive1_sel ),
-  .wr           ( acc_wr & drive1_sel ),
+  .wr           ( (acc_wr & drive1_sel) | sector_reg_wr ),
   .addr         ( acc_addr          ),
   .din          ( acc_din           ),
   .dout         ( core_dout1        ),
