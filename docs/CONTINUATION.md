@@ -210,96 +210,43 @@ its sub CPU parked at `$c099` -- the same `$D380` command wait ours sits in -- s
 findings. Use it to confirm that something you suspect is the SAME, or to look at a
 region neither machine has written yet.
 
-**3b. ROOT CAUSE CANDIDATE FOR ALL THREE BLANK AV TITLES: a spurious sub-attention
-FIRQ steals the timer interrupt.** Found after items 2 and 3 above had exhausted every
-other instrument. Read this before touching any of the three.
+**3b. FIXED (Luxsor disk 2): the 6809 core never masked NMI after reset.**
 
-*The symptom, measured on all three:*
+`mc6809i.v` released the NMI mask on `s != s_nxt`, and `CPUSTATE_RESET` assigns
+`s_nxt = $FFFD` -- so the reset sequence cleared the mask on the cycle that set it, and
+NMI was never masked after reset at all. Per the 6809 spec it must stay masked until S is
+LOADED, which is what protects the window between reset and the init's `LDS`.
 
-| `$FD03` reads (timer-IRQ handler) | reference | this core |
-|---|---|---|
-| Luxsor disk 2 | 22,554 | **0** |
-| Pro Yakyuu Fan disk A | 9,809 | **0** |
-| FM Sound Editor | 7,662 | **0** |
+Harmless on a cold boot; fatal on a WARM reset, which is what the AV's `$FD13`
+sub-system reset is -- the display NMI is already running. Luxsor writes `$FD13` at
+`pc=$E48A` on frame 27; the sub restarts at `$E000`; an NMI lands during its
+`$D000-$D35F` clear loop before the init's `LDS`; the 12-byte push goes to `S=$FFFD`
+(ROM) and is discarded; the handler returns through a `PULS` reading ROM and the sub
+walks a `NEG <$00` sled through VRAM from `$8DE0` for the rest of the run.
 
-`$FD03` read acknowledges the timer/printer IRQ (77AVEMU `fm77avio.cpp:663-666`, "RFD03
-seems to clear timer and printer irq"). The reference runs its handler at
-`$E5AB`/`$E5B7`/`$E5DA`/`$E5E6` 11,277 times on Luxsor; **this core reaches those
-addresses zero times.** All three titles write `$FD02 <- $05` at `pc=$E51D` -- bit 0
-keyboard plus bit 2 timer -- identically on both machines, so the enable is not the
-problem, and `TMMASK = ~m77[2]` decodes it correctly.
+The knock-on is why this was invisible from the main CPU. The sub's periodic timer
+handler still worked, and it ends `STB $D381` / `BITA $D404` -- the command-complete
+notify -- so every tick set `attn_pend` and asserted the main CPU's FIRQ. `attn_pend`
+clears only on a main-CPU `$FD04` read, and the main read `$FD04` exactly twice, both on
+frame 6. FIRQ therefore sat asserted from frame 27, and when the loader unmasked at frame
+370 (`PULS CC` at `$eea4`) it instantly took that stale FIRQ into `$3B1A` instead of the
+timer IRQ at `$E5A9`.
 
-*The branch, caught in a `--trace-cpu` window at frame 370:*
+Fix: `if ((s != s_nxt) && (CpuState != CPUSTATE_RESET))`. Measured on Luxsor, 920 frames:
+sub `$D404` notifies 24 -> 0; main `$FD03` reads 0 -> 18,806 (reference 22,554);
+frame-900 PNG 3,790 -> 25,250, and it is the GAME -- playfield, LUXSOR logo, score and
+status panels. No regression: av-demo 5805/6767, Wizardry IV 12522/11720 and Kohakuiro
+unchanged.
 
-```
-$eea1  STA $fd93   cc=eFhInzvc   ; I set, interrupts masked (both machines agree here)
-$eea4  PULS CC,A,DP,PC           ; cc -> efhinzvc, I CLEAR
-$efe1  LDX $804c                 ; S drops by 3 = a FIRQ push (PC+CC), not an IRQ's 12
-$3b1a  BNE $3b15   cc=eFhInzvc   ; F and I set: we are IN the FIRQ handler
-```
+**FM Sound Editor and Pro Yakyuu Fan disk A are NOT fixed by it** and remain blank
+(3812 at frame 700, 3790 at 900). They share the zero-timer-IRQ symptom but, as item 2
+records, they fail in different places -- Sound Editor runs away into a `NEG <$00` sled
+at `$863D` on the MAIN CPU, Pro Yakyuu Fan repeats its whole drive scan seven times.
+Re-measure both from scratch now that the sub CPU survives its reset: the old traces
+were taken with a wrecked sub and every downstream conclusion from them is suspect.
 
-`$3B1A` is the FIRQ vector and `$E5A9` the IRQ vector, and **both vectors are identical
-on both machines** (checked in the memory dumps). The instant the loader unmasks, this
-core has a FIRQ pending and the reference has an IRQ pending. FIRQ outranks IRQ on a
-6809, so whoever has FIRQ pending takes it.
-
-*Why we have one and the reference does not:*
-
-`TIMER.v:143-155` -- `attn_pend` is SET when the sub CPU reads `$D404` and cleared only
-when the main CPU finishes reading `$FD04`; `FIRQn = m45_q8n & BREAKn` with
-`m45_q8n = ~attn_pend`. Both machines read `$FD04` exactly twice, at `pc=$6120` and
-`pc=$5013`, early in boot, and never again. So one stray `$D404` read leaves FIRQ
-asserted for the rest of the run.
-
-| sub-CPU `$D404` accesses | |
-|---|---|
-| reference, whole run | **0** |
-| this core, first 100 frames | **23** |
-
-**So the bug to find is why this core's SUB CPU reads `$D404` at all.** Narrowed since:
-
-*It is NOT the `$D500-$D7FF` alias.* `SDECODE.v`'s `subio_alias_block` already blocks
-that on the AV, and the trace filter is on the ADDRESS, so these are genuine `$D404`
-accesses.
-
-*It is a real, legitimate instruction.* The sub monitor at `$FF63` is
-
-```
-$FF63  STB $D381    ; result byte into shared RAM
-$FF66  BITA $D404   ; raise attention -> main-CPU FIRQ
-$FF69  PULS Y,PC
-```
-
--- the command-completion notify -- and those bytes are **identical on both machines**.
-So the sub is not executing corrupt code; it is finishing a command and signalling, which
-is exactly what it is supposed to do. The reference's sub simply never gets there.
-
-**The refined question is therefore: what command is this core's main CPU sending to the
-sub that the reference's is not?** The 24 notifies cluster in frames 27-37. `$D380` is
-the command byte the sub polls at `$C096`; the main side reaches it through its shared-RAM
-window at `$FC80-$FCFF`. Diff the two machines' `$D380`-`$D3FF` contents over frames
-20-40 with the new dumps, and find who writes the command.
-
-*A red herring, killed, so nobody re-runs it:* the sub-CPU VECTOR TABLE looks completely
-wrong in `--dump-shadow-sub` -- FIRQ `$1800` against the reference's `$FDAC`, IRQ `$0000`
-against `$E06E`, only NMI matching. **It is not wrong.** `rtl/roms/subsys_m154.rom.mem`
-(which `SMEM.v:41-43` selects for `submon_sel == 0`, the Type C default the AV falls back
-to) holds `SWI3/SWI2/SWI/RESET $E000`, `FIRQ $FDAC`, `IRQ $E06E`, `NMI $FEBF` -- exactly
-the reference's table. The shadow is a HISTORICAL record of bytes the CPU once observed,
-not a snapshot of the current mapping, so a region read under an earlier mapping keeps
-the older bytes. Same class of trap as trap 57: check the artifact against the ROM file
-before believing it.
-
-*Why nothing caught it:* no working test exercises the timer IRQ. F-BASIC writes
-`$FD02 <- $40`, the 2019 AV demo polls and reads `$FD03` zero times. A dead timer
-interrupt is invisible to the entire gate.
-
-*What was ruled out first, so it is not re-run:* every main-CPU `$FDxx` access agrees up
-to `$EEA1`; all 7,168 sector bytes transferred through `$01EE` are IDENTICAL (100.00%
-once the reference's one-position pre-side-effect log shift is undone -- see
-`VALUE_UNCOMPARABLE` in seqdiff.py); `$05DE` is `$00` on both; `$3B7A`-`$3B99` is byte
-identical; of 126 observed bytes in the `$3xxx` page none differ. The FDC, the loaded
-data and the executed code are all the same. Only the interrupt differs.
+*Why nothing caught the NMI bug:* no gate test performs a warm reset with an NMI source
+live, and neither F-BASIC nor the 2019 AV demo takes a timer IRQ at all.
 
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.

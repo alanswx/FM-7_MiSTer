@@ -906,6 +906,28 @@ confident wrong answer at least once:
     read the ROM FILE. Agreement in the dump is strong evidence; disagreement is only a
     question.
 
+61. **A bug that only a WARM reset can expose is invisible to every test you have.** The
+    6809 core never masked NMI after reset -- `CPUSTATE_RESET` sets `s_nxt = $FFFD`, which
+    satisfied the `s != s_nxt` release condition on the same cycle. On a cold boot nothing
+    notices: the CPU finishes its init before any NMI source is running. It only bites
+    when something resets a CPU while an NMI is already ticking, and on this machine the
+    only thing that does that is the FM77AV's `$FD13` sub-system reset. Nothing in the
+    gate performs one. When a fault appears only on real software and never on the tests,
+    ask what STATE the tests never reach, not what register they never touch -- "reset
+    while the rest of the machine is already running" is a state, and it is one a
+    power-on test can never construct.
+
+62. **When a CPU is wrecked, every conclusion downstream of it is worthless.** Luxsor's
+    sub CPU walked a VRAM sled from frame 27, and its still-working timer handler kept
+    notifying the main CPU, which pinned an FIRQ that stole the main CPU's timer IRQ 340
+    frames later. From the main-CPU trace everything looked healthy: identical `$FDxx`
+    accesses, identical 7,168 sector bytes, identical code. Hours went into `$FD00`, the
+    FDC, the MMR and the loaded data, all of them downstream of a sub CPU that had been
+    dead since frame 27. **Check that both CPUs are executing sane code before believing
+    anything else.** `--pc-profile-sub`, or a glance at the sub's PC range and its stack
+    pointer, would have cost a minute: an S of `$FFED` in ROM space is a dead giveaway and
+    was visible in the very first sub trace taken.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
