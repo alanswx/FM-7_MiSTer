@@ -256,12 +256,39 @@ asserted for the rest of the run.
 | reference, whole run | **0** |
 | this core, first 100 frames | **23** |
 
-**So the bug to find is why this core's SUB CPU reads `$D404` at all.** Two candidates,
-untested: a genuine sub-ROM path the reference does not take, or an address-decode alias
-routing some other sub access onto `$D404`. Favour the alias -- the sub monitor is the
-same ROM on both. Trust the ADDRESS, not the PC: `--trace-mem-sub` reported `pc=$d408`
-for a `$d40a` read elsewhere in this same investigation, so its PC column is unreliable
-on that path.
+**So the bug to find is why this core's SUB CPU reads `$D404` at all.** Narrowed since:
+
+*It is NOT the `$D500-$D7FF` alias.* `SDECODE.v`'s `subio_alias_block` already blocks
+that on the AV, and the trace filter is on the ADDRESS, so these are genuine `$D404`
+accesses.
+
+*It is a real, legitimate instruction.* The sub monitor at `$FF63` is
+
+```
+$FF63  STB $D381    ; result byte into shared RAM
+$FF66  BITA $D404   ; raise attention -> main-CPU FIRQ
+$FF69  PULS Y,PC
+```
+
+-- the command-completion notify -- and those bytes are **identical on both machines**.
+So the sub is not executing corrupt code; it is finishing a command and signalling, which
+is exactly what it is supposed to do. The reference's sub simply never gets there.
+
+**The refined question is therefore: what command is this core's main CPU sending to the
+sub that the reference's is not?** The 24 notifies cluster in frames 27-37. `$D380` is
+the command byte the sub polls at `$C096`; the main side reaches it through its shared-RAM
+window at `$FC80-$FCFF`. Diff the two machines' `$D380`-`$D3FF` contents over frames
+20-40 with the new dumps, and find who writes the command.
+
+*A red herring, killed, so nobody re-runs it:* the sub-CPU VECTOR TABLE looks completely
+wrong in `--dump-shadow-sub` -- FIRQ `$1800` against the reference's `$FDAC`, IRQ `$0000`
+against `$E06E`, only NMI matching. **It is not wrong.** `rtl/roms/subsys_m154.rom.mem`
+(which `SMEM.v:41-43` selects for `submon_sel == 0`, the Type C default the AV falls back
+to) holds `SWI3/SWI2/SWI/RESET $E000`, `FIRQ $FDAC`, `IRQ $E06E`, `NMI $FEBF` -- exactly
+the reference's table. The shadow is a HISTORICAL record of bytes the CPU once observed,
+not a snapshot of the current mapping, so a region read under an earlier mapping keeps
+the older bytes. Same class of trap as trap 57: check the artifact against the ROM file
+before believing it.
 
 *Why nothing caught it:* no working test exercises the timer IRQ. F-BASIC writes
 `$FD02 <- $40`, the 2019 AV demo polls and reads `$FD03` zero times. A dead timer

@@ -893,6 +893,19 @@ confident wrong answer at least once:
     `run_tests.sh` is overridable for exactly this. And treat any row reporting STALLED
     with `?` counters as "something killed it", not as a core result.
 
+60. **`--dump-shadow` is a HISTORY, not a snapshot, and on a banked machine that matters.**
+    It records the last byte the CPU actually saw at each address, so a region read under
+    one mapping keeps those bytes after the mapping changes. Compared against the
+    reference's `FM77AV_CPU_DUMP` -- which IS a snapshot, via `NonDestructiveFetchByte`
+    on the current mapping -- that makes stale regions look like hard differences. It
+    cost an hour here: the sub CPU's whole vector table appeared corrupt, FIRQ reading
+    `$1800` against the reference's `$FDAC` and IRQ `$0000` against `$E06E`, with only NMI
+    matching, which reads as a devastating bug. `rtl/roms/subsys_m154.rom.mem` -- the ROM
+    `SMEM.v` actually maps there -- contains the reference's table exactly. Nothing was
+    wrong. Before believing any difference this dump shows in a ROM or banked region,
+    read the ROM FILE. Agreement in the dump is strong evidence; disagreement is only a
+    question.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
