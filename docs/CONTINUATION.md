@@ -180,16 +180,35 @@ checks, both negative:
     core never reaches because it is still in the loop.
 
 **So the two machines agree on the entire main-CPU `$FDxx` stream up to `$EEA1` and
-diverge only in what happens after.** With MMR off, the loop's `LDD ,X` at `X=$05DE`
-reads through the plain FM-7 layout at physical `$305DE` and returns `$0000` here; the
-loop then copies those zeros. The remaining question is therefore about MEMORY CONTENTS,
-not about any register: what should be at `$05DE` by frame 375, and why is it zero here?
+diverge only in what happens after.**
 
-*The instrument for that has not been built.* `--dump-shadow` gives the main-CPU bus
-shadow on this core, and `tools/77avemu_headless.cpp` has no equivalent. Adding a memory
-dump to the reference harness -- the same shape as `--stop-at-frame` -- would make the
-two directly comparable and is probably the highest-value tooling work left on the disk
-side. Do that before spending more time reading traces.
+*Superseded claim 4 (mine): "the loop reads `$05DE` and gets `$0000` here, so what should
+be there and why is it zero?"* The premise was wrong. `FM77AV_CPU_DUMP` now exists on the
+reference harness (logical 64 KB, the counterpart of `--dump-shadow`) and the answer is
+that **`$05DE` reads `$00` on the reference too**, and `$3B7A`-`$3B99` is **byte identical
+on both** (`4f f7 02 fd c0 26`). Of the 126 bytes our CPU observed in the whole `$3xxx`
+page, none differ; of 4096 in `$E000`, six do. So neither the data the loop copies nor
+the code it runs is the difference. That retires the memory-contents hypothesis for the
+loop itself.
+
+*How to use the new dump, and its one big caveat.*
+
+```
+FM77AV_CPU_DUMP=ref.bin refs/local/fm77av_headless ROMS disk.d77 200000000 \
+    /dev/null --stop-at-frame 382
+vsim/obj_dir/Vemu --headless --machine fm77av --disk disk.d77 \
+    --stop-at-frame 380 --dump-shadow ours.bin
+```
+
+Frame 380 here is frame 382 there (x1.00608, trap 58). Compare only bytes the core
+actually observed -- `--dump-shadow` writes a `.known` mask beside the image for exactly
+that. **A difference is weak evidence and agreement is strong evidence**: once the two
+machines take different branches their RAM diverges for entirely uninteresting reasons,
+and at frame 380 they already have. At that instant the reference is at `pc=$ff9c` with
+its sub CPU parked at `$c099` -- the same `$D380` command wait ours sits in -- so the
+`$5xxx`, `$8000`-`$C000` and `$9000`+ differences in a raw diff are execution drift, not
+findings. Use it to confirm that something you suspect is the SAME, or to look at a
+region neither machine has written yet.
 
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.

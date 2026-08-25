@@ -581,6 +581,59 @@ int main(int argc, char **argv)
                   << sizeof(vm->physMem.state.data) << " bytes)\n";
     }
 
+    // Optional LOGICAL 64 KB dumps -- the exact counterpart of vsim's
+    // --dump-shadow / --dump-shadow-sub, and the reason they exist.
+    //
+    // FM77AV_MEM_DUMP above writes the 256 KB PHYSICAL space, which is the
+    // right thing when you know the mapping and the wrong thing when the
+    // mapping is what you are trying to compare. Two titles have now been
+    // chased to the point where every $FDxx access agrees between this
+    // reference and the core, and the question moves to what is IN memory --
+    // Luxsor disk 2 and Pro Yakyuu Fan disk A (identical FDC status on both,
+    // yet it repeats its whole drive scan seven times). Neither question can be
+    // asked without a logical dump on this side to diff against the core's.
+    //
+    // The first thing it settled was a NEGATIVE, which is what it is for:
+    // Luxsor's $05DE reads $00 on BOTH machines, and $3B7A-$3B99 is byte
+    // identical on both, so neither the data the loop copies nor the code it
+    // runs is the difference. Read the caveat below before reading much into a
+    // positive: once two machines take different branches their RAM diverges
+    // for uninteresting reasons, so a raw diff is only strong evidence where it
+    // shows AGREEMENT, or where the region is one neither has written yet.
+    //
+    // MainCPUAccess::NonDestructiveFetchByte is the CPU's own view with MMR and
+    // TWR applied, and is const -- reading $FD02 or $FD1B here does not advance
+    // the tape or the FDC, so the dump cannot perturb the run it is describing.
+    //
+    //   FM77AV_CPU_DUMP=ref.bin   fm77av_headless ... --stop-at-frame 900
+    //   vsim/obj_dir/Vemu ... --stop-at-frame 900 --dump-shadow ours.bin
+    //   cmp -l ref.bin ours.bin | head
+    //
+    // Frame numbers on the two machines are NOT the same instant: see
+    // vsim/sweep/ref-gate.py and the 1.00608 conversion.
+    struct { const char *env; const char *what; MemoryAccess *acc; } cpuDumps[] = {
+        { "FM77AV_CPU_DUMP",     "main", &vm->mainMemAcc },
+        { "FM77AV_SUBCPU_DUMP",  "sub",  &vm->subMemAcc  },
+    };
+    for (const auto &d : cpuDumps)
+    {
+        const char *out = std::getenv(d.env);
+        if (nullptr == out) continue;
+        FILE *fp = fopen(out, "wb");
+        if (nullptr == fp)
+        {
+            std::cerr << d.what << " cpu dump failed: " << out << "\n";
+            return 1;
+        }
+        for (unsigned int a = 0; a < 0x10000; ++a)
+        {
+            const unsigned char b = d.acc->NonDestructiveFetchByte((uint16_t)a);
+            fwrite(&b, 1, 1, fp);
+        }
+        fclose(fp);
+        std::cerr << d.what << " cpu dump: " << out << " (65536 bytes, logical)\n";
+    }
+
     // Optional VRAM dump for differential triage against the Verilator core.
     // Emits bank 0 then bank 1, each 0xC000 bytes: blue, red, green in order.
     if (const char *vramOut = std::getenv("FM77AV_VRAM_DUMP"))
