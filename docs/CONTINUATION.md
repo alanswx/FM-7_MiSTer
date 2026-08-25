@@ -73,6 +73,45 @@ Note `$E142` holds `20 18 96 0b` (`BRA $E15C`) in our initiate ROM, which is NOT
 `$FD1B` read -- and `$E142` is below `$FC00`, hence MMR-mappable. The reference is running
 RAM-resident code there too.
 
+*The sharpest fact for each, and it is the same fact:* **neither title ever executes the
+code that ENABLES the timer IRQ**, because that code lives in a RAM-resident driver the
+reference installs and this core does not.
+
+  * *Pro Yakyuu Fan A* makes **zero** `$FD02` writes. The reference makes one,
+    `VALUE:05` at `MAIN:E18B` -- bit 0 keyboard plus bit 2 timer. Memory dumps at the
+    same instant (ours frame 500, reference 503) show why: at `$E18A` the reference holds
+    `86 05 97 02` = `LDA #$05 / STA <$02`, and with `DP=$FD` that IS the `$FD02` write.
+    This core holds `cc c0 00 fd` there. Likewise `$E142`, where the reference reads
+    60,416 sector bytes, holds `b6 fd 1b a7 80 20 f4` = `LDA $FD1B / STA ,X+ / BRA` on the
+    reference and `20 27 04 97` here. **Both machines have RAM at `$E1xx`** -- both differ
+    from the initiate ROM, which is `$FF` across `$E180`-`$E19F` -- so this is not a
+    mapping question, it is that we have different BYTES there.
+  * *FM Sound Editor* makes the same two `$FD02` writes as the reference (`$10` at
+    `$016A`, `$40` at `$8347`) and the reference makes 163 MORE, alternating `$40` and
+    `$44` at `$F916` -- bit 2 again -- inside the same RAM-resident region as the `$F650`
+    routine.
+
+*What is NOT the difference:* the boot loader. `$5000`-`$50FF` is byte identical between
+the two machines, 640 observed bytes and zero differing. And the MMR: this core writes
+each `$FD8x` exactly once with the boot ROM's identity map (`$30`-`$3F`), while the
+reference remaps `$FD80`/`$FD81` repeatedly (`$00 $10 $12 $14 $18` / `$01 $11 $13 $15`)
+to load into different physical banks -- but that remapping is done BY the driver we
+never install, so it is downstream, not upstream.
+
+*Pro Yakyuu Fan's first real `seqdiff` divergence is unchanged by the NMI fix*: access
+42288, where this core runs the empty-drive poll at `$0449` seven times (28 extra
+collapsed entries) and the reference proceeds directly to `W $FD1A 01 pc=$FE4C`. Item 2's
+earlier analysis of that scan still stands -- both machines select empty drive 1, both
+read `$84`, both time out identically on a fixed 16-bit counter. The difference is that
+the reference runs the scan once and this core runs it seven times.
+
+*So the question for both is: what installs the driver at `$E1xx`/`$F6xx`, and what does
+this core put there instead?* Compare `--dump-shadow` against `FM77AV_CPU_DUMP` at
+several frames through the load and find the first frame at which `$E142` differs; that
+brackets the write. Do NOT read anything into the whole-image page diff -- by frame 500
+the two have long since diverged and almost everything differs for uninteresting reasons
+(REFERENCE.md trap 60).
+
 *The one benign difference to ignore in both traces:* `W $FD1B` at `pc=$FED6`. That is the
 data-register write/read-back test at `$FECA` and both machines pass it; only the
 register's idle content differs. It repeats every ~780 accesses and dominates `seqdiff`
