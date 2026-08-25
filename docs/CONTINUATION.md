@@ -131,6 +131,49 @@ fixing a CPU or controller bug rather than a title.
 Kugyokuden disk 1 and World Golf II disk 1 went BOTH-BLANK -> REF-WORSE, i.e. this core
 now draws where neither machine did.
 
+**BISECTED: Luxsor disk 1's regression is `c3b270c`, the cycle-steal change -- and it is
+NOT any one of its four files.** Every step measured, screenshot at frame 1980
+(blank = 3790, good = 12214):
+
+| build | result |
+|---|---|
+| session start `d09fe5d` | **12214** renders |
+| HEAD (all four fixes) | 3790 blank |
+| sector-register mirroring | exonerated -- its 15 sector reads are byte-identical to the reference, zero NOMATCH |
+| NMI mask reverted | 3790 -- not it |
+| `$FD1D` reverted | 3790 -- not it |
+| **cycle-steal reverted (4 files)** | **12214 -- THIS IS THE CAUSE** |
+| raster window widened 2/8 -> 4/8 | 3790 -- **not a threshold**, any cycle-steal breaks it |
+| `SCASSEL` restored in `alu_access` | 3790 -- not ALU aperture-port displacement |
+| `SVWEn` back to blanking-only | 3790 -- not sub writes during active display |
+
+So it is the `SCASSEL` widening in `MB60H010.v` itself, and none of the three consequential
+changes that ride on it.
+
+**The obvious explanation is DISPROVEN, do not re-propose it.** "The sub CPU is now too
+fast" fails twice over: 77AVEMU has NO CRTC halt at all (`CRTCHaltsSubCPU = false`), so its
+sub runs faster still and it renders this disk; and measured here the sub halts at frame
+274 with cycle-steal against 279 without, essentially identical. **The sub is not where the
+difference is.**
+
+**What actually changes is the MAIN CPU.** At frame 500, with cycle-steal it is still in
+the boot ROM's sector-transfer loop at `$FF94`-`$FF9C`; without it the main has already
+reached the title's own code at `$4087 STA $FD34`, a palette write. And it reads MORE, not
+less -- 152 READ SECTOR commands and 155,179 `$FD1B` data reads against 143 and 146,718.
+So it is not "slower", it is taking a path that loads more.
+
+*The open question, stated precisely:* **how does a change to SUB-CPU VRAM arbitration
+alter the MAIN CPU's path through its own loader?** `SCASSEL` reaches the main side only
+through `SBLANKn` (whose value is provably unchanged -- `HBLANKn & VBLANKn` before and
+after), `$D430` b7 and `$FD12` b1 (both built from `SBLANKn`), and `video_block`. Find the
+main-CPU-visible input that moved. `seqdiff` between a cycle-steal build and a reverted one
+on this disk is the obvious next instrument and has not been run.
+
+*The trade is currently net positive and should NOT be reverted casually:* cycle-steal
+gained six titles (both demo images, Luxsor disk 2, Pro Yakyuu Fan disk A, Shounen Mike,
+Woody Poco disk 1) and lost two. Reverting costs four titles and undoes the fix that made
+Luxsor disk 2 work.
+
 ***Two REAL regressions, both confirmed across all four sampled frames*** (1100, 1400,
 1700, 1980 -- blank at every one, so not the fixed-frame phase artifact of trap 49):
 
