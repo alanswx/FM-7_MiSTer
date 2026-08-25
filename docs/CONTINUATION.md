@@ -108,6 +108,46 @@ were taken with a wrecked sub and every downstream conclusion from them is suspe
 *Why nothing caught the NMI bug:* no gate test performs a warm reset with an NMI source
 live, and neither F-BASIC nor the 2019 AV demo takes a timer IRQ at all.
 
+**3c. Full 68-title AV sweep after the NMI and sector-register fixes.** Both sweeps at
+2000 frames, canonical shot at frame 1980, so the two sides are the same instant and
+comparable (`vsim/sweep/results-av-f2000-nmi-secreg.tsv` against
+`results-av-f2000-postfix.tsv`).
+
+| verdict | before | after |
+|---|---|---|
+| CORE-BLANK (reference draws, this core does not) | 9 | **6** |
+| CORE-WORSE | 3 | 3 |
+| TEXT-ONLY | 9 | 9 |
+| BOTH-BLANK | 28 | 26 |
+| MATCH | 16 | **19** |
+| REF-WORSE | 2 | 4 |
+
+*Gained (6 to MATCH):* the two FM77AV demo images, Luxsor disk 2, Pro Yakyuu Fan disk A,
+**Shounen Mike no Hitoritabi** and **Woody Poco disk 1**. The last two were never
+investigated for this -- they came free with the systemic fixes, which is the point of
+fixing a CPU or controller bug rather than a title.
+
+*Partly gained:* Mahjong Kyou Jidai Special disk 1, CORE-BLANK -> CORE-WORSE.
+Kugyokuden disk 1 and World Golf II disk 1 went BOTH-BLANK -> REF-WORSE, i.e. this core
+now draws where neither machine did.
+
+***Two REAL regressions, both confirmed across all four sampled frames*** (1100, 1400,
+1700, 1980 -- blank at every one, so not the fixed-frame phase artifact of trap 49):
+
+  * **Daiva Story 2 - Memory in Durga disk A**: MATCH -> CORE-BLANK. Was 9.2% coverage.
+  * **Luxsor disk 1**: MATCH -> CORE-BLANK. Was 23.0% coverage. Note disk 2 of the same
+    title was FIXED in the same session, which makes this the sharpest lead: the same
+    loader, one disk gained and one lost.
+
+Both need bisecting across the four RTL changes of this session -- `c3b270c` cycle-steal,
+`5431674` `$FD1D`, `6aefa9f` the NMI mask, and the sector-register mirroring. Take Luxsor
+disk 1 first for the disk-2 contrast.
+
+*Not a regression, do not chase:* **Wizardry IV disk A** reads MATCH -> CORE-BLANK in the
+table and is fine. Its samples are 12222 / 10635 / 10411 / 7143 bytes -- it renders
+throughout, and only the frame-1980 canonical lands mid-transition. The gate, which shoots
+at frame 600, passes it byte-identically. Trap 49.
+
 **4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
 broken title with no shared cause. Untouched.
 
