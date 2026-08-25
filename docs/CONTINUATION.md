@@ -132,6 +132,33 @@ here against the reference's `b6 fd 1b a7 80 20 f4` (`LDA $FD1B / STA ,X+ / BRA`
 timer-IRQ enable). Nothing is wrong with the FDC's DATA -- the first 7,207 bytes are
 byte-perfect -- and nothing is wrong with the MMR. **Four sectors simply never get read.**
 
+*Narrowed further, and this is where the trail currently ends.* The skipped sector is
+immediately adjacent to the drive scan. Comparing READ SECTOR requests (track:sector) in
+order, the two machines agree for seven reads and part company on the eighth:
+
+```
+ours: 00:01 00:02 00:03 00:04 00:05 00:01 00:02 00:01 [00:03] 00:04 00:05 0c:01 ...
+ref : 00:01 00:02 00:03 00:04 00:05 00:01 00:02 00:01 [00:02] 00:03 00:04 00:05 0c:01 ...
+```
+
+The loader reads the sector register and increments it -- `seqdiff` catches both machines
+in the SAME code, `R $FD1A ... pc=$FE65` then `W $FD1A ... pc=$FE69` -- so the CPU is not
+choosing to skip; **our sector register already holds a higher value when it is read
+back.** The obvious suspect, auto-increment on a single-record read, is NOT it:
+`wd1793.sv:585,623` gate the increment on `multisector`, which is `din[4]` and clear for
+`$80`.
+
+*What is ruled out around it:* the empty-drive status is qualitatively identical -- the
+same value SETS on both (`$84`/`$86` at `$0449`, `$3F`/`$7F` at `$0478`), only counts
+differ, in proportion to this core running the scan seven times against the reference's
+one. `$FFE0`, the scan's drive counter, advances 0 -> 1 correctly here. So it is not the
+empty-drive answer and not the counter.
+
+*Where to pick it up:* the sector-register value between the last correct read (`00:01`)
+and the skipped one. Trace `--trace-mem` on the FDC registers across that window and find
+what writes `$FD1A` -- or leaves it changed -- between them. That is a handful of bus
+cycles and should settle it.
+
 *Next:* find which four. This core issues 274 READ SECTOR commands against the
 reference's 86, 39 RESTORE against 5 and 37 SEEK against 9, so it is retrying heavily
 around there; the likely candidates are a multi-sector read terminating early, or a
