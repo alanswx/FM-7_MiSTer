@@ -269,6 +269,18 @@ reg         step_direction; // last step direction
 reg   [7:0] disk_track;		 // "real" heads position
 reg  [10:0]	data_length;	 // this many bytes to transfer during read/write ops
 io_state_t  state = STATE_IDLE;
+`ifdef DEBUG_FDC_SCAN
+// One line per change of the SECTOR register, whoever caused it. A bus trace
+// cannot show this: if the controller alters the register internally the CPU
+// never sees a write, and the next read-modify-write the loader does silently
+// skips a sector. Pro Yakyuu Fan disk A loses exactly four that way.
+reg [7:0] dbg_sec_d;
+always @(posedge clk_sys) begin
+  dbg_sec_d <= wdreg_sector;
+  if (wdreg_sector !== dbg_sec_d)
+    $display("SECREG %m $%02x -> $%02x  state=%0d", dbg_sec_d, wdreg_sector, state);
+end
+`endif
 
 // Reusable expressions
 wire  [7:0] next_track  = (din[6] ? din[5] : step_direction) ? disk_track - 1'd1 : disk_track + 1'd1;

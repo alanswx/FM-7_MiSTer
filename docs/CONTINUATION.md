@@ -154,10 +154,26 @@ differ, in proportion to this core running the scan seven times against the refe
 one. `$FFE0`, the scan's drive counter, advances 0 -> 1 correctly here. So it is not the
 empty-drive answer and not the counter.
 
-*Where to pick it up:* the sector-register value between the last correct read (`00:01`)
-and the skipped one. Trace `--trace-mem` on the FDC registers across that window and find
-what writes `$FD1A` -- or leaves it changed -- between them. That is a handful of bus
-cycles and should settle it.
+*And the sector register is NOT being corrupted -- measured, not argued.* `wd1793.sv` now
+carries a `DEBUG_FDC_SCAN` probe that prints every change of `wdreg_sector` with the
+instance name and the controller state. On drive 0 the sequence is
+`01 02 03 04 05 01 02 03 04 05 06 01 02` -- every transition is +1 or a wrap, and every
+one is at `state=0` (IDLE), i.e. **a CPU write**. The controller never touches it.
+
+That kills the read-back hypothesis above, and with it the `00:01 -> 00:03` "skip" in the
+request list: that list was built by pairing the most recent `$FD19`/`$FD1A` writes at
+each READ SECTOR command, and the register probe shows no such jump ever happens. **Do
+not trust that pairing; trust the probe.**
+
+*What still stands, because it is byte-exact:* this core's transferred data from byte
+7,208 matches the reference's stream at exactly +1024 bytes = +4 sectors, 100.0%. Four
+sectors' worth of data is genuinely missing. Since the sector register is clean, the
+reference must be READING sectors this core never asks for -- consistent with the request
+lists, where the reference walks tracks `0C 0D 00 05 06 0E 0F 10 11 12` while this core
+loops on `0C 0D 00`. So the question is not a corrupted register but **why this core's
+loader stops walking tracks**, which puts it back with the 7x drive-scan repetition.
+
+*Honest status: NOT FIXED.* Luxsor is fixed (item 3b); these two are not.
 
 *Next:* find which four. This core issues 274 READ SECTOR commands against the
 reference's 86, 39 RESTORE against 5 and 37 SEEK against 9, so it is retrying heavily
