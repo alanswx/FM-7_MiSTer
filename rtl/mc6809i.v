@@ -639,7 +639,24 @@ begin
 
         IntType <= IntType_nxt;
 
-        if (s != s_nxt)                 // Once S changes at all (default is '0'), release the NMI Mask.
+        // Release the NMI mask when S is loaded -- but NOT on the reset
+        // sequence's own initialisation of S.
+        //
+        // CPUSTATE_RESET assigns s_nxt = $FFFD, which satisfies `s != s_nxt`
+        // and cleared the mask on the very cycle that set it, so NMI was never
+        // actually masked after reset. The comment on that assignment already
+        // warned that logic here depends on the s/s_nxt delta.
+        //
+        // It only bites when a reset happens while an NMI source is ALREADY
+        // running, so a cold boot survives it -- the sub finishes its init
+        // before the first NMI arrives. The FM77AV's $FD13 sub-system reset is
+        // not a cold boot: the display NMI is running at the time. Luxsor disk 2
+        // writes $FD13 at pc=$E48A on frame 27, the sub restarts at $E000, an NMI
+        // lands during its $D000-$D35F clear loop -- before the init reaches its
+        // LDS -- and the 12-byte push goes to S=$FFFD, i.e. into ROM. The handler
+        // then returns through a PULS that reads ROM, and the sub CPU walks a
+        // NEG <$00 sled through VRAM from $8DE0 for the rest of the run.
+        if ((s != s_nxt) && (CpuState != CPUSTATE_RESET))
             NMIMask <= 1'b0;
     end
     else
