@@ -418,20 +418,61 @@ Luxsor disk 2 work.
     blank. See `docs/FM77AV.md`, the sub-system section, for what `$FD13` does and does
     not reset on the two references. Frames 1100/1400/1700/1980 go 3790/3790/3790/3790
     to 8538/3867/7550/7422, and frame 1980 is the reference's picture.
-  * **Luxsor disk 1** -- still blank, and **the TWR and keyboard-encoder fixes do not
-    touch it**: before and after, over 2000 frames, every counter is byte-identical
-    (16,655,821 main instructions, `pc now $014e`, sub 95.9% halted, `$fd05` reads
-    `$fe`). Measured with a same-tree baseline built from `1455e4a` in a worktree, as
-    trap 57 requires. Its own signature is a RUNAWAY: 12 instruction fetches from the
-    `$fdxx` I/O window, IRQ asserted and never taken, palette all zero, display off.
+  * **Luxsor disk 1** -- still blank. The TWR and keyboard-encoder fixes do not touch
+    it at all: over 2000 frames every counter is byte-identical (16,655,821 main
+    instructions, `pc now $014e`, sub 95.9% halted, `$fd05` reads `$fe`), measured
+    against a same-tree baseline built from `1455e4a` in a worktree as trap 57
+    requires. The `$FD13`/CRT fix moves **exactly one line** of that summary --
+    `display OFF` -> `display on` -- and nothing else; the screen is still 3790 at
+    all four sampled frames. Its own signature is a RUNAWAY: 12 instruction fetches
+    from the `$fdxx` I/O window, IRQ asserted and never taken, and **the digital
+    palette is all zeros**, i.e. all eight colours black. With the display now
+    enabled, that palette is the next thing to measure -- dump VRAM and compare the
+    `$FD38-$FD3F` write stream against the reference before assuming the CPU runaway
+    is the whole story.
 
 *Not a regression, do not chase:* **Wizardry IV disk A** reads MATCH -> CORE-BLANK in the
 table and is fine. Its samples are 12222 / 10635 / 10411 / 7143 bytes -- it renders
 throughout, and only the frame-1980 canonical lands mid-transition. The gate, which shoots
 at frame 600, passes it byte-identically. Trap 49.
 
-**4. Mahjong Kyou Jidai (66.8% reference, 82.7% here, 7.8% agreement).** The one
-broken title with no shared cause. Untouched.
+**4. Mahjong Kyou Jidai Special disk 1 -- FIXED, bar the title lettering.** The main
+CPU reaches the shared window `$FC80-$FCFF` only while the sub CPU is halted; this core
+let the write through, so the title's probe read back its own `$00`, concluded the sub
+was already halted, skipped the halt, and drove the drawing ALU through an aperture that
+then -- correctly -- dropped the writes. **211 line triggers issued, 10 landed.** See
+`docs/FM77AV.md` for the rule and both references' citations.
+
+| | before | after | reference |
+|---|---|---|---|
+| PNG at 1100/1400/1700/1980 | 13838 (all) | **42341** (all) | -- |
+| VRAM non-zero at frame 1980 | 6,343 | **33,098** | 33,017 |
+| VRAM bytes equal to reference | 63,150 | **92,704** | of 98,304 |
+| main-CPU `$D42B` / `$D411` writes | 550 / 279 | **485 / 278** | 485 / 278 |
+
+The ALU command stream is now the reference's **exactly**, and the frame-45 divergence is
+gone -- `W $FD05 80 pc=$1F0C`, the halt that was being skipped, now matches.
+
+*Measured clean along the way, do not re-check:* the FDC (110,784 data bytes both sides),
+`$FD37` (3 accesses, same values and PCs), the digital palette (29 writes, identical), and
+**the Bresenham line engine** -- `DEBUG_AVDRAW` now prints `LSTART`/`LEND` with a step
+count, and every line that started also finished at its exact endpoint
+(`(262,0)-(182,80)` in 80 steps, `(401,199)-(489,111)` in 88). The engine was never the
+fault; the writes never arrived.
+
+*What is left:* the large title kanji are still missing, about 5.7% of VRAM. It is an
+OVERDRAW -- ours has slightly MORE non-zero bytes than the reference (33,098 vs 33,017),
+so it is not absent pixels but pixels not painted over. The ALU command streams are now
+identical, so whatever draws the lettering is **not** the line engine. Look at the sub
+CPU's own VRAM writes or a kanji blit.
+
+*One divergence remains in 700 frames* (besides the benign `$FD1F` FDC logging shift):
+`R $FD3C` returns `$00` here against the reference's `$FC`. `PAL.v` now fills the five
+unused bits with 1s as both references do, and that read STILL returns `$00` -- so
+`PALDATA` is not being captured on that access at all. The capture is a filtered leading
+edge of `RDQEn` qualified by `~PLTREGn`; a read-modify-write like the `CLR $FD3C` this
+title uses may not present it the way a plain load does. Unverified, and benign here
+because `CLR` discards what it read.
 
 **5. `vsim/shots-ref/` is stale, and one of its rows is a BLESSED BLANK.**
 `run_tests.sh` reports COUNTERS on every FM-7 row -- main 5555 -> 9387 per frame

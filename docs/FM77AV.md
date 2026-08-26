@@ -370,6 +370,54 @@ no PM bit. This core follows CSP — the primary authority (REFERENCE.md section
 the only one of the two whose packing leaves room for both flags. The other six bytes are
 identical in both.
 
+## The shared window `$FC80-$FCFF` is open to the main CPU only while the sub is halted
+
+It is dual-ported RAM with one arbiter, and that arbiter is the halt. With the sub CPU
+running, a main-CPU **read returns `$FF`** and a **write is discarded**. Both references
+say so and neither confines it to the AV:
+
+| | read | write |
+|---|---|---|
+| 77AVEMU | `fm77avmemory.cpp:640-645` — `if(subSysHalt) return state.data[SUBSYS_SHARED_RAM_BEGIN+(addr&0x7F)]; return 0xFF;` | `:928-933` — `if(subSysHalt) {...} return;` |
+| CSP | `fm7/mainmem_readseq.cpp:145-150` — `if(!sub_halted) return 0xff;` | `mainmem_writeseq.cpp:29-34` — `if(!sub_halted) return;` |
+
+CSP's is plain FM-7 code, outside `_FM77AV_VARIANTS`, so the rule is the FM-7's, not an
+AV addition. It is the same rule this core already applied to the VRAM aperture and the
+sub I/O page (see the MMR quirks above) — the shared window was simply missed.
+
+**Software probes it**, which is why getting it wrong is not merely cosmetic. Mahjong
+Kyou Jidai Special disk 1 asks whether the sub is running by writing the window and
+reading it back:
+
+```
+$1efd  CLR $fc80      ; discarded while the sub runs
+$1f00  LDA $fc80      ; $FF -> window shut -> sub is running
+$1f03  BEQ $1f14      ; zero -> "already halted" -> skip the halt
+```
+
+A core that lets the write through reads back its own `$00`, concludes the sub is
+already halted, skips the halt, and then drives the drawing ALU through the MMR aperture
+with the sub running — where the writes are correctly dropped. 211 line triggers issued,
+10 landed.
+
+**Note where the read is served.** In this core the main-side read of `$FC80-$FCFF` comes
+from the `~(SUBSELn | RDQEn)` arm of `core.v`'s `MDATABUS_in` and never passes AVMEM's
+DOUT mux, so the gate has to be in both files: `SHARED_WRITE` in `AVMEM.v`, the `$FF` in
+`core.v`. Gating only the write produces byte-identical output, which is
+indistinguishable from a build that did not take.
+
+## Digital palette `$FD38-$FD3F` reads back `$F8 | value`
+
+The eight FM-7 palette entries are 3 bits each and **the five unused bits read as 1**,
+not 0 — 77AVEMU returns `0xF8|digitalPalette[n]` (`fm77av/fm77avio.cpp:933`) and CSP
+stores `val|0xf8` when the entry is set and hands that straight back
+(`fm7/display.cpp:479`, `:2701`). Same shape as `$D432` and `$FD93`: an FM-7 register's
+undriven bits float high. This core returned `{5'd0, value}` until `PAL.v` was corrected.
+
+No title in hand is known to depend on it — Mahjong Kyou Jidai's one read of `$FD3C` is
+part of a `CLR $FD3C`, which discards what it read, so both machines write `$00`
+regardless.
+
 ## `$FD00` is not the same register on the AV
 
 haserin09's FM-7/AV difference table (`refs/haserin09/difference.html`, the

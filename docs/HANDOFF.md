@@ -11,8 +11,8 @@ Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate green.
 
 Against 77AVEMU over the 68-image FM77AV set (`vsim/sweep/`, both runs at 2000
 frames, canonical shot at frame 1980, so the two sides are the same instant).
-**This table predates the three fixes below and undercounts them** — FM Sound
-Editor and Daiva Story 2 disk A both move out of CORE-BLANK:
+**This table predates every fix below and undercounts them** — FM Sound Editor,
+Daiva Story 2 disk A and Mahjong Kyou Jidai all move out of CORE-BLANK/CORE-WORSE:
 
 | verdict | before | after |
 |---|---|---|
@@ -79,6 +79,17 @@ ones — the CRT flag on power-on, the INS LED on `$FD13` as well, which is what
 does. Fixed **Daiva Story 2 disk A**, which was drawing the whole time: 4067 non-zero
 VRAM bytes against the reference's 4078, into a screen held black.
 
+**`AVMEM.v` + `core.v` — the shared window `$FC80-$FCFF` was open while the sub CPU
+ran.** The main CPU reaches it only while the sub is halted: read `$FF`, write
+discarded, otherwise. Both references agree and neither confines it to the AV (CSP's
+`read_shared_ram` is plain FM-7 code). Mahjong Kyou Jidai *probes* it — `CLR $fc80` /
+`LDA $fc80` / `BEQ` — and reading back its own `$00` told it the sub was already
+halted, so it skipped the halt and drove the drawing ALU through an aperture that then
+correctly dropped the writes: **211 line triggers issued, 10 landed**. Note the read is
+served from `core.v`'s `~(SUBSELn | RDQEn)` mux arm and never passes AVMEM's DOUT, so
+the gate lives in both files — gating only the write gives byte-identical output, which
+looks exactly like a build that did not take.
+
 ## Tools built this session — use these before inventing anything
 
 Every wrong answer this session came from inferring a measurement the other
@@ -112,19 +123,27 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. It is
-   **not** touched by any fix below: before and after, every counter over 2000
-   frames is byte-identical, measured against a same-tree baseline built from
-   `1455e4a` in a worktree (trap 57).
-2. **A fresh 68-title AV sweep.** The three fixes above are systemic — a memory
-   translation, a sub-system handshake and a display latch — and the set has not
-   been re-measured since. Build the "before" from the same tree in the same
+1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
+   and encoder fixes do not touch it — every counter over 2000 frames is
+   byte-identical against a same-tree baseline built from `1455e4a` in a
+   worktree (trap 57). The `$FD13`/CRT fix changes one line, `display OFF` ->
+   `display on`, and it is still blank: **its digital palette is all zeros**,
+   so all eight colours are black. Measure that before the CPU runaway.
+2. **A fresh 68-title AV sweep.** The fixes above are systemic — a memory
+   translation, a sub-system handshake, a display latch and a shared-window
+   gate — and the set has not been re-measured since. Build the "before" from the same tree in the same
    session (trap 57); the table at the top of this file predates all three.
-3. **Shounen Mike** at 85.79 %; **Mahjong Kyou Jidai** untouched.
-4. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
+3. **Mahjong Kyou Jidai Special disk 1's title lettering** — the title now
+   renders (see the shared-window fix above); the large kanji do not, about
+   5.7% of VRAM. It is an OVERDRAW, not missing pixels: ours has 33,098 non-zero
+   VRAM bytes against the reference's 33,017, and the ALU command stream is now
+   the reference's exactly. So whatever paints it is not the line engine.
+4. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
+   the logo reads grey/olive here and green on the reference.
+5. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
    animations photographed at one global `SHOT_AT`, so they catch whatever
    instant they land on. Kohakuiro draws its logo at frame ~199 and fades by 400.
-5. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work
+6. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work
    on hardware.
 
 ## Luxsor disk 1 — read this before touching it
