@@ -70,7 +70,9 @@ in Quartus. Simulation cannot see that class at all.
 
 | file | what |
 |---|---|
+| [docs/HANDOFF.md](docs/HANDOFF.md) | **start here** — current state, the tools, and how not to waste the first hour |
 | [TODO.md](TODO.md) | open work, current |
+| [docs/CONTINUATION.md](docs/CONTINUATION.md) | per-title detail behind the handoff |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | how to work on this core without repeating known mistakes |
 | [docs/IO_MAP.md](docs/IO_MAP.md) | `$fdxx` register facts, with citations |
 | [docs/TESTING.md](docs/TESTING.md) | the regression suite and the breadth sweep |
