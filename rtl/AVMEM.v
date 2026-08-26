@@ -154,10 +154,31 @@ wire mmr_write = av_write && (io_sel || submon_io_sel || initrom_io_sel);
 
 // TWR maps the 1 KB window at $7c00-$7fff into page zero. MMR is checked only
 // below $fc00; the entire $fc00-$ffff range stays on the physical FM77AV page.
+//
+// $FD92 is an OFFSET ADDED TO THE CPU ADDRESS, not a base address: with the
+// register at 0 the window sits over physical $07c00, not $00000. Both
+// references say so, and independently. 77AVEMU builds
+// `TWRAddr = (data<<8) + 0x7C00` and translates `(TWRAddr + (addr & 0x3FF))
+// & 0xFFFF` (memory/fm77avmemory.cpp:1239-1243, memory/fm77avmemory.h:348-351;
+// its own comment reads "Experiment indicated TWR address 0 will map physical
+// 0x07C00 to main CPU memory space 0x7C00"). CSP computes
+// `((window_offset * 256) + addr) & 0x0ffff` over the FULL logical address and
+// returns FM7_MAINMEM_AV_PAGE0 (fm7/mainmem_mmr.cpp:16-22). Both wrap at 64 KB,
+// so the window can never leave RAM page 0.
+//
+// This used to drop the $7c00, which put every window 31 KB too low. It is
+// invisible until one title both banks code into low RAM page 0 AND uses the
+// window. FM Sound Editor does exactly that: it copies 4 KB to physical
+// $00000 through MMR page 8 at frame 22, then from frame 221 walks an
+// $ff-write / read-back / $00-write RAM-size probe through the window from
+// register $00 to $70. On the reference that probe covers $07c00-$0efff; here
+// it started at $00000 and erased the code, so the trampoline's later
+// `JSR $8000` into that bank ran 4 KB of zeroes as a `NEG <$00` sled.
 reg [17:0] physical_address;
+wire [15:0] twr_physical = {twr_address, 8'd0} + MADDRBUS;   // wraps at 64 KB
 always @* begin
   if (twr_enable && (MADDRBUS >= 16'h7c00) && (MADDRBUS < 16'h8000))
-    physical_address = {2'b00, twr_address, 8'd0} + {8'd0, MADDRBUS[9:0]};
+    physical_address = {2'b00, twr_physical};
   else if (mmr_enable && (MADDRBUS < 16'hfc00))
     physical_address = {mmr[mmr_segment][MADDRBUS[15:12]], MADDRBUS[11:0]};
   else

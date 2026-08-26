@@ -975,6 +975,11 @@ static uint16_t pre_m_addr = 0, pre_s_addr = 0;
 static uint8_t  pre_m_din = 0, pre_m_dout = 0, pre_m_rw = 1, pre_m_e = 0;
 static uint8_t  pre_s_din = 0, pre_s_dout = 0, pre_s_rw = 1, pre_s_e = 0;
 static uint8_t  pre_m_mmap = 0, pre_m_romdata = 0;
+// The MMR/TWR-translated physical address AVMEM actually presented to the RAM
+// blocks. A --trace-mem line without it cannot tell "the CPU wrote $8000" apart
+// from "the CPU wrote physical $38000 because MMR was off" -- which is the whole
+// question on any AV title that banks code in and out of $8000.
+static uint32_t pre_m_phys = 0;
 // Address of the instruction currently executing, for the I/O trace.
 static uint16_t m_cur_pc = 0;
 
@@ -1247,11 +1252,11 @@ static void sim_cycle() {
 		if (pre_m_addr >= trace_mem_lo && pre_m_addr <= trace_mem_hi &&
 		    in_trace_window() && mem_trace_lines < trace_max) {
 			FILE* o = trace_cpu_file ? trace_cpu_file : stdout;
-			fprintf(o, "%7d mem  %c $%04x %s $%02x   rom=$%02x mmap=%c%c%c%c%c%c%c%c"
+			fprintf(o, "%7d mem  %c $%04x %s $%02x   phys=$%05x rom=$%02x mmap=%c%c%c%c%c%c%c%c"
 			           " (RDQE MIOS SUBSEL BTRDY BTROM RAM1HB2 RAM1HB1 FCXX)  pc=$%04x\n",
 			        video.count_frame, pre_m_rw ? 'R' : 'W', pre_m_addr,
 			        pre_m_rw ? "->" : "<-", pre_m_rw ? pre_m_din : pre_m_dout,
-			        pre_m_romdata,
+			        pre_m_phys, pre_m_romdata,
 			        (pre_m_mmap & 0x80) ? '1' : '0', (pre_m_mmap & 0x40) ? '1' : '0',
 			        (pre_m_mmap & 0x20) ? '1' : '0', (pre_m_mmap & 0x10) ? '1' : '0',
 			        (pre_m_mmap & 0x08) ? '1' : '0', (pre_m_mmap & 0x04) ? '1' : '0',
@@ -1493,6 +1498,7 @@ static void sim_cycle() {
 	pre_m_addr = top->dbg_m_addr; pre_m_din = top->dbg_m_din;
 	pre_m_dout = top->dbg_m_dout; pre_m_rw  = top->dbg_m_rw;  pre_m_e = top->dbg_m_e;
 	pre_m_mmap = top->dbg_mmap;   pre_m_romdata = top->dbg_romdata;
+	pre_m_phys = top->dbg_av_phys;
 	pre_s_addr = top->dbg_s_addr; pre_s_din = top->dbg_s_din;
 	pre_s_dout = top->dbg_s_dout; pre_s_rw  = top->dbg_s_rw;  pre_s_e = top->dbg_s_e;
 
