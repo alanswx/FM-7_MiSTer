@@ -268,9 +268,32 @@ assign VRAM_DIN   = DIN;
 wire shared_sel = machine_av &&
                   (physical_address >= 18'h3fc80) &&
                   (physical_address < 18'h3fd00);
+// THE MAIN CPU REACHES THE SHARED WINDOW ONLY WHILE THE SUB CPU IS HALTED.
+// It is dual-ported RAM with one arbiter, and that arbiter is the halt: with the
+// sub running, a main-CPU read of $FC80-$FCFF returns $FF and a write is
+// discarded. Both references say so, independently and in the same words --
+// 77AVEMU `memory/fm77avmemory.cpp:640-645` (read: `if(subSysHalt) return
+// state.data[SUBSYS_SHARED_RAM_BEGIN+(addr&0x7F)]; return 0xFF;`) and `:928-933`
+// (write: `if(subSysHalt) ...; return;`), and CSP `fm7/mainmem_readseq.cpp:145-150`
+// / `mainmem_writeseq.cpp:29-34` (`if(!sub_halted) return 0xff;` / `return;`).
+//
+// This core already applied that rule to the VRAM aperture and the sub I/O page
+// and missed it here, on the one window every F-BASIC sub call goes through.
+//
+// Software PROBES it. Mahjong Kyou Jidai Special disk 1 asks whether the sub is
+// running by writing the window and reading it back:
+//
+//   $1efd  CLR $fc80      ; discarded while the sub runs
+//   $1f00  LDA $fc80      ; $FF there, $00 here
+//   $1f03  BEQ $1f14      ; zero -> "window is open, sub already halted", skip
+//   $1f05..$1f13          ; ...the wait-and-halt this core therefore skipped
+//
+// It then drove the drawing ALU through the MMR aperture with the sub still
+// running, so that aperture -- correctly gated -- dropped the writes: 211 line
+// triggers issued and 10 landed, and the title's background fill never happened.
 assign SHARED_SEL   = shared_sel;
 assign SHARED_ADDR  = 10'h380 + {3'd0, physical_address[6:0]};
-assign SHARED_WRITE = av_write && shared_sel;
+assign SHARED_WRITE = av_write && shared_sel && sub_open;
 assign SHARED_DIN   = DIN;
 
 // The sub-system I/O page is physical $1D400-$1D4FF, i.e. sub $D400-$D4FF.
@@ -552,6 +575,6 @@ end
 assign DOUT = bootram_sel ? boot_q :
               vram_addr_sel ? (sub_open ? VRAM_DOUT : 8'hff) :
               subio_sel ? SUBIO_DOUT :
-              shared_sel ? SHARED_DOUT : ram_q;
+              shared_sel ? (sub_open ? SHARED_DOUT : 8'hff) : ram_q;
 
 endmodule

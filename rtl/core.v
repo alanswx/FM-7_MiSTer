@@ -402,7 +402,20 @@ assign MDATABUS_in =
   (AV_FD17_SEL & ~RDQEn) ? AV_FD17_dout :
   ~IOSn ? 8'hff :
 
-  ~(SUBSELn | RDQEn) ? SRDATA_out :
+  // The shared window at $fc80-$fcff, and the main CPU reaches it ONLY while the
+  // sub CPU is halted -- otherwise the read is $ff. The write half of this rule
+  // lives in AVMEM's SHARED_WRITE; this is the read half, and it has to be here
+  // because the main-side read is served straight from the SRAM through this
+  // arm and never passes AVMEM's DOUT mux.
+  //
+  // Both references, and neither confines it to the AV: 77AVEMU
+  // `memory/fm77avmemory.cpp:640-645` returns `0xFF` unless `subSysHalt`, and
+  // CSP's `read_shared_ram` is plain FM-7 code -- `if(!sub_halted) return 0xff;`
+  // (`fm7/mainmem_readseq.cpp:145-150`), with `write_shared_ram` the same
+  // (`mainmem_writeseq.cpp:29-34`).
+  //
+  // SHALTn is active low, so SHALTn=1 is "sub running" and the window is shut.
+  ~(SUBSELn | RDQEn) ? (SHALTn ? 8'hff : SRDATA_out) :
   ~(BTROMn | BTRDYn) | ~RAM1HB2n ? ROMDATA :
   // `(MADDRBUS[15] & FCXXn)` is $8000-$fbff with the $fd0f window switched to
   // RAM, and without it that whole 31 KB READ AS ZERO.

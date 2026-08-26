@@ -101,6 +101,9 @@ reg        line_active;
 reg [15:0] lx, ly;
 reg        vx_neg, vy_neg;
 reg [16:0] ldx, ldy, balance;
+`ifdef DEBUG_AVDRAW
+reg [31:0] line_steps;
+`endif
 reg  [3:0] stip_idx;
 
 reg  [1:0] state;
@@ -384,6 +387,14 @@ always @(posedge CLKSYS) begin
         8'h2a: begin y1_hi <= SDATA; y1 <= {SDATA, y1[7:0]}; end
         8'h2b: begin
           // Writing the low byte of Y1 latches it and starts the line.
+`ifdef DEBUG_AVDRAW
+          // Line START. The counterpart END print is in ST_WRITE below, with the
+          // number of pixel steps actually taken -- a line that reports fewer
+          // steps than its span is one the engine abandoned, and a line that
+          // never prints END is one that was restarted before it finished.
+          $display("AVDRAW LSTART mode=%0d (%0d,%0d)-(%0d,%0d) active=%0d",
+                   start_mode, x0, y0, x1, start_y1, line_active);
+`endif
           y1 <= start_y1;
           lx <= x0;
           ly <= y0;
@@ -395,6 +406,9 @@ always @(posedge CLKSYS) begin
           line_mode <= start_mode;
           line_active <= 1'b1;
           stip_idx <= 4'd15;
+`ifdef DEBUG_AVDRAW
+          line_steps <= 32'd0;
+`endif
           state <= ST_READ;
         end
         default: ;
@@ -428,6 +442,9 @@ always @(posedge CLKSYS) begin
         if (cmp_active && ~line_active) compare_result <= pass_bits;
         if (line_active) begin
           stip_idx <= stip_idx - 4'd1;
+`ifdef DEBUG_AVDRAW
+          line_steps <= line_steps + 32'd1;
+`endif
           if (line_more) begin
             case (line_mode)
               LN_VERT: ly <= ly_step;
@@ -447,6 +464,9 @@ always @(posedge CLKSYS) begin
             state <= ST_READ;
           end
           else begin
+`ifdef DEBUG_AVDRAW
+            $display("AVDRAW LEND   at (%0d,%0d) steps=%0d", lx, ly, line_steps);
+`endif
             line_active <= 1'b0;
             line_mode <= LN_NONE;
             state <= ST_IDLE;
