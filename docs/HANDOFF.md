@@ -134,10 +134,14 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
    gate — and the set has not been re-measured since. Build the "before" from the same tree in the same
    session (trap 57); the table at the top of this file predates all three.
 3. **Mahjong Kyou Jidai Special disk 1's title lettering** — the title now
-   renders (see the shared-window fix above); the large kanji do not, about
-   5.7% of VRAM. It is an OVERDRAW, not missing pixels: ours has 33,098 non-zero
-   VRAM bytes against the reference's 33,017, and the ALU command stream is now
-   the reference's exactly. So whatever paints it is not the line engine.
+   renders (see the shared-window fix above); the large kanji do not, and it is
+   a SECOND fault: **the sub-system BUSY flag never clears**, so the main CPU
+   spins at `$2F87` instead of issuing the sub calls that draw them. It reads
+   free 3 times in 1100 frames where the reference reads free 33,973 times.
+   `seqdiff` calls the whole window clean — it collapses runs, so the spin is
+   invisible (trap 65). Everything else is ruled out with measurements; see
+   `CONTINUATION.md`. The BUSY semantics are trap 55 territory and the
+   references disagree, so do not touch them without a same-tree sweep.
 4. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
    the logo reads grey/olive here and green on the reference.
 5. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract

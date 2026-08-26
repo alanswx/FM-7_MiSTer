@@ -460,11 +460,42 @@ count, and every line that started also finished at its exact endpoint
 (`(262,0)-(182,80)` in 80 steps, `(401,199)-(489,111)` in 88). The engine was never the
 fault; the writes never arrived.
 
-*What is left:* the large title kanji are still missing, about 5.7% of VRAM. It is an
-OVERDRAW -- ours has slightly MORE non-zero bytes than the reference (33,098 vs 33,017),
-so it is not absent pixels but pixels not painted over. The ALU command streams are now
-identical, so whatever draws the lettering is **not** the line engine. Look at the sub
-CPU's own VRAM writes or a kanji blit.
+*What is left, and it is a SECOND and unrelated fault: the sub-system BUSY flag never
+clears, so the main CPU spins instead of issuing the sub calls that draw the title
+kanji.* At `$2F87`, the wait-for-not-busy at the head of a sub call:
+
+| at `$2F87` | reads `$FE` (busy) | reads `$7E` (free) | halts at `$2F8E` |
+|---|---|---|---|
+| ours | 2,353,206 | **3** | 3 |
+| reference | 1,137,557 | **33,973** | 33,972 |
+
+The main CPU makes 1,314,548 reads of `$FD05` at that one PC after frame 700 and gets
+free three times in 1100 frames. **`seqdiff.py` reports the whole 1100-frame window as
+clean** apart from two known-benign rows -- it collapses runs, so a spin loop is
+invisible to it (trap 65). The tell was the raw line counts, ours 2,902,173 filtered
+against the reference's 1,785,020, and a histogram of what ours does that the reference
+does not.
+
+The lettering itself is confined to VRAM **rows 16-83**; below row 84 the two machines
+are byte-identical. Render the two dumps to compare -- the reference's band carries
+麻雀名時代 SPECIAL over the artwork, ours carries the artwork alone.
+
+*Ruled out for the lettering, with measurements -- do not re-check:* the ALU line engine
+(command streams byte-identical, only PSET and TILEPAINT, compare never enabled), the
+plane mask `$D41B` (applied, `AVHDRAW.v:284-286`), the compare path (matches 77AVEMU
+`fm77avcrtc.cpp:849-877` including the `condition&1` sense), the sub CPU's own VRAM
+writes (a uniform full-screen clear, 1600 per 20-row band across all 200 rows), and the
+MMR VRAM aperture gate (`DEBUG_AVDRAW`: 55,444 accepted writes, **zero** blocked, zero
+ALU intercepts).
+
+*The lead.* Our sub executes ~100,000 `$D40A` command cycles over 2000 frames against the
+reference's ~36,000 pro-rata, and BUSY ends stuck set (`BUSY=1 SHALTn=1 SHALTACn=1`) with
+the sub CPU running. The sub monitor's idle loop clears BUSY once at `$E382` (`TST $d40a`)
+and then polls `$D382` without re-reading `$D40A`, so BUSY should sit CLEAR while it
+idles. Find why ours does not. **Note the BUSY set/clear semantics are trap 55 territory
+and the references disagree** -- 77AVEMU argues from the schematic that the halt
+ACKNOWLEDGE raises the flag (`fm77av/fm77avio.cpp:65-100`), `FLAGS.v` follows MAME and CSP
+in raising it on the halt REQUEST. Do not change that without a same-tree sweep.
 
 *One divergence remains in 700 frames* (besides the benign `$FD1F` FDC logging shift):
 `R $FD3C` returns `$00` here against the reference's `$FC`. `PAL.v` now fills the five
