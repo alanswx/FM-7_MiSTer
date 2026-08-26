@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
@@ -653,6 +654,43 @@ int main(int argc, char **argv)
         }
         fclose(fp);
         std::cerr << d.what << " cpu dump: " << out << " (65536 bytes, logical)\n";
+    }
+
+    // Optional MMR dump: all segments' sixteen page registers, plus the live
+    // segment select.
+    //
+    // Luxsor disk 1 needs this. Its logical $6xxx comes to point at
+    // never-written physical RAM on this reference while the core still sees
+    // the loader there -- yet every MMR register VALUE sequence agrees between
+    // the two machines, and so do $FD90 and $FD93. The suspicion is that the
+    // two disagree on WHICH SEGMENT a given $FD8x write landed in: a write goes
+    // to whichever segment $FD90 currently selects, so identical value
+    // sequences on the two ports separately do not imply identical
+    // interleaving, and the four segment maps can end up different. Only a dump
+    // of the maps themselves settles it.
+    //
+    // MMR[] holds the physical BASE ADDRESS, not the 6-bit register value the
+    // CPU wrote, so the core's register value is base >> 12.
+    if (const char *mmrOut = std::getenv("FM77AV_MMR_DUMP"))
+    {
+        FILE *fp = (0 == strcmp(mmrOut, "-")) ? stderr : fopen(mmrOut, "w");
+        if (nullptr == fp)
+        {
+            std::cerr << "mmr dump failed: " << mmrOut << "\n";
+            return 1;
+        }
+        const auto &ms = vm->mainMemAcc.state;
+        fprintf(fp, "MMR enabled=%d segment=%u\n", ms.MMREnabled ? 1 : 0,
+                (unsigned)ms.MMRSEG);
+        for (int seg = 0; seg < 4; ++seg)
+        {
+            fprintf(fp, "  seg%d:", seg);
+            for (int pg = 0; pg < 16; ++pg)
+                fprintf(fp, " %02x", (unsigned)(ms.MMR[seg][pg] >> 12));
+            fprintf(fp, "\n");
+        }
+        if (fp != stderr) fclose(fp);
+        std::cerr << "mmr dump: " << mmrOut << "\n";
     }
 
     // Optional VRAM dump for differential triage against the Verilator core.

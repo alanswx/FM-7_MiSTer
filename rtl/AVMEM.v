@@ -85,6 +85,38 @@ reg [1:0] mmr_segment;
 reg [7:0] twr_address;
 reg       mmr_enable;
 assign MMR_ENABLED = mmr_enable;
+
+`ifdef DEBUG_MMR
+// Dump all four segment maps whenever one changes. The counterpart of
+// FM77AV_MMR_DUMP in tools/77avemu_headless.cpp.
+//
+// A $FD8x write lands in whichever segment $FD90 currently selects, so two
+// machines can emit identical $FD8x and $FD90 VALUE sequences and still end
+// up with different segment maps if the interleaving differs. Comparing the
+// write streams cannot see that; only the maps can. Luxsor disk 1 is the case
+// -- its logical $6xxx points at the loader here and at never-written physical
+// RAM on the reference, with every register value sequence agreeing.
+integer dbg_s, dbg_p;
+reg [5:0] dbg_prev [0:3][0:15];
+reg dbg_diff;
+always @(posedge CLKSYS) begin
+  dbg_diff = 1'b0;
+  for (dbg_s = 0; dbg_s < 4; dbg_s = dbg_s + 1)
+    for (dbg_p = 0; dbg_p < 16; dbg_p = dbg_p + 1)
+      if (mmr[dbg_s][dbg_p] !== dbg_prev[dbg_s][dbg_p]) dbg_diff = 1'b1;
+  if (dbg_diff) begin
+    $write("MMRMAP en=%0d seg=%0d", mmr_enable, mmr_segment);
+    for (dbg_s = 0; dbg_s < 4; dbg_s = dbg_s + 1) begin
+      $write(" | s%0d:", dbg_s);
+      for (dbg_p = 0; dbg_p < 16; dbg_p = dbg_p + 1) $write(" %02x", mmr[dbg_s][dbg_p]);
+    end
+    $display("");
+  end
+  for (dbg_s = 0; dbg_s < 4; dbg_s = dbg_s + 1)
+    for (dbg_p = 0; dbg_p < 16; dbg_p = dbg_p + 1)
+      dbg_prev[dbg_s][dbg_p] <= mmr[dbg_s][dbg_p];
+end
+`endif
 reg       twr_enable;
 reg       bootram_write_enable;
 reg [1:0] submon_sel;

@@ -283,20 +283,35 @@ reads `$CC` -- which is 77AVEMU's fill for never-written physical RAM
 (`memory/fm77avmemory.cpp:149`), so it is real content and not a dump artifact -- while
 this core still sees the loader there.
 
-**So the reference's logical `$6xxx` comes to point at never-written physical memory and
-this core's still points at the loaded page.** That is an MMR mapping difference -- and
-here is the contradiction to resolve: **every MMR register VALUE sequence agrees**. Page
-registers `$FD80`-`$FD87` all take the same values (page 6 is `$36` on both), and the
-`$FD90` segment-select and `$FD93` enable sequences match. Only the COUNTS differ (over
-matched windows: `$FD86` 21 against 18, `$FD90` 27 against 21, `$FD93` 35 against 23),
-which is a symptom of this core looping, not obviously a cause.
+**RETRACTED -- the `$6xxx` difference is an artifact of REFERENCE.md trap 60, which I
+wrote earlier the same day and then walked into.** `--dump-shadow` is a HISTORY of the
+last byte the CPU saw at each logical address; `FM77AV_CPU_DUMP` is a true SNAPSHOT of
+current memory. This core read `$6133` at frame 6 and never again, so its shadow still
+shows the loader while real memory has moved on. The reference's `$CC` is current reality.
+**Nothing was wrong with `$6xxx`.**
 
-*The most likely resolution, untested:* `$FD8x` writes land in **whichever segment `$FD90`
-currently selects** (`AVMEM.v`: `mmr[mmr_segment][MADDRBUS[3:0]] <= DIN[5:0]`). Identical
-value sequences on `$FD90` and `$FD8x` separately do NOT imply identical interleaving, so
-the four segments can end up holding different maps. **Dump all four segments' sixteen
-registers on both machines and compare** -- this core needs a debug print of the `mmr`
-array; 77AVEMU keeps the same state in `MainCPUAccess`. That is the next measurement.
+Settled by building the instrument instead of inferring: `DEBUG_MMR=1` on this core and
+`FM77AV_MMR_DUMP` on the harness both print all four segment maps. At frame 241 they are
+**byte-identical**:
+
+```
+ours  en=1 seg=3 | s0..s2: 30 31 32 ... 3f | s3: 34 31 32 33 34 35 36 37 ...
+ref   en=1 seg=3 | s0..s2: 30 31 32 ... 3f | s3: 34 31 32 33 34 35 36 37 ...
+```
+
+Same enable, same segment, same maps, page 6 -> `$36` on both. **The MMR is not the
+difference**, and neither is the segment interleaving the previous note suspected.
+
+*Where that leaves it.* The comparison at frames 240/241 is worthless for any page the
+core has stopped reading, which is most of them -- so the only trustworthy rows in that
+table are the ones the core was still actively touching. **Redo it with a live snapshot on
+both sides, or restrict it to addresses the shadow's `.known` mask says were read
+recently.** Until then the honest position is that the divergence has been narrowed to
+the loader's dispatch table not being rewritten, and no further.
+
+*Still true and still the lead:* the reference rewrites `$5090` twice between frames 240
+and 300 and this core never does. Find what executes that rewrite on the reference --
+bracketing with `FM77AV_CPU_DUMP` works and cost about a minute per sample.
 
 *Measured clean and not worth re-checking:* the FDC (first 142 reads identical, zero
 NOMATCH), the sector data (~99.8% over 40,000 bytes), the TWR window (640 bytes, zero

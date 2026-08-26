@@ -105,6 +105,12 @@ endif
 # All of it is low volume except D77SEC. See TODO.md P4-1.
 # `make DEBUG_JOY=1` prints one line per PSG port-B write (stick selection) and
 # per port-A read (the byte handed back), from rtl/SOUND.v.
+# `make DEBUG_MMR=1` prints all four MMR segment maps whenever any of them
+# changes -- the counterpart of FM77AV_MMR_DUMP on the reference harness.
+ifeq ($(DEBUG_MMR),1)
+V_DEFINE += +define+DEBUG_MMR
+endif
+
 ifeq ($(DEBUG_JOY),1)
 V_DEFINE += +define+DEBUG_JOY
 endif
