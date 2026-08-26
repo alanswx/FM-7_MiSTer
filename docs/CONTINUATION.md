@@ -150,6 +150,43 @@ NOT any one of its four files.** Every step measured, screenshot at frame 1980
 So it is the `SCASSEL` widening in `MB60H010.v` itself, and none of the three consequential
 changes that ride on it.
 
+**AND IT IS NOT A REGRESSION AT ALL -- cycle-steal made this core MORE correct and
+unmasked a pre-existing fault.** `seqdiff` against the reference, both builds, same
+machine-time window:
+
+| build | first divergence from 77AVEMU |
+|---|---|
+| cycle-steal REVERTED (renders!) | access 20,604, `R $FD05 FE` against `$7E` |
+| HEAD, cycle-steal ON (blank) | **none** -- matches the reference there |
+
+That `$FD05` b7 difference is the sub-BUSY race. **The build that RENDERS is the one that
+LOSES it**; the build that matches the reference goes blank. Disk 1's old picture was an
+artifact of losing a race, exactly like `$FD00` b0 on disk 2 -- REFERENCE.md trap 55,
+written earlier in the same session for the same title.
+
+With HEAD, every `seqdiff` divergence on this disk is the benign `$FED6` data-register
+read-back test. The main-CPU `$FDxx` stream matches the reference completely and the
+screen is still blank, which is where disk 2 was before the NMI fix.
+
+**Where it actually fails, `WDMATCH` against `--trace-fdc` over matched windows** (ours
+frame 1200, reference 1207):
+
+```
+read #142   both:  39:0:3 39:0:4 39:0:5 39:1:1
+read #143   ref :  4:0:1 4:0:2 4:0:3 4:0:4 4:0:5 4:1:1 ... 5:0:1   <- carries on loading
+read #143   ours:  16:0:5 16:1:1 16:1:2 16:1:3  16:0:5 16:1:1 ...  <- retries forever
+```
+
+555 reads here against 183 there by the same frame. **The first 142 reads are identical**,
+zero `WDNOMATCH`, and the transferred data matches ~99.8% across 40,000 bytes (the residual
+being the reference's one-position pre-side-effect log shift at run boundaries -- the same
+figure Pro Yakyuu Fan showed when its streams were effectively identical).
+
+So: same sectors, same bytes, no read failures -- and then the loader picks a different
+next track and loops on four sectors of track 16 for the rest of the run. **The decision is
+computed from something other than the disk data.** Trace the main CPU across read
+#142-143 and find the input to that branch.
+
 **The obvious explanation is DISPROVEN, do not re-propose it.** "The sub CPU is now too
 fast" fails twice over: 77AVEMU has NO CRTC halt at all (`CRTCHaltsSubCPU = false`), so its
 sub runs faster still and it renders this disk; and measured here the sub halts at frame
