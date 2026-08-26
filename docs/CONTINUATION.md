@@ -183,9 +183,30 @@ being the reference's one-position pre-side-effect log shift at run boundaries -
 figure Pro Yakyuu Fan showed when its streams were effectively identical).
 
 So: same sectors, same bytes, no read failures -- and then the loader picks a different
-next track and loops on four sectors of track 16 for the rest of the run. **The decision is
-computed from something other than the disk data.** Trace the main CPU across read
-#142-143 and find the input to that branch.
+next track and loops on four sectors of track 16 for the rest of the run.
+
+**Traced to the exact instruction.** At frame 488 the boot ROM's read entry runs
+
+```
+$FE89  LDU #$FFE1     ; per-drive tracked head position table
+$FE8C  LDB $FFE8      ; drive number
+$FE8F  LDA B,U        ; table[drive] -> $10 = 16
+$FE91  STA <$19       ; -> $FD19 track register
+$FE93  LDA 4,X        ; DESIRED track from the caller's block, X=$5082 -> $10
+$FE95  CMPA B,U       ; equal, so no seek is even needed
+```
+
+`$FFE1+drive` is the boot ROM's tracked head position and it is written only at `$FE99`,
+from that same `4,X`. **Both the tracked position and the requested track are 16, and they
+agree** -- so the boot ROM and the FDC are doing exactly what they are told. The number 16
+comes from the caller's parameter block at `$5086`, filled by the TITLE's own loader.
+
+*So the fault is in the title's loader, which computes track 16 where the reference
+computes 4, having read byte-identical data up to that point.* The next step is to find
+what the loader at `$50xx` uses to compute it -- `--trace-mem 5080-508f` across frames
+480-490 will show what fills the block and from where. Note the loader lives in RAM loaded
+from this same disk, so `--dump-shadow` against `FM77AV_CPU_DUMP` at a matched frame will
+say whether the two machines even have the same loader code at that address.
 
 **The obvious explanation is DISPROVEN, do not re-propose it.** "The sub CPU is now too
 fast" fails twice over: 77AVEMU has NO CRTC halt at all (`CRTCHaltsSubCPU = false`), so its
