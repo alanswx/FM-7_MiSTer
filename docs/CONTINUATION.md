@@ -262,11 +262,46 @@ Entries 0, 2, 3 and 8 match because nothing updates them; 1, 4, 5, 6, 7, 9, 10, 
 because the reference rewrites them and we do not. Entry 8 being intact is why the
 track-16 reads succeed and loop -- the core indexes a stale-but-valid entry.
 
-*Next:* find what writes `$5090`-`$50BF` on the REFERENCE after frame 6. The core has no
-equivalent instrument, so either dump `FM77AV_CPU_DUMP` at several frames and bracket when
-the entries change, or add a watchpoint to the harness. Then find why this core's loader
-never reaches that code -- which is a control-flow question, not a data one, and the FDC,
-the TWR window and the sector data are all now measured clean.
+*Bracketed by dumping `FM77AV_CPU_DUMP` at a spread of frames.* The reference rewrites
+`$5090` **twice**, both between frames 240 and 300: `23 01 b4 c6` -> `b6 51 fb f6`
+(which disassembles as `LDA $51FB`, i.e. it loads CODE over that region) -> `00 08 01 0a`.
+This core never rewrites it at all.
+
+**And the divergence is isolated to ONE page.** Comparing `--dump-shadow` against
+`FM77AV_CPU_DUMP` at the moment BEFORE the reference's rewrite (ours 240, reference 241):
+
+| page | observed | differ |
+|---|---|---|
+| `$0000` `$1000` `$2000` | 9,881 | **0** |
+| `$5000` (the loader) | 640 | **0** |
+| **`$6000`** | **369** | **369 -- every byte** |
+| `$8000`-`$B000` | VRAM / aperture | all (expected once execution diverges) |
+
+`$6xxx` is where the copy routine at `$6133` lives. At frame 6 **both machines hold it
+byte-identically** (`ce 7c 00 8e 50 00 ...`). By frame 241 the reference's logical `$6133`
+reads `$CC` -- which is 77AVEMU's fill for never-written physical RAM
+(`memory/fm77avmemory.cpp:149`), so it is real content and not a dump artifact -- while
+this core still sees the loader there.
+
+**So the reference's logical `$6xxx` comes to point at never-written physical memory and
+this core's still points at the loaded page.** That is an MMR mapping difference -- and
+here is the contradiction to resolve: **every MMR register VALUE sequence agrees**. Page
+registers `$FD80`-`$FD87` all take the same values (page 6 is `$36` on both), and the
+`$FD90` segment-select and `$FD93` enable sequences match. Only the COUNTS differ (over
+matched windows: `$FD86` 21 against 18, `$FD90` 27 against 21, `$FD93` 35 against 23),
+which is a symptom of this core looping, not obviously a cause.
+
+*The most likely resolution, untested:* `$FD8x` writes land in **whichever segment `$FD90`
+currently selects** (`AVMEM.v`: `mmr[mmr_segment][MADDRBUS[3:0]] <= DIN[5:0]`). Identical
+value sequences on `$FD90` and `$FD8x` separately do NOT imply identical interleaving, so
+the four segments can end up holding different maps. **Dump all four segments' sixteen
+registers on both machines and compare** -- this core needs a debug print of the `mmr`
+array; 77AVEMU keeps the same state in `MainCPUAccess`. That is the next measurement.
+
+*Measured clean and not worth re-checking:* the FDC (first 142 reads identical, zero
+NOMATCH), the sector data (~99.8% over 40,000 bytes), the TWR window (640 bytes, zero
+differ), the boot ROM's seek logic, and the loader region `$5000`-`$50FF` itself at the
+moment before the rewrite.
 
 *So the fault is in the title's loader, which computes track 16 where the reference
 computes 4, having read byte-identical data up to that point.* The next step is to find
