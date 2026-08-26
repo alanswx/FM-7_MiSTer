@@ -10,7 +10,9 @@ Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate green.
 ## State in one screen
 
 Against 77AVEMU over the 68-image FM77AV set (`vsim/sweep/`, both runs at 2000
-frames, canonical shot at frame 1980, so the two sides are the same instant):
+frames, canonical shot at frame 1980, so the two sides are the same instant).
+**This table predates the TWR and keyboard-encoder fixes below and undercounts
+them** — FM Sound Editor alone moves out of CORE-BLANK:
 
 | verdict | before | after |
 |---|---|---|
@@ -29,7 +31,7 @@ disk A, and — unplanned — Shounen Mike no Hitoritabi and Woody Poco disk 1. 
 last two came free with the systemic fixes, which is the argument for fixing a
 CPU or controller bug rather than a title.
 
-## The two RTL fixes, and why they mattered
+## The RTL fixes, and why they mattered
 
 **`mc6809i.v` — NMI was never masked after reset.** `CPUSTATE_RESET` assigns
 `s_nxt = $FFFD`, which satisfied the `s != s_nxt` release condition on the same
@@ -48,6 +50,24 @@ Fan's loader keeps its place with `LDA $FD1A / INCA / STA $FD1A` and the boot
 ROM's drive scan selects drive 1 in the middle of it. Only `addr 2` is mirrored;
 the command, track (which this design also uses as head position) and data
 registers stay per-drive until something demonstrates otherwise.
+
+**`AVMEM.v` — the TWR window sat 31 KB low.** `$FD92` is an offset *added to the CPU
+address*, so register 0 puts the 1 KB window at `$7C00-$7FFF` over physical `$07C00`,
+not `$00000` — 77AVEMU (`memory/fm77avmemory.cpp:1239-1243`) and CSP
+(`fm7/mainmem_mmr.cpp:16-22`) agree, and `docs/FM77AV.md` had paraphrased it as
+`addr[9:0]`, dropping the term. The RTL matched the doc, so reviewing one against the
+other agreed. Invisible unless a title both banks code into low RAM page 0 *and* uses
+the window: FM Sound Editor copies 4 KB to physical `$00000`, then walks a RAM-size
+probe through the window from register `$00` and erases it. See REFERENCE.md trap 64.
+
+**`AVKEYBOARD.v` — the encoder never answered the sub monitor's clock read.** Command
+`$80`/`$00` must return **seven** packed-BCD bytes; this core took it as a stub that
+consumed its parameter and produced nothing, so `$D432` b7 never cleared. The sub CPU
+sat in `BITA $d432 / BNE` at `$DF8B` forever, never reached its idle loop's
+`TST $d40a`, and BUSY stayed set — so the main CPU waited on `$FD05` at `$F650` for the
+rest of the run. FM Sound Editor made 16 sub calls where the reference made 281. The
+command table, its parameter COUNTS (which are load-bearing: the encoder has no framing)
+and the one place the two references disagree are in `docs/FM77AV.md`.
 
 ## Tools built this session — use these before inventing anything
 
@@ -82,14 +102,13 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-1. **FM Sound Editor** — FDC exonerated by measurement (reads byte-identical to
-   the reference, zero NOMATCH). It diverges on a *computed* value: the twelfth
-   `$FD88` write maps logical page 8 to `$24` where the reference maps `$38`, and
-   it then executes at `$863B` inside that page into a `NEG <$00` sled. Find what
-   computes that value.
-2. **Luxsor disk 1** — see below. Deep, and five hypotheses have died.
-3. **Daiva Story 2 disk A** — reads MATCH → CORE-BLANK in the sweep. **Check
+1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died.
+2. **Daiva Story 2 disk A** — reads MATCH → CORE-BLANK in the sweep. **Check
    whether it is the same story as Luxsor disk 1 before assuming it is broken.**
+3. **A fresh 68-title AV sweep.** The TWR and encoder fixes above are systemic —
+   a memory translation and a sub-system handshake — and the set has not been
+   re-measured since. Build the "before" from the same tree in the same session
+   (trap 57); the table at the top of this file predates both.
 4. **Shounen Mike** at 85.79 %; **Mahjong Kyou Jidai** untouched.
 5. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
    animations photographed at one global `SHOT_AT`, so they catch whatever
@@ -107,9 +126,11 @@ cycle-steal change to "fix" it** — that change is more correct (77AVEMU's
 
 Measured clean, do not re-check: the FDC (first 142 reads identical, zero
 NOMATCH), the sector data (~99.8 % over 40,000 bytes, the residual being the
-reference's one-position pre-side-effect log shift), the TWR window (640 bytes,
-zero differ), the boot ROM's seek logic, and the MMR (all four segment maps
-byte-identical, page 6 → `$36` on both).
+reference's one-position pre-side-effect log shift), the boot ROM's seek logic,
+and the MMR (all four segment maps byte-identical, page 6 → `$36` on both).
+**Re-check the TWR window**, though — the "640 bytes, zero differ" result predates
+the `AVMEM.v` offset fix, and this title's boot-time reads of `$7C00-$7FFF` were
+31 KB off the reference's when it was taken.
 
 The live lead: the reference rewrites the loader's dispatch table at `$5090`
 twice between frames 240 and 300 and this core never does. Bracketing with
@@ -117,7 +138,7 @@ twice between frames 240 and 300 and this core never does. Bracketing with
 
 ## How to not waste the first hour
 
-These cost real time this session. `docs/REFERENCE.md` traps 55–63 have the full
+These cost real time this session. `docs/REFERENCE.md` traps 55–64 have the full
 versions; these are the ones that bit hardest.
 
 - **The build lies.** `make DEBUG_FDC=1` does **not** rebuild if no source

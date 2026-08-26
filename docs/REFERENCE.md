@@ -941,6 +941,32 @@ confident wrong answer at least once:
     instrument: if the reference cannot produce the same measurement directly, add the
     print to `tools/77avemu_headless.cpp` instead of inferring one.
 
+64. **`docs/` paraphrased a reference formula, dropped a term, and the RTL matched the
+    paraphrase.** `docs/FM77AV.md` recorded the FM77AV TWR window as
+    `(TWR_offset*256 + addr[9:0]) & $FFFF`; both references use the FULL CPU address, so
+    the real base is `$7C00` higher and register 0 sits over physical `$07C00`.
+    `AVMEM.v` implemented the doc. Reviewing the RTL against the doc therefore agreed,
+    twice, and the window sat 31 KB low for as long as this core has had one. It is
+    invisible unless a title both banks code into low RAM page 0 *and* uses the window --
+    FM Sound Editor loads 4 KB at physical `$00000` and then walks a RAM-size probe
+    through the window from `$00`, erasing it. **When an RTL block cites a doc in this
+    repo rather than a `refs/` file:line, that citation is worth nothing. Re-derive it
+    from `refs/`.** Two independent references agreeing (77AVEMU
+    `memory/fm77avmemory.cpp:1239-1243` and CSP `fm7/mainmem_mmr.cpp:16-22`) is what
+    settles a translation, not one doc sentence.
+
+65. **`seqdiff.py` reporting a clean stream is not a working machine.** It collapses runs
+    of identical accesses and deliberately does not compare counts, so a core that has
+    stopped doing anything looks *identical* to one that is keeping up. On FM Sound
+    Editor it printed one benign `$FD05` spin-count difference over 700 frames while the
+    main CPU was in fact issuing **16** sub-system calls against the reference's **281**
+    and had spent 414 frames doing nothing but 676,356 reads of one port. The tells were
+    both outside the diff: the raw line counts (829,210 ours against 703,941, i.e. ours
+    was *longer* and still said less) and
+    `awk '$1>300' ours.log | awk '{print $2,$3,$6}' | sort | uniq -c` collapsing to a
+    single row. **After a clean seqdiff, count the writes that represent work** -- sub
+    calls, FDC commands, ALU triggers -- on both sides before believing it.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

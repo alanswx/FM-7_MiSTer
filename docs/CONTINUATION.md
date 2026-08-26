@@ -33,8 +33,9 @@ output -- only the first divergence or two are real.
 `$FD05` handshake was the breakthrough; look next at what it does after the sub
 CPU restarts.
 
-**2. Pro Yakyuu Fan disk A is FIXED. FM Sound Editor is not, and its cause is a third,
-unrelated one.**
+**2. Pro Yakyuu Fan disk A is FIXED. FM Sound Editor is FIXED too, by two unrelated
+faults: the TWR window sat 31 KB low, and the keyboard encoder never answered the
+sub monitor's real-time-clock read.**
 
 *Pro Yakyuu Fan disk A -- FIXED.* The SECTOR register belongs to the CONTROLLER, not to a
 drive. A real FM-7 has one WD1793 whose track/sector/data registers are shared by every
@@ -48,27 +49,87 @@ reached the `STA <$02` that enables its timer IRQ. `FDC.v` now mirrors sector-re
 writes to both instances -- addr 2 only. Frame-900 PNG 3790 (blank) -> 12258, real
 graphics.
 
-*FM Sound Editor -- NOT fixed, and the FDC is exonerated.* With the same matched-window,
-same-instrument comparison (`WDMATCH` here, `--trace-fdc` there), **its read sequence is
-byte-identical to the reference** for every read in the window -- including the
-`1:12:7:2:13:8:3:14:9...` interleave across its 16-sector tracks -- with zero NOMATCH. It
-gets all its data correctly. It then diverges on a COMPUTED value:
+*FM Sound Editor -- the `$FD88` divergence is FIXED and the cause was the TWR window,
+not anything that computes a bank number.* (Superseded claim: "it diverges on a COMPUTED
+value -- find what computes the 12th `$FD88` write". The write at `pc=$9289` is
+`LDA 2,S / STA $FD88`, a RESTORE from the stack, so `$24` was never computed: it is the
+caller's `A`, read because the banked routine the trampoline called never ran and so never
+consumed its stack parameter.)
+
+`$FD92` is an OFFSET added to the CPU address, not a base -- see `docs/FM77AV.md` and
+REFERENCE.md trap 64. `AVMEM.v` dropped the `$7C00`, so every TWR window sat 31 KB low.
+Measured end to end on this title:
+
+| frame | what happens | ours, before |
+|---|---|---|
+| 22-24 | 4096 bytes copied to physical `$00000` through MMR page 8 = `$00` | correct, `phys=$00000` on every write |
+| 221-265 | an `$ff`-write / read-back / `$00`-write RAM-size probe walks the TWR window from register `$00` to `$70` | landed on `$00000-$073ff` instead of `$07c00-$0efff`, erasing the code |
+| 267 | the trampoline at `$95AA` maps page 8 back to `$00` and `JSR $8000` | 4 KB of zeroes, a `NEG <$00` sled |
+| 268 | `LDA 2,S / STA $FD88` restores the wrong stack byte | `$24`, and the machine is lost |
+
+With the fix the main-CPU `$FDxx` stream matches 77AVEMU for the whole 700-frame run
+except for the OPN status read below and one `$FD05` sub-BUSY spin count. Everything
+downstream moved with it: I/O cycles 434,533 -> 1,200,565, `$D40A` accesses 1/0 -> 17/16,
+PSG `$FD0D` writes 0 -> 72, `$FD37` `$00` -> `$88`, and the main CPU now reaches `$F650`
+(the sub-command handshake) where CONTINUATION previously recorded it never did.
+
+*The SECOND fault, found the same way and also fixed: the keyboard encoder never
+answered the RTC read.* With the TWR fix in, the title still rendered black at 300, 500
+and 700 (PNG 3790) with VRAM **entirely empty** -- 0 of 98,304 bytes non-zero, against
+25,051 in the reference. Nothing had ever been drawn. Traced by counting rather than by
+diffing, because `seqdiff.py` deliberately does not compare counts (see its docstring):
+the main CPU issues **16** sub calls in 700 frames where the reference issues **281**,
+and from frame 286 it does 676,356 reads of `$FD05` at `$F650` waiting for a BUSY that
+never clears.
+
+The sub CPU was the one stuck. `--trace-sub-cpu` over frames 285-291:
 
 ```
-$FD88 writes (logical page 8 mapping)
-  ours: 38 38 38 38 38 00 01 0f 38 38 00 [24]
-  ref : 38 38 38 38 38 00 01 0F 38 38 00 [38] 00 38 00 38 07 06 07 38 ...
+$de74  LDA #$80 / JSR $df7b       ; encoder command $80 = read the real-time clock
+$de79  CLRA     / JSR $df7b       ; parameter $00 = read
+$de7d  LDU #$d383 / LDA #$07      ; SEVEN bytes expected back
+$df89  LDA #$80
+$df8b  BITA $d432                 ; wait for b7 to clear -- a reply byte is waiting
+$df8e  BNE  $df8b                 ; 22,514 times and counting
 ```
 
-Eleven identical writes, then this core maps page 8 to physical `$24` where the reference
-maps it to `$38` -- and immediately executes at `$863B`, INSIDE that page, into a
-`NEG <$00` sled, where it stays. Its sub CPU is healthy and it services zero timer IRQs
-because it never gets that far. It does reach `$F920` (so part of the RAM-resident code
-runs) but never `$F650`.
+`AVKEYBOARD.v` accepted `$80` as a stub that consumed its parameter and produced nothing,
+so b7 never cleared, the sub never got back to its idle loop's `TST $d40a`, BUSY stayed
+set and the main CPU waited on it for the rest of the run. See `docs/FM77AV.md` for the
+command table this now implements and for the one place the two references disagree
+(the fourth RTC byte's bit layout, where this core follows CSP).
 
-*Next for it:* find what computes the 12th `$FD88` value. The write is at a known PC in
-this core's trace; trace the main CPU across it and compare the inputs. Do NOT go back to
-the FDC -- it is measured clean.
+**With both fixes the title RENDERS**, and every counter lands on the reference's:
+
+| | blank | rendering |
+|---|---|---|
+| main-CPU IRQs in 721 frames | 1 | **6,390** |
+| sub calls (`$D40A` writes) | 16 | **281** -- the reference's exact count |
+| sub BUSY at the end | 1, stuck | 0, idle |
+| frame-500 / frame-700 PNG | 3790 / 3790 | 6772 / 7313 |
+
+Frame 700 is the reference's frame-704 screen: the synth panel, the slot and numeric
+pads, and the "ANALOG MODE FOR BEGINNERS / MANUAL MODE FOR EXPERTS" prompt.
+
+*One difference left, and it is small:* the picture sits about 25 raster lines higher
+than the reference's, with `scroll = $1b80` where the reference's frame is offset
+differently. Compare `$FD17`/`$FD18` scroll handling against 77AVEMU before assuming it
+is the core -- the two harnesses render at different heights (640x200 here, 640x400
+there), so measure it, do not eyeball the two PNGs.
+
+*One real remaining `$FDxx` divergence, and it is probably benign.* The YM2203 status read:
+
+```
+$ef0a  LDA #$04 / STA $fd15     ; command 4 = read status
+$ef0f  LDA $fd16                ; ours $80 or $00; reference always $7C
+$ef15  TSTA / BPL $ef1b         ; wait for BUSY (b7) to clear, 255 tries max
+```
+
+77AVEMU hardcodes `0b01111100 | timerA | timerB` and **never sets BUSY**
+(`fm77av/sound/fm77avsound.cpp:210-214`). jt03 models BUSY, so over 700 frames this core
+reads `$FD16` 339 times (243 `$80`, 96 `$00`) against the reference's 97, all `$7C`. The
+loop is bounded and always falls through, so it costs time, not correctness -- but the
+low five bits also differ and no title has been shown to read them.
 
 **3b. FIXED (Luxsor disk 2): the 6809 core never masked NMI after reset.**
 

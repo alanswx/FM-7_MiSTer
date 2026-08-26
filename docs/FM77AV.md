@@ -53,7 +53,15 @@ Registers (main CPU side):
 
 Translation (77AVEMU `fm77avmemory.h:337-351`; CSP `mainmem_readseq.cpp:32-70`):
 
-- TWR, checked first: CPU `$7C00-$7FFF` → `(TWR_offset*256 + addr[9:0]) & $FFFF` in RAM page 0.
+- TWR, checked first: CPU `$7C00-$7FFF` → `(TWR_offset*256 + addr) & $FFFF` in RAM
+  page 0 — the **whole** CPU address, so the offset is added to `$7C00` and register 0
+  puts the window over physical `$07C00`, not `$00000`. 77AVEMU precomputes
+  `TWRAddr = (data<<8) + 0x7C00` and then adds `addr & 0x3FF`
+  (`fm77avmemory.cpp:1239-1243`, `fm77avmemory.h:348-351`, with the comment
+  "Experiment indicated TWR address 0 will map physical 0x07C00 to main CPU memory
+  space 0x7C00"); CSP writes it in one line over the full address
+  (`mainmem_mmr.cpp:16-22`). *(Superseded claim: `addr[9:0]` — that paraphrase dropped
+  the `$7C00` and put every window 31 KB too low, in this doc and in `AVMEM.v` alike.)*
 - MMR: for `addr < $FC00` only, `phys = {bank[seg][addr[15:12]], addr[11:0]}`.
 - `$FC00-$FFFF` is **never** translated — 77AVEMU cites the FM77AV40 Hardware Manual
   p.146 (`fm77avmemory.h:339`). All FM-7 `$FCxx`/`$FDxx` I/O decode is unchanged.
@@ -306,11 +314,48 @@ reading — observed on real FM77AV (77AVEMU `fm77avsound.cpp:272-280`).
 ## Keyboard encoder (`$D431/$D432`, sub side)
 
 The AV adds a command-FIFO keyboard encoder (CSP `keyboard.cpp`, ~660 lines inside
-`_FM77AV_VARIANTS` guards; read handler at `keyboard.cpp:674`). Commands: `$00`/`$01`
-set/get scancode mode, `$02`/`$03` LEDs, `$04`/`$05` repeat, `$80` RTC, `$81-$84`
-stubs. `$D432` b7 = latch ready, b0 = ACK. The mode that matters for software is scan
-mode with make/break codes — the FM-7 cannot sense key release at all (77AVEMU
-`readme.md`). Reset default is FM-7 mode (MAME `fm7.cpp:1829`), so software must opt in.
+`_FM77AV_VARIANTS` guards; read handler at `keyboard.cpp:674`). The mode that matters
+for software is scan mode with make/break codes — the FM-7 cannot sense key release at
+all (77AVEMU `readme.md`). Reset default is FM-7 mode (MAME `fm7.cpp:1829`), so software
+must opt in.
+
+**Commands are not stateless, and the parameter COUNTS are load-bearing.** The encoder
+has no framing: a command whose parameters the model does not consume leaves the next
+parameter byte to be read as a command, and the whole stream slips. From FM77AV40
+Hardware Reference pp.230, transcribed in 77AVEMU `fm77avkeyboard.h:42-56` and
+implemented in CSP `keyboard.cpp:1000-1080`:
+
+| cmd | params | reply |
+|---|---|---|
+| `$00` set coding | 1 (`00` FM-7, `01` FM16beta, `02` scan) | — |
+| `$01` get coding | 0 | 1 byte |
+| `$02` set LED | 1 | — |
+| `$03` get LED | 0 | 1 byte, b0 CAPS b1 KANA |
+| `$04` auto repeat | 1 | — |
+| `$05` repeat timing | **2** (start, interval) | — |
+| `$80` RTC | 1 (`00` read, `01` write **+7 more**) | **7 bytes** on read |
+| `$81` digitize mode | 1 | — |
+| `$82` set screen mode | 1 | — |
+| `$83` get screen mode | 0 | 1 byte |
+| `$84` TV brightness | 1 | — |
+
+`$D431` alone carries commands; a write to `$D432` is a no-op (77AVEMU's `WriteD432` has
+an empty body, `fm77avkeyboard.cpp:703-705`).
+
+`$D432` is built from `$FF` DOWN, not up from zero: b7 = 0 when a reply byte is waiting,
+b0 = 0 while the 100 us command acknowledge is running, **every other bit reads 1**. Both
+references say so and say it the same way — 77AVEMU `fm77avkeyboard.cpp:723-736`, CSP
+`keyboard.cpp:690-702`. 77AVEMU also restarts a 100 us timer after every `$D431` read
+(`AfterReadD431`, `:707-715`), so a multi-byte reply is paced, not burst.
+
+The RTC reply is seven packed-BCD bytes: year mod 100, month, day, then
+`day-of-week | 24-hour flag | PM | hour tens`, `hour units | minute tens`,
+`minute units | second tens`, `second units`. **The references disagree on the fourth
+byte.** CSP `keyboard.cpp:888-898` puts the day of week in b7:4, the 24-hour flag at b3
+and PM at b2; 77AVEMU `fm77avkeyboard.cpp:653` puts it in b7:5, the flag at b4, and has
+no PM bit. This core follows CSP — the primary authority (REFERENCE.md section 6), and
+the only one of the two whose packing leaves room for both flags. The other six bytes are
+identical in both.
 
 ## `$FD00` is not the same register on the AV
 
