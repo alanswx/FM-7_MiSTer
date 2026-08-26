@@ -11,8 +11,8 @@ Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate green.
 
 Against 77AVEMU over the 68-image FM77AV set (`vsim/sweep/`, both runs at 2000
 frames, canonical shot at frame 1980, so the two sides are the same instant).
-**This table predates the TWR and keyboard-encoder fixes below and undercounts
-them** — FM Sound Editor alone moves out of CORE-BLANK:
+**This table predates the three fixes below and undercounts them** — FM Sound
+Editor and Daiva Story 2 disk A both move out of CORE-BLANK:
 
 | verdict | before | after |
 |---|---|---|
@@ -69,6 +69,16 @@ rest of the run. FM Sound Editor made 16 sub calls where the reference made 281.
 command table, its parameter COUNTS (which are load-bearing: the encoder has no framing)
 and the one place the two references disagree are in `docs/FM77AV.md`.
 
+**`FLAGS.v` — the `$FD13` sub-monitor reset was blanking the display.** The CRT on/off
+latch hung on `SRESETn`, which is `RESETBn & ~AV_SUBMON_RESET`, so a monitor-bank
+switch cleared it. Neither reference does: 77AVEMU's `$FD13` resets the sub CPU and
+sets BUSY and nothing else (`fm77avio.cpp:193-201`), and CSP's `reset_some_devices`
+clears the INS LED, halt, multipage masks and palette but not `crt_flag`
+(`display.cpp:71-140`). The two flip-flops that shared that reset now take different
+ones — the CRT flag on power-on, the INS LED on `$FD13` as well, which is what CSP
+does. Fixed **Daiva Story 2 disk A**, which was drawing the whole time: 4067 non-zero
+VRAM bytes against the reference's 4078, into a screen held black.
+
 ## Tools built this session — use these before inventing anything
 
 Every wrong answer this session came from inferring a measurement the other
@@ -102,18 +112,19 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died.
-2. **Daiva Story 2 disk A** — reads MATCH → CORE-BLANK in the sweep. **Check
-   whether it is the same story as Luxsor disk 1 before assuming it is broken.**
-3. **A fresh 68-title AV sweep.** The TWR and encoder fixes above are systemic —
-   a memory translation and a sub-system handshake — and the set has not been
-   re-measured since. Build the "before" from the same tree in the same session
-   (trap 57); the table at the top of this file predates both.
-4. **Shounen Mike** at 85.79 %; **Mahjong Kyou Jidai** untouched.
-5. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
+1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. It is
+   **not** touched by any fix below: before and after, every counter over 2000
+   frames is byte-identical, measured against a same-tree baseline built from
+   `1455e4a` in a worktree (trap 57).
+2. **A fresh 68-title AV sweep.** The three fixes above are systemic — a memory
+   translation, a sub-system handshake and a display latch — and the set has not
+   been re-measured since. Build the "before" from the same tree in the same
+   session (trap 57); the table at the top of this file predates all three.
+3. **Shounen Mike** at 85.79 %; **Mahjong Kyou Jidai** untouched.
+4. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
    animations photographed at one global `SHOT_AT`, so they catch whatever
    instant they land on. Kohakuiro draws its logo at frame ~199 and fades by 400.
-6. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work
+5. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work
    on hardware.
 
 ## Luxsor disk 1 — read this before touching it

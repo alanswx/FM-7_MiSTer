@@ -255,6 +255,19 @@ by the rotating `$D422/$D423` stipple.
   FM77AV demo disk writes `$FD13` and then polls `$FD05` for the restart to finish,
   and a core that leaves BUSY clear reports "already idle", halts and releases a sub
   CPU still in reset, and hangs on `$FD05` forever.
+- **What the `$FD13` reset does NOT touch: the CRT on/off latch.** It resets the sub
+  CPU and sets BUSY, and that is all. 77AVEMU's handler is three lines and the CRT
+  flag is not among them (`fm77avio.cpp:193-201`). CSP routes `$FD13` to
+  `set_monitor_bank` -> `reset_some_devices` (`display.cpp:1904`, `:849-869`,
+  `:71-140`), which clears the INS LED, the halt, the multipage masks and the
+  palette -- and leaves `crt_flag` alone; that is written only by `$D408`
+  (`set_crtflag`/`reset_crtflag`, `display.cpp:563-573`) and by the power-on
+  `DISPLAY::reset` (`:218`). **So the two flip-flops sit on different resets**: the
+  CRT flag on power-on only, the INS LED on `$FD13` as well. Getting this wrong
+  costs the whole picture on any title whose sub monitor does not read `$D408` on
+  its way up after a bank switch -- Daiva Story 2 disk A writes `$FD13` twice and
+  monitor B does not, so the screen stayed black over a VRAM holding 4067 non-zero
+  bytes against the reference's 4078.
 - `subsyscg.rom` is four 2 KB font banks, not a monitor: bank = `$D430[1:0]`
   (0 katakana, 1 hiragana, 2 ROM1, 3 ROM2 — 77AVEMU `fm77avmemory.h:22,41`,
   `fm77avmemory.cpp:49,1047-1060`).

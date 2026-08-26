@@ -410,17 +410,20 @@ gained six titles (both demo images, Luxsor disk 2, Pro Yakyuu Fan disk A, Shoun
 Woody Poco disk 1) and lost two. Reverting costs four titles and undoes the fix that made
 Luxsor disk 2 work.
 
-***Two REAL regressions, both confirmed across all four sampled frames*** (1100, 1400,
-1700, 1980 -- blank at every one, so not the fixed-frame phase artifact of trap 49):
+***Daiva Story 2 disk A is FIXED. Luxsor disk 1 is not.***
 
-  * **Daiva Story 2 - Memory in Durga disk A**: MATCH -> CORE-BLANK. Was 9.2% coverage.
-  * **Luxsor disk 1**: MATCH -> CORE-BLANK. Was 23.0% coverage. Note disk 2 of the same
-    title was FIXED in the same session, which makes this the sharpest lead: the same
-    loader, one disk gained and one lost.
-
-Both need bisecting across the four RTL changes of this session -- `c3b270c` cycle-steal,
-`5431674` `$FD1D`, `6aefa9f` the NMI mask, and the sector-register mirroring. Take Luxsor
-disk 1 first for the disk-2 contrast.
+  * **Daiva Story 2 - Memory in Durga disk A** -- the `$FD13` sub-monitor reset was
+    clearing the CRT on/off latch. It was drawing correctly the whole time: 4067
+    non-zero VRAM bytes at frame 1980 against the reference's 4078, into a screen held
+    blank. See `docs/FM77AV.md`, the sub-system section, for what `$FD13` does and does
+    not reset on the two references. Frames 1100/1400/1700/1980 go 3790/3790/3790/3790
+    to 8538/3867/7550/7422, and frame 1980 is the reference's picture.
+  * **Luxsor disk 1** -- still blank, and **the TWR and keyboard-encoder fixes do not
+    touch it**: before and after, over 2000 frames, every counter is byte-identical
+    (16,655,821 main instructions, `pc now $014e`, sub 95.9% halted, `$fd05` reads
+    `$fe`). Measured with a same-tree baseline built from `1455e4a` in a worktree, as
+    trap 57 requires. Its own signature is a RUNAWAY: 12 instruction fetches from the
+    `$fdxx` I/O window, IRQ asserted and never taken, palette all zero, display off.
 
 *Not a regression, do not chase:* **Wizardry IV disk A** reads MATCH -> CORE-BLANK in the
 table and is fine. Its samples are 12222 / 10635 / 10411 / 7143 bytes -- it renders
