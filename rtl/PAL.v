@@ -169,7 +169,12 @@ reg [2:0] rdqe_sr;
 always @(posedge CLKSYS) begin
   rdqe_sr <= { rdqe_sr[1:0], RDQEn };
   if (rdqe_sr[2] & ~rdqe_sr[1] & ~PLTREGn)   // filtered leading edge of the read
-    PALDATA <= {5'd0, pal[MADDRBUS[2:0]]};
+    // $F8, not zero, in the five unused bits. Both references build the byte
+    // that way -- 77AVEMU returns `0xF8|digitalPalette[n]`
+    // (fm77av/fm77avio.cpp:933) and CSP stores `val|0xf8` at set_dpalette and
+    // hands that back on read (fm7/display.cpp:479, :2701). Same shape as
+    // $D432 and $FD93: an FM-7 register's undriven bits float high.
+    PALDATA <= {5'b11111, pal[MADDRBUS[2:0]]};
 end
 
 wire clr1 = DPAGE1|m25_3;
