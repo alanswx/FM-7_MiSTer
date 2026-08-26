@@ -109,15 +109,36 @@ always @(posedge CLKSYS) begin
   // reads $D408 and turns the CRT on itself early in every boot (2 reads in
   // the first 55 frames, measured). It would show as a flash of whatever VRAM
   // powered up holding, before the monitor gets there.
-  if (~SRESETn) begin
-    m56_5 <= 1'b0;
-    m56_9 <= 1'b0;
-  end
-  else begin
-    // filtered rising edge, matching the original `posedge SCRTSWn`/`SLEDn`
-    if (~scrtsw_sr[2] & scrtsw_sr[1]) m56_5 <= SRWB;  // $d408: read = CRT on
-    if (~sled_sr[2]   & sled_sr[1])   m56_9 <= SRWB;
-  end
+  //
+  // THE CRT FLAG IS ON THE POWER-ON RESET, NOT THE SUB-SYSTEM RESET. `SRESETn`
+  // is `RESETBn & ~AV_SUBMON_RESET` (core.v:271), so hanging m56_5 on it made a
+  // $FD13 monitor-bank switch blank the display -- and $FD13 does not touch this
+  // latch on either reference:
+  //
+  //   77AVEMU  fm77avio.cpp:193-201 -- WriteFD13, subCPU.Reset(), subSysBusy.
+  //            The CRT flag is not among them.
+  //   CSP      display.cpp:1904 SIG_FM7_SUB_BANK -> set_monitor_bank ->
+  //            reset_some_devices (display.cpp:71-140), which clears the INS
+  //            LED, the halt, the multipage masks and the palette -- and NOT
+  //            `crt_flag`. That is touched only by $D408 (set_crtflag /
+  //            reset_crtflag, :563-573) and by the power-on DISPLAY::reset
+  //            (:218).
+  //
+  // The INS LED does go with $FD13: `reset_some_devices` sends
+  // SIG_FM7KEY_SET_INSLED 0x00 as its first act (display.cpp:75). So the two
+  // flip-flops that used to share this reset take different ones now.
+  //
+  // Daiva Story 2 disk A is the title that shows it. It writes $FD13 twice --
+  // $01 at frame 153 and $02 at frame 189 -- and monitor B's init does not read
+  // $D408 on the way up, so with the flag cleared by the second write the
+  // display never came back. It draws the whole time: 4067 non-zero VRAM bytes
+  // at frame 1980 against the reference's 4078, into a screen held blank.
+  if (~RESETBn)                          m56_5 <= 1'b0;
+  // filtered rising edge, matching the original `posedge SCRTSWn`/`SLEDn`
+  else if (~scrtsw_sr[2] & scrtsw_sr[1]) m56_5 <= SRWB;  // $d408: read = CRT on
+
+  if (~SRESETn)                          m56_9 <= 1'b0;
+  else if (~sled_sr[2] & sled_sr[1])     m56_9 <= SRWB;
 end
 
 // m45 keeps its original semantics exactly: reset or the sub's $d402
