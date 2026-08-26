@@ -201,6 +201,51 @@ from that same `4,X`. **Both the tracked position and the requested track are 16
 agree** -- so the boot ROM and the FDC are doing exactly what they are told. The number 16
 comes from the caller's parameter block at `$5086`, filled by the TITLE's own loader.
 
+**ROOT CAUSE: the loader's dispatch table at `$508C` is corrupted.** Traced the whole
+chain, every step measured:
+
+```
+$5044  LDA $0043,PCR   ; block counter at $508B = $21 = 33
+$5048  LSRA / ROLB     ; track = 33>>1 = 16, side = 33&1 = 1
+$504A  STA $0038,PCR   ; -> $5086 track, $5088 side
+```
+
+and the counter itself comes from a 4-byte-per-entry TABLE at `$508C`:
+
+```
+$500D  LEAY $007B,PCR  ; Y = $508C
+$5011  LSLB / LSLB     ; index = B*4, B=8 -> $20
+$5013  LEAY B,Y        ; Y = $50AC, entry 8
+$501B  LDA 1,Y         ; $20 -> the block counter -> track 16
+```
+
+Comparing `--dump-shadow` against `FM77AV_CPU_DUMP` at a matched frame (ours 485,
+reference 488), **8 of the table's 12 entries differ and 106 bytes differ across
+`$5000`-`$50FF`**:
+
+| entry | ours | reference |
+|---|---|---|
+| 0 | `31 07 02 01` | `31 07 02 01` same |
+| 1 | `23 01 b4 c6` | `00 08 01 0a` |
+| 2, 3 | | same |
+| 4 | `12 d7 1e c6` | `31 10 01 03` |
+| 5 | `57 d7 1e 16` | `39 12 03 04` |
+| 6 | `01 a1 a6 e4` | `00 15 04 06` |
+| 7 | `81 03 26 0b` | `00 1a 03 08` |
+| **8** | `31 20 05 01` | `31 20 05 01` **same** |
+| 9, 10, 11 | | differ |
+
+The reference's entries are a coherent progression -- second byte `08 10 12 15 1a 22`;
+ours are noise in those slots. **Entry 8, the one this core happens to index, is intact**,
+which is exactly why the track-16 reads succeed and loop forever: the core is faithfully
+executing a valid entry of a corrupted table. Nothing downstream is broken.
+
+*Next, and it is a narrow question:* what corrupts `$5000`-`$50FF`? The sector DATA is
+right -- the first 142 reads are identical to the reference and the transferred bytes match
+~99.8% over 40,000. So either the loader is written to the wrong ADDRESS, or something
+overwrites it after loading. `--trace-mem 5090-50bf` from frame 0 will name the writer, and
+whether the bad bytes ever arrive correctly and are then clobbered.
+
 *So the fault is in the title's loader, which computes track 16 where the reference
 computes 4, having read byte-identical data up to that point.* The next step is to find
 what the loader at `$50xx` uses to compute it -- `--trace-mem 5080-508f` across frames
