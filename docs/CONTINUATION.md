@@ -201,7 +201,9 @@ from that same `4,X`. **Both the tracked position and the requested track are 16
 agree** -- so the boot ROM and the FDC are doing exactly what they are told. The number 16
 comes from the caller's parameter block at `$5086`, filled by the TITLE's own loader.
 
-**ROOT CAUSE: the loader's dispatch table at `$508C` is corrupted.** Traced the whole
+**The loader's dispatch table at `$508C` differs -- but it is NOT corrupted here, it is
+UNUPDATED here.** (Superseded claim: "the table is corrupted". The TWR window both
+machines copy it from is byte-identical.) Traced the whole
 chain, every step measured:
 
 ```
@@ -240,11 +242,31 @@ ours are noise in those slots. **Entry 8, the one this core happens to index, is
 which is exactly why the track-16 reads succeed and loop forever: the core is faithfully
 executing a valid entry of a corrupted table. Nothing downstream is broken.
 
-*Next, and it is a narrow question:* what corrupts `$5000`-`$50FF`? The sector DATA is
-right -- the first 142 reads are identical to the reference and the transferred bytes match
-~99.8% over 40,000. So either the loader is written to the wrong ADDRESS, or something
-overwrites it after loading. `--trace-mem 5090-50bf` from frame 0 will name the writer, and
-whether the bad bytes ever arrive correctly and are then clobbered.
+*Where the table comes from, measured.* `--trace-mem 5090-5093` shows exactly ONE write on
+this core, at frame 6 from `pc=$613B`, which is a block copy:
+
+```
+$6133  LDU #$7C00     ; source = the TWR window
+$6136  LDX #$5000     ; dest
+$6139  LDD ,U++
+$613B  STD ,X++
+$613D  CMPX #$5280    ; 0x280 bytes
+```
+
+**And the TWR window is byte-identical between the two machines** -- 640 observed bytes,
+zero differing at frame 6, with `$7C90` holding `23 01 b4 c6` on BOTH. So both copy the
+same bytes into `$5090`, and this core's value is what the copy put there.
+
+**Therefore the reference UPDATES those table entries later and this core never does.**
+Entries 0, 2, 3 and 8 match because nothing updates them; 1, 4, 5, 6, 7, 9, 10, 11 differ
+because the reference rewrites them and we do not. Entry 8 being intact is why the
+track-16 reads succeed and loop -- the core indexes a stale-but-valid entry.
+
+*Next:* find what writes `$5090`-`$50BF` on the REFERENCE after frame 6. The core has no
+equivalent instrument, so either dump `FM77AV_CPU_DUMP` at several frames and bracket when
+the entries change, or add a watchpoint to the harness. Then find why this core's loader
+never reaches that code -- which is a control-flow question, not a data one, and the FDC,
+the TWR window and the sector data are all now measured clean.
 
 *So the fault is in the title's loader, which computes track 16 where the reference
 computes 4, having read byte-identical data up to that point.* The next step is to find
