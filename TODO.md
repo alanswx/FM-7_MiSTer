@@ -93,9 +93,21 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    | Thexder `[b]` (known-good control) | 351,646 B |
    | Albatross Disk 1 (blank in our Aug-8 sweep) | **57,173 B** |
 
-   Albatross is the useful one: the reference draws a title our sweep scored
-   blank, so a full FM-7 reference sweep will find real faults the way the AV
-   one did. Run it with `ref-shots-at-frame.sh` so both sides sample the same
+   Joined through `compare-ref.py`, **both score MATCH** -- Albatross 95.7%
+   coverage against the reference's 98.3%, Thexder 61.1% against 60.8% -- and
+   the repo's own `gallery.py` scores them differs 0 / close 2. Looked at, not
+   just measured: Thexder's title screen is the same logo, landscape and
+   copyright line on both, and Albatross draws the same sky, treeline and
+   flagstick with our render still showing the katakana title logo the
+   reference has already cleared, i.e. the two machines a moment apart in one
+   attract sequence.
+
+   **So Albatross renders on this core today and the Aug-8 record calling it
+   blank is stale.** That is the sharpest reason not to trust the 153: it is
+   151 commits old, and the one title pulled from it at random has since been
+   fixed by something. Re-sweep before triaging any of it.
+
+   Run it with `ref-shots-at-frame.sh` so both sides sample the same
    instant -- `reference_frame = round(vsim_frame * 1.00608)`, and note the
    sweep's safe-name rule is `tr -c 'A-Za-z0-9._-' '_'` (it KEEPS `-`); a
    different rule silently produces NO-SHOT rows rather than an error.
@@ -133,11 +145,24 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    title where the reference is the one that fails, and `refs/local`'s renders
    stop being a safe target for the whole blank half of the set.
 
-1. **A hardware build is 151 commits overdue, touching 20 RTL files.** Nothing since
-   `6356000` has ever been synthesized. `HARDWARE-HANDOFF.md` opens with the
-   list, ordered by risk, with what to run and what a pass looks like for each.
-   `b8ff6ac` is the one to watch: it changes power-on behaviour for every
-   machine, FM-7 included.
+1. **Synthesis is current again as of `ec2a1ab`; hardware TESTING is not.**
+   Built on `alans@cottageubuntu` (Quartus 17.0.2 Lite): full compilation
+   successful, **0 errors**, 676 warnings, `output_files/FM-7_MiSTer.rbf`
+   4,045,756 B. 23,651 / 41,910 ALMs (56%), **516 / 553 M10K (93%) -- the
+   37-block headroom has not moved**, 4,097,480 / 5,662,720 memory bits (72%),
+   145 / 314 pins. No negative slack anywhere in the STA report. The two
+   Critical Warnings are benign and expected (127005: the AV boot loader is
+   480 bytes in a 512-deep memory; `AVMEM.v:435` guards `boot_offset < 480`).
+
+   So "it does not build" is no longer a risk. What is still outstanding is
+   that **none of these 151 commits has been RUN on hardware** --
+   `HARDWARE-HANDOFF.md` has the list ordered by risk. `b8ff6ac` is the one to
+   watch: it changes power-on behaviour for every machine, FM-7 included.
+
+   (Superseded: this item used to read "A hardware build is 41 commits overdue,
+   five of them RTL. Nothing since
+   `6356000` has ever been synthesized." Both halves were stale: the count was
+   151 commits / 20 RTL files, and it has now been synthesized.)
 
    (The pitch and joystick tests that used to head this list were both settled
    on hardware in `bb10370` — PSG tone 234.5 Hz vs 234.65 predicted, keep

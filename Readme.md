@@ -54,6 +54,21 @@ Some bugs only appear on hardware: several flip-flops are clocked by 74138
 address-decode outputs, which are clean in Verilator and glitchy ripple clocks
 in Quartus. Simulation cannot see that class at all.
 
+Builds run on `alans@cottageubuntu`, which has a working Quartus Prime 17.0.2
+Lite at `~/intelFPGA_lite/quartus/bin` and a clone at `~/mister/FM-7_MiSTer`.
+`quartus_sh --flow compile FM-7_MiSTer` works there directly:
+
+```sh
+ssh alans@cottageubuntu 'cd ~/mister/FM-7_MiSTer && git pull && \
+  PATH=$HOME/intelFPGA_lite/quartus/bin:$PATH \
+  quartus_sh --flow compile FM-7_MiSTer'
+```
+
+A full compile takes roughly an hour. Two Critical Warnings (127005) are
+expected and benign: the AV boot loader really is 480 bytes in a 512-deep
+memory, and `AVMEM.v:435` already guards `boot_offset < 480`, so the zeroed
+tail is never read.
+
 ## Repository layout
 
 | path | what |
