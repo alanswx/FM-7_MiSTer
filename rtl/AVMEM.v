@@ -294,6 +294,18 @@ wire shared_sel = machine_av &&
 assign SHARED_SEL   = shared_sel;
 assign SHARED_ADDR  = 10'h380 + {3'd0, physical_address[6:0]};
 assign SHARED_WRITE = av_write && shared_sel && sub_open;
+`ifdef DEBUG_AVDRAW
+// Accepted vs DROPPED shared-window writes, for the same reason the VRAM
+// aperture logs both: a gate that drops everything and a gate that drops
+// nothing look identical from outside.
+reg shw_d;
+always @(posedge CLKSYS) begin
+  shw_d <= av_write && shared_sel;
+  if ((av_write && shared_sel) && !shw_d)
+    $display("AVMEM SHW %s addr=$%04x data=$%02x sub_open=%0d",
+             sub_open ? "OK  " : "DROP", MADDRBUS, DIN, sub_open);
+end
+`endif
 assign SHARED_DIN   = DIN;
 
 // The sub-system I/O page is physical $1D400-$1D4FF, i.e. sub $D400-$D4FF.

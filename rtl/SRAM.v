@@ -47,7 +47,21 @@ wire legacy_main_sel = ~SHALTACn;
 wire sub_sel = ~SSMEMn & ~AV_SUBRAM_SEL;
 wire [9:0] legacy_main_addr = {2'b11, MADDRBUS[7:0]};
 wire sub_write = sub_sel && ~SWTQEn;
-wire main_write = (~SUBSELn & ~WTQEn) || AV_SHARED_WRITE;
+// BOTH main-side write paths need the halt, not just the AV one. The legacy
+// term is the FM-7's own $fcxx decode and it bypassed AVMEM entirely, so gating
+// only `AV_SHARED_WRITE` left it live: Mahjong Kyou Jidai sets the attention bit
+// at $FC80 while the sub is halted (that write lands), then loops back to
+// `CLR $FC80` with the sub running -- AVMEM drops that one, and the legacy term
+// wrote the $00 anyway and wiped the bit. The sub read $D380 as $00 for the rest
+// of the run, never took `BMI $e133`, never reached the `TST $d40a` that clears
+// BUSY, and the main CPU span on $FD05 at $2F87 forever.
+//
+// `~SHALTACn` is the halt ACKNOWLEDGE, which is what the note at the top of this
+// file established is already low during a legitimate main-side access. The
+// references gate the whole window on the sub being halted and neither confines
+// it to the AV -- CSP's `write_shared_ram` is plain FM-7 code
+// (`fm7/mainmem_writeseq.cpp:29-34`), 77AVEMU `fm77avmemory.cpp:928-933`.
+wire main_write = (~SUBSELn & ~WTQEn & ~SHALTACn) || AV_SHARED_WRITE;
 wire [7:0] main_q;
 wire [7:0] sub_q;
 
