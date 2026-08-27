@@ -76,7 +76,31 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    including an unresolved 1.846-vs-2.0 discrepancy in the t77 bit widths that
    should be settled before anyone derives a tape clock from microseconds.
 
-0. **The sweep cannot score a scrolling title, and now several of them scroll.**
+0. **The FM-7 half has never been compared to a reference.** The AV sweep has
+   been scored against 77AVEMU twice; the FM-7 sweep never has, not once. Its
+   last data is `results-P4-19-f1500.tsv` from 2026-08-08: 488 disk images, 350
+   swept, **153 blank** -- a blank count with no reference behind it, which on
+   the AV side turned out to be 27 titles that were blank on the reference too.
+   Treat 153 as an upper bound, not a bug count.
+
+   The pipeline works in FM-7 mode; this is measured, not assumed. 77AVEMU
+   takes `--fm7` and `sweep_one.sh:30` already parameterises the machine
+   (`MACHINE:-fm7`), `ref-sweep.sh` takes `--fm7` as arg 4. Two titles
+   rendered at the matched frame:
+
+   | title | reference PNG |
+   |---|---|
+   | Thexder `[b]` (known-good control) | 351,646 B |
+   | Albatross Disk 1 (blank in our Aug-8 sweep) | **57,173 B** |
+
+   Albatross is the useful one: the reference draws a title our sweep scored
+   blank, so a full FM-7 reference sweep will find real faults the way the AV
+   one did. Run it with `ref-shots-at-frame.sh` so both sides sample the same
+   instant -- `reference_frame = round(vsim_frame * 1.00608)`, and note the
+   sweep's safe-name rule is `tr -c 'A-Za-z0-9._-' '_'` (it KEEPS `-`); a
+   different rule silently produces NO-SHOT rows rather than an error.
+
+0. **Frame-matched references exist; the blessed set is still step-matched.**
    Every blessed reference in `sweep/renders/ref-shots/` is captured at a fixed
    20,000,000 reference steps (~22 s) while the core samples at a fixed frame
    (2000 = 33 s). Those are different moments, which did not matter while
@@ -85,6 +109,13 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    **32-point improvement**: against a reference rendered at 22M steps it goes
    65.45% -> 97.70%. Sampling our own render across frames 1800-2300 moves the
    score 57.94% -> 73.76% with no RTL change at all.
+
+   `sweep/ref-shots-at-frame.sh` now renders the reference at the *same instant*
+   the core samples — `reference_frame = round(vsim_frame * 1.00608)`, the
+   60 x 1024 x 262 / 16e6 ratio — and the AV sweep has been re-scored through it
+   (`results-av-f2000-shared-window.tsv`). What remains is the FM-7 half, which
+   has never been compared to a reference at all, and re-blessing
+   `sweep/renders/ref-shots/` off the fixed 20,000,000-step capture.
 
    Do not re-bless Dragon Buster to 22M to make the number look right — that is
    how `shots-ref/` rotted. Options worth thinking about: capture references at
@@ -102,7 +133,7 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    title where the reference is the one that fails, and `refs/local`'s renders
    stop being a safe target for the whole blank half of the set.
 
-1. **A hardware build is 41 commits overdue, five of them RTL.** Nothing since
+1. **A hardware build is 151 commits overdue, touching 20 RTL files.** Nothing since
    `6356000` has ever been synthesized. `HARDWARE-HANDOFF.md` opens with the
    list, ordered by risk, with what to run and what a pass looks like for each.
    `b8ff6ac` is the one to watch: it changes power-on behaviour for every
@@ -141,8 +172,11 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    `S) ゲームをはじめる` line of the bottom box is missing, where 77AVEMU draws
    both cleanly. That is visible in the *previous* blessed shot too, so it is
    long-standing, not new — see `vsim/shots-ref-77avemu/av-wizardry4.png`.
-3. **Six AV titles still render nothing**, in four distinct shapes, all recorded
-   below rather than left to be re-derived.
+3. **Three AV titles still render nothing**: Luxsor disk 1 (runaway into
+   `$fdxx`, IRQ never taken), Little Box disk A (main starved at 816
+   instructions/frame), In the Dream disk A (pre-existing sub deadlock,
+   diagnosed in `233c2aa`). The other three of the original six were the TWR,
+   encoder-RTC, CRT-latch and shared-window faults, now fixed.
 4. **The FM half of the YM2203 has never been compared to anything**, and its
    timers/`$FD17` IRQ path is only as good as one title's use of it.
 
@@ -938,10 +972,15 @@ disagree once the Fujitsu system manual was read properly: all four say bits
 
 - The main-CPU MMR path into the sub aperture is implemented for **writes**
   only. No software in hand reads `$1D4xx`, and the reference gates the whole
-  aperture on the sub CPU being halted while this core gates only the new
-  sub-I/O half (the VRAM half stays ungated, as before).
-- The drawing ALU's line trigger (`$D42B`) is implemented but no title in hand
-  writes it, so it is unexercised.
+  aperture on the sub CPU being halted. This core now gates **both** halves --
+  `vram_sel = vram_addr_sel && sub_open` -- and a measured run blocks zero
+  writes, i.e. no title in hand writes the aperture while the sub runs.
+  (Superseded claim: "the VRAM half stays ungated" -- it was gated in `08062cd`
+  / `971c8df`, the fix that made Mahjong render.)
+- The drawing ALU's line trigger (`$D42B`) **is** exercised: Mahjong writes it
+  485 times in a 2000-frame run, and that title now matches the reference's VRAM
+  byte-for-byte (98,304/98,304). (Superseded claim: "no title in hand writes
+  it, so it is unexercised.")
 - Host key events are not connected to AV scan codes; `$D431`/`$D432` answer the
   encoder protocol but no key ever arrives.
 - 77AVEMU also suppresses the sub NMI while the sub CPU is halted
