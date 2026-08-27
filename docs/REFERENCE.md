@@ -967,6 +967,28 @@ confident wrong answer at least once:
     single row. **After a clean seqdiff, count the writes that represent work** -- sub
     calls, FDC commands, ALU triggers -- on both sides before believing it.
 
+66. **Do not run anything else heavy while a sweep is timing itself, and do not read a
+    DURATION as a symptom.** A 68-title sweep was left running while gates, 2000-frame
+    single-title runs, VRAM dumps and multi-million-line traces went on beside it, and
+    the workers from a previously-`pkill`ed sweep were never confirmed dead. Load average
+    reached 18.5 on 16 cores. Two titles at the back of the queue -- both Ys II disks --
+    took **five to seven hours** on a run that takes **six minutes** on a quiet machine,
+    and sat at 100% CPU with the frame counter crawling. That was read as "the frame
+    counter has stopped, the video timing has hung", then as "this is a regression I
+    introduced, because Ys II completed in both previous sweeps". Neither was true.
+    Three separate errors, and the order matters:
+    * **The measurement was corrupted by its own environment.** Anything a long run says
+      about time is worthless if the box was saturated. Check `uptime` and the process
+      count before believing a duration.
+    * **A regression was declared from one data point** -- "worked before, slow now" --
+      without first reproducing it.
+    * **The repro command was CHANGED rather than reproduced.** `--bootrom 0` and
+      `--screenshot` were dropped from the failing invocation, and the conclusion "it
+      hangs on HEAD" was drawn from a machine that had booted a different ROM bank. This
+      is trap 62 inverted: there the danger is inheriting a flag you never examined, here
+      it is dropping one. **Copy the failing command verbatim, including the flags that
+      look irrelevant.**
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

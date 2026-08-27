@@ -11,25 +11,32 @@ Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate green.
 
 Against 77AVEMU over the 68-image FM77AV set (`vsim/sweep/`, both runs at 2000
 frames, canonical shot at frame 1980, so the two sides are the same instant).
-**This table predates every fix below and undercounts them** — FM Sound Editor,
-Daiva Story 2 disk A and Mahjong Kyou Jidai all move out of CORE-BLANK/CORE-WORSE:
+`results-av-f2000-shared-window.tsv` is the after, `results-av-f2000-nmi-secreg.tsv`
+the before — the two are one session apart, so the difference is exactly the
+fixes below:
 
 | verdict | before | after |
 |---|---|---|
-| CORE-BLANK — reference draws, this core does not | 9 | **6** |
-| CORE-WORSE | 3 | 3 |
+| CORE-BLANK — reference draws, this core does not | 9 | **4** |
+| CORE-WORSE | 3 | **2** |
 | TEXT-ONLY | 9 | 9 |
 | BOTH-BLANK — neither draws; mostly data/scenario disks, not our bug | 28 | 26 |
-| MATCH | 16 | **19** |
+| MATCH | 16 | **22** |
 | REF-WORSE — this core draws and the reference does not | 2 | 4 |
 
-`results-av-f2000-nmi-secreg.tsv` is the after; `results-av-f2000-postfix.tsv`
-the before. **Neither is a valid baseline for a future change** — see trap 57.
+Gained: FM Sound Editor, Daiva Story 2 disk A, Mahjong Kyou Jidai disk 1 — the
+last matching 77AVEMU on **all 98,304 VRAM bytes**.
 
-Six titles gained MATCH: both FM77AV demo images, Luxsor disk 2, Pro Yakyuu Fan
-disk A, and — unplanned — Shounen Mike no Hitoritabi and Woody Poco disk 1. The
-last two came free with the systemic fixes, which is the argument for fixing a
-CPU or controller bug rather than a title.
+What is left on the actionable list, worst first:
+
+| ours | ref | title |
+|---|---|---|
+| 0.0 | 27.3 | Luxsor disk 1 — runaway into `$fdxx`, IRQ asserted never taken |
+| 6.8 | 10.2 | Wizardry IV disk A — **probably trap 49, not a real row**; it renders throughout and only the fixed 1980 sample lands mid-transition, and the gate passes it byte-identically at 600. Check other frames before working on it. |
+| 0.1 | 9.6 | Little Box disk A — main CPU at 816 instr/frame against a healthy ~7400 |
+| 0.0 | 9.6 | In the Dream disk A — sub 65% halted, BUSY stuck at 1 |
+| 21.1 | 85.3 | How Many Robot disk 0 — uninvestigated |
+| 10.0 | 74.7 | Gambler Jikochuushinha — uninvestigated |
 
 ## The RTL fixes, and why they mattered
 
@@ -172,7 +179,7 @@ twice between frames 240 and 300 and this core never does. Bracketing with
 
 ## How to not waste the first hour
 
-These cost real time this session. `docs/REFERENCE.md` traps 55–64 have the full
+These cost real time this session. `docs/REFERENCE.md` traps 55–66 have the full
 versions; these are the ones that bit hardest.
 
 - **The build lies.** `make DEBUG_FDC=1` does **not** rebuild if no source
