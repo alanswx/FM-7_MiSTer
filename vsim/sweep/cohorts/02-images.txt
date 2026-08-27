@@ -1,0 +1,40 @@
+037050e926d423b602b0041298d1ed6b	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Wizardry #4 The Return of Werdna (1989)(ASCII)(JP)(Disk 2 of 3).d77
+039d67d04e10de87e539a20b3c8e543d	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/DARKCR0.D77
+1710226e5b8e47ad9a1a569ddc9be475	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/[Utility] Expert FM.d77
+17283b0116cd217eaae1ec8b02104bcd	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Marchen Veil [b].d77
+1ff7692ce89ebb2c7338105604473a9f	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/FM Sound Editor V1.0 (1985)(Fujitsu)(JP).d77
+25c29e662936d9198821c633d5ddaed1	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Lefty Mouse [b].d77
+2d1bfe7a6ad23ca581b0321d47b87c10	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/F-BASIC V3.3L11 System Disk (1985)(Fujitsu)(JP).d77
+3466b4e4d4aed30424252caf48e96c99	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/[Compilation] FM-7 Programs 03.d77
+36f7ccd2592bf545fa99f06e164ce43b	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Sorcerian (FM-7 parody) {run STARTUP}.d77
+3b8506b8baaa782c136a6f54b0f28c79	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/UTILS.D77
+4046f701e45785b030f1c17465412878	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/KENJA1.D77
+4485e5c819c3657f574741af49ec72ad	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Pop Lemon (Disk 1).d77
+48f00a85ee9559c8de49a32f977e2271	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Girls Paradise (Disk E).d77
+4df0dfa67793d48a12275a0b09adc947	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Kohaku Iro no Yuigon (1988)(River Hill)(JP).d77
+53aa0744cafbfb386750ecb5c6992b19	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Xanadu (Disk A - Program).d77
+59907d72789bd1b64542100e270d108b	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Dezeni Land.d77
+5ada09f9367e5943d3779e2d5145d574	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/The Quest (Disk 1-A).d77
+5c1c99d659a02000d834978d39ec90e4	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Voodoo Castle.d77
+5d2c976ae83f9d7d37f622383d437716	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Mugen Sensi Valis (1987)(Telenet)(JP).d77
+5ea3d6c008f7d970e4131f401f3219b4	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/BDC150.D77
+5fc5f7097a7cf419f374f033ab10e3b3	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Cranston Manor (Disk 1).d77
+6160eb4b044af52def1ae050a8d41ea5	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Return of Ishtar, The (1989)(SPS)(JP).d77
+67468165174fc74f980791be71377a1e	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/The Count.d77
+6c71cf3716b7a8d05a0722852a903187	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Take Out Vol. 7 (Disk A).d77
+7204a689c910090bfa787ea583ee92d3	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Dezeni Land (1983)(HUDSON)(JP).d77
+79417436b580f61b3f7901784d1436d0	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/DAIVA_B.D77
+7b9e0e19447b9085d8686c00978822ab	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/SELES_A.D77
+84c65b1c3372d7b696a0c2bd6d47a97a	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/XANADU.D77
+976163c0cc2aabbcd453a7f13f902dbf	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/OS9.D77
+a3d7545260fac0dc1aae3873c908f832	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/The Dark Crystal (Disk 1-A).d77
+b298bc691aff4c5eef797e09905debbb	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/[Compilation] Game 014.d77
+ca9a674878185cafced094c618f930f8	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/[Compilation] Game 02G [b].d77
+ce1aaecc35ba6f034595b133850b8bbd	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Wibarm (Data disk) [Alt 1] [b].d77
+de5e943b862d0bb50a32e2498250c27b	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/PQUEST.D77
+e6d0974ffd933e55ca23ae2e2f1a20b0	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Thunder Force.d77
+e8bb2edde14fc39141e695ea29d3d277	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Yanpara Adventure - Staff Shoumetsu no Nazo {load START}.d77
+ebf8b1a4976c9cdf45dbc438ee58eba8	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Albatross (Disk 1).d77
+fdfeac8ac65cb15aacaad3b137727ac7	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Xanadu Scenario II (Disk D - Program) [Alt 2].d77
+fe059d942fa1bffe00746511b7a354a3	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/The Palms.d77
+ff37e1131e92006c38efe4148651b39e	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Helicoid (1985)(Micro Net)(JP).d77

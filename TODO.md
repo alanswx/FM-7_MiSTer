@@ -117,9 +117,17 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    side rendered all 40 -- `cohort.py retire` refuses otherwise and names the
    disks it would have buried.
 
-   | cohort | disks | state |
+   | cohort | disks | result |
    |---|---|---|
-   | 01 | 40 | drawn, reference 40/40, our side running |
+   | 01 | 40 | retired. **0 CORE-BLANK.** 16 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY, 2 REF-WORSE, 1 CORE-MONO |
+   | 02 | 40 | drawn, running |
+
+   Cohort 01 found **no core bug in 40 disks**. Twelve are blank on our side
+   and all twelve are blank on the reference too. Its one CORE-MONO row
+   (Ishtar) is noise on both machines, and the four rows that first read as
+   CORE-BLANK were all scoring artifacts -- see trap 70, which is the durable
+   part of that cohort. On this evidence the Aug-8 "153 blank of 350" says
+   almost nothing about how many core bugs remain on the FM-7 side.
 
    When everything is retired, `cohort.py all` writes one list of every
    distinct disk for a final validation pass. That pass confirms nothing

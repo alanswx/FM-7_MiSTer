@@ -159,7 +159,11 @@ def cmd_next(machine, size):
         print('every distinct disk is covered -- run `cohort.py all <outdir>` for the '
               'full validation pass')
         return 1
-    nums = [int(n[:2]) for n in os.listdir(COHORTS) if n.endswith('-images.txt')]
+    # Count RETIRED cohorts too. Numbering off '-images.txt' alone restarts at
+    # 01 the moment cohort 01 is retired and renamed, and the new draw then
+    # overwrites the retired cohort's .paths file.
+    nums = [int(n[:2]) for n in os.listdir(COHORTS)
+            if n.endswith(('-images.txt', '-images.retired')) and n[:2].isdigit()]
     n = max(nums) + 1 if nums else 1
     # Seed from the cohort number alone, so a cohort is reproducible from its
     # number and the retired set, with no hidden state.
