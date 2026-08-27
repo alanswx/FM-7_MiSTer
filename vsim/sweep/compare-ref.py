@@ -25,7 +25,10 @@ Verdicts:
                77AVEMU itself aborts on. Not a verdict about the core.
 """
 import os
+import re
 import sys
+
+FRAME_PNG = re.compile(r'_frame_\d+\.png$')
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from classify import classify   # noqa: E402
@@ -88,10 +91,18 @@ def main():
     ours_dir, ref_dir = os.path.join(out, 'shots'), os.path.join(out, 'ref-shots')
     rates = load_rates(os.path.join(out, 'results.tsv'))
 
-    titles = sorted({n[:-4] for n in os.listdir(ours_dir) if n.endswith('.png')} |
-                    {n[:-4] for n in os.listdir(ref_dir) if n.endswith('.png')}
-                    if os.path.isdir(ref_dir) else
-                    {n[:-4] for n in os.listdir(ours_dir) if n.endswith('.png')})
+    # sweep_one.sh leaves BOTH the canonical <title>.png and one
+    # <title>_frame_<N>.png per sampled frame. Globbing all of them counts every
+    # title twice and invents a NO-SHOT row for each per-frame file, which reads
+    # as a half-finished sweep -- and makes `ls shots/*.png | wc -l` report
+    # double the titles actually done. The canonical copy always exists if any
+    # frame file does (sweep_one.sh falls back to the latest), so drop them.
+    def names(d):
+        return {n[:-4] for n in os.listdir(d)
+                if n.endswith('.png') and not FRAME_PNG.search(n)}
+
+    titles = sorted(names(ours_dir) | names(ref_dir)
+                    if os.path.isdir(ref_dir) else names(ours_dir))
 
     rows = []
     for t in titles:
