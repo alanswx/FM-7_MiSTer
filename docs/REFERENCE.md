@@ -1058,6 +1058,36 @@ confident wrong answer at least once:
     job looks like one producing no output at all. Redirect to a file and tail
     the file.
 
+70. **Coverage cannot tell a picture from a flat fill or from noise, so
+    CORE-BLANK fires on titles that are broken everywhere.** All four of the
+    first FM-7 cohort's "actionable" rows were this, and every one dissolved on
+    being looked at:
+
+    | title | what the reference actually shows |
+    |---|---|
+    | Argo | flat blue, **100% coverage / 1 colour**, byte-stable frames 200-3000, PC parked in the boot ROM at `$fe0b` |
+    | Hot Dog `[b]` | flat white, 100% / 1 colour, stable from frame 600 |
+    | Ishtar | coloured **noise**, 7 colours -- a garbage screen, not art |
+    | GAME2 | 2 colours against our 1, a marginal difference |
+
+    A flat fill is 100% covered and contains nothing; noise scores well on both
+    coverage and colour count. `compare-ref.py` now rejects the flat-fill case
+    (`colours <= 1 and coverage >= 99`) and reports a genuine colour shortfall
+    as its own `CORE-MONO` verdict rather than as `MATCH`. Noise it cannot
+    detect, and should not try to -- that is what looking at the picture is
+    for.
+
+    **The one-colour test alone is wrong**, and an early version of this check
+    made exactly that mistake: a monochrome picture at 33% coverage is a real
+    picture, and rejecting every 1-colour render turned two ordinary rows into
+    CORE-BLANK. It is the *combination* of one colour and near-total coverage
+    that means featureless.
+
+    The reusable form: before triaging a CORE-BLANK, render the reference at
+    several frames and check the PNG size actually changes. A byte-stable size
+    across 200 -> 3000 frames means the reference is not running the title
+    either, whatever its coverage says.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
