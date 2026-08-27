@@ -538,6 +538,39 @@ working from read two onwards.
 fetches from the `$fdxx` I/O window, IRQ asserted and never taken, sub 95.9% halted,
 `pc now $014e`. Start there, not at the palette.
 
+**4c. In the Dream disk A -- diagnosed, not fixed. A main/sub DEADLOCK, pre-existing.**
+Byte-identical on `1455e4a` and HEAD (5,236,634 main instructions, sub 65.4% halted,
+`BUSY=1 SHALTn=0`), so none of this session's fixes touches it and the shared-window gate
+is **exonerated** -- all 309 of its command-block writes are accepted, zero dropped
+(`make DEBUG_AVDRAW=1`, the `AVMEM SHW` probe).
+
+The deadlock, measured on both sides:
+
+| | reads `$FD05` = `$7E` (free) | sub calls issued |
+|---|---|---|
+| ours | 68 | **77** |
+| reference | 4,091 | **4,088** |
+
+* The main sits in `$f899 LDA <$05 / BMI $f899` -- an UNBOUNDED wait for BUSY to clear --
+  221,877 times in 700 frames.
+* The sub sits in the idle loop's INNER half, `$e13e`/`$e143`, reading `$D382` and
+  `$D380` as `$00` forever. That half never reaches `$e13b TST $d40a`, which is the only
+  thing that clears BUSY. It gets there only via `$e146 BMI $e133`, i.e. only if
+  `$D380` bit 7 -- the attention bit -- is set.
+* So the sub cannot clear BUSY until the main sets attention, and the main cannot reach
+  the code that sets attention (`$f8bf LDB $fc80 / ORB #$80 / STB $fc80`) because it is
+  blocked waiting for BUSY.
+
+*Measured clean, do not re-check:* the shared-window writes land (309/309 accepted, the
+command block `$FC82=$2a` plus "AUTO "/"LIS..." arrives), and the first `$FD05` divergence
+is only a spin COUNT at frame 81 (ours 41, reference 35) -- not a value difference.
+
+*The open question:* on the reference the sub DOES get back to `$e13b` 4,088 times. Find
+what wakes it. Either the attention bit reaches `$D380` there by a path this core does not
+model, or the sub leaves the inner loop some other way. Note `core.v` already records that
+this title drives `$D430` through the MMR sub-I/O aperture and waits on bit 7, which is a
+second path into the same sub state worth checking.
+
 **5. `vsim/shots-ref/` is stale, and one of its rows is a BLESSED BLANK.**
 `run_tests.sh` reports COUNTERS on every FM-7 row -- main 5555 -> 9387 per frame
 -- which is `6a7030e`'s 1.67x speedup, not a regression. Re-bless in its own
