@@ -120,7 +120,7 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    | cohort | disks | result |
    |---|---|---|
    | 01 | 40 | retired. **0 CORE-BLANK.** 16 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY, 2 REF-WORSE, 1 CORE-MONO |
-   | 02 | 40 | drawn, running |
+   | 02 | 40 | swept, **4 real CORE-BLANK** (below). 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
 
    Cohort 01 found **no core bug in 40 disks**. Twelve are blank on our side
    and all twelve are blank on the reference too. Its one CORE-MONO row
@@ -128,6 +128,37 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    CORE-BLANK were all scoring artifacts -- see trap 70, which is the durable
    part of that cohort. On this evidence the Aug-8 "153 blank of 350" says
    almost nothing about how many core bugs remain on the FM-7 side.
+
+### The Xanadu family draws nothing, and never has
+
+Cohort 02's four real findings, each confirmed by looking at the picture:
+**Xanadu (Disk A)**, **XANADU.D77**, **Xanadu Scenario II (Disk D)** and
+**Marchen Veil [b]**. All four render a full title screen on 77AVEMU and a
+black screen here. (The cohort's fifth CORE-BLANK row, Return of Ishtar, is
+the same noise screen as cohort 01's Ishtar -- not a bug.)
+
+**Not a regression.** All four were blank in the Aug-8 sweep too
+(`results-P4-19-f1500.tsv`, `png=3790`). The main-CPU rate has changed since
+(6698 -> 11017 per frame on Disk A) but the screen was always black.
+
+**Not a wedge, and not the display path.** On Xanadu Disk A both CPUs run at
+healthy rates (11102 main / 8810 sub per frame) with 15.2M `$fdxx` cycles
+across 4200 frames, and every sampled frame from 400 to 4000 is the blank
+3790-byte PNG while the reference has the title up by frame 400. At the
+matched frame the reference holds **33108 non-zero VRAM bytes and this core
+holds ZERO** -- so nothing is ever drawn, and the palette, display enable and
+raster are all eliminated. The fault is upstream of VRAM.
+
+The lead worth following: on all three Xanadu disks the reference's **sub CPU
+executes at `$d39d-$d3a5`**, inside the shared RAM window `$d380-$d3ff`. The
+main CPU downloads a routine into shared RAM and the sub runs it from there,
+so this is a main/sub handoff, not a drawing bug. Marchen Veil's sub instead
+runs at `$c023-$c02d`, so it may be a different fault that happens to end in
+the same black screen.
+
+Measuring this needs `FM7_VRAM_DUMP`, which until `847df20` was gated
+AV-only and silently wrote no file for FM-7 titles; note also that
+`--av-dump-frame` defaults to 870, so a shorter run writes nothing either.
 
    When everything is retired, `cohort.py all` writes one list of every
    distinct disk for a final validation pass. That pass confirms nothing
