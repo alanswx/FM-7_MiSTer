@@ -85,6 +85,47 @@ Extracts the Neo Kobe floppy collection, runs every `.d77`, and writes
 Recorded results live in `vsim/sweep/*.tsv` and are the baseline for per-title
 comparison. Join on `TITLE`.
 
+### Scoring the FM-7 sweep against 77AVEMU
+
+The AV sweep has been joined to the reference; **the FM-7 sweep has not, ever**.
+Its blank count therefore has nothing behind it -- on the AV side, 27 titles
+that the sweep called blank were blank on the reference too. A blank count that
+has not been through `compare-ref.py` is an upper bound, not a bug list.
+
+77AVEMU does run FM-7 software, under `--fm7`, and it boots a **different ROM
+set** that way. Both halves of the join must be told:
+
+```sh
+cd vsim/sweep
+./sweep.sh /tmp/fm7sw 12 2000                     # MACHINE defaults to fm7
+./ref-shots-at-frame.sh /tmp/fm7sw 1980 6 fm7     # 4th arg -- the default is av
+python3 compare-ref.py /tmp/fm7sw
+```
+
+`compare-ref.py` joins purely on filename and knows nothing about the machine,
+so **an FM-7 sweep pointed at AV references scores every row against the wrong
+machine and nothing announces the mismatch** -- the rows just look bad. The
+fourth argument is the whole defence.
+
+Use `ref-shots-at-frame.sh`, not `ref-sweep.sh`: the latter renders by 6809
+instruction count, which is the wrong unit the moment a picture is scored
+against a vsim screenshot. The frame-matched renderer samples the reference at
+`round(vsim_frame * 1.00608)` -- 1980 -> 1992 -- because a vsim frame is a real
+raster frame at 16 MHz / (1024 x 262) = 59.6374 Hz while a 77AVEMU frame is
+exactly 1/60 s.
+
+Two titles confirming the path works end to end, rendered at frame 1992:
+
+| title | reference PNG |
+|---|---|
+| Thexder `[b]` (known-good control) | 351,646 B |
+| Albatross Disk 1 (blank in the Aug-8 sweep) | 57,173 B |
+
+Albatross is the one that matters: the reference draws a title the sweep scored
+blank. The same disk under the AV default renders differently again (Thexder
+356,545 B vs 351,646 B), which is the cheap check that the flag is actually
+reaching the reference.
+
 ### Killing a sweep does not kill the sweep
 
 `sweep.sh` and `av-sweep.sh` drive `sweep_one.sh` through `xargs -P`. Killing
