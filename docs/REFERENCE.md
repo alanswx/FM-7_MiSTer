@@ -1039,6 +1039,25 @@ confident wrong answer at least once:
     newline joins them all into a single line, and a `sort -u | wc -l` on that
     reports **1**.
 
+69. **`pgrep -fc` does not exist on macOS, and `|| echo 0` turns that into
+    "nothing is running".** The count flag is a Linux procps extension; the BSD
+    pgrep here prints a usage error and exits non-zero. Wrapped as
+    `$(pgrep -fc Vemu 2>/dev/null || echo 0)` it reports a perfectly plausible
+    **0 processes** for a job that is running fine. Combined with a log that was
+    still buffered inside a `| tail`, that produced a confident "the gate is a
+    dead run" for a gate which went on to pass 11/11, and a second gate was
+    started on top of the first.
+
+    Use `pgrep -f PATTERN | wc -l`, which works on both. More generally: a
+    fallback on a *process* check is not a safety net, it is a way to convert a
+    broken check into a plausible number. `|| echo 0` and `2>/dev/null` belong
+    on things that are allowed to be absent, never on the measurement itself.
+
+    Related and in the same hour: never read a still-running job's progress
+    through `| tail` -- the pipe buffers until the writer exits, so a working
+    job looks like one producing no output at all. Redirect to a file and tail
+    the file.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
