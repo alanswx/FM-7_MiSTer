@@ -496,48 +496,47 @@ qualified by `~PLTREGn`; a read-modify-write like the `CLR $FD3C` this title use
 present it the way a plain load does. Unverified, and benign here because `CLR` discards
 what it read.
 
-**4b. THE DIGITAL PALETTE IS BEING CORRUPTED, and it is not one title.** Measured on
-three, all with the run summary's own palette read-out (which should be the identity
-ramp `0 1 2 3 4 5 6 7`):
+**4b. The digital palette write was not strobe-qualified. FIXED, and it fixes no
+title.** *(Superseded claim, and it was mine, published an hour earlier: "THE DIGITAL
+PALETTE IS BEING CORRUPTED, and it is not one title", naming Luxsor disk 1, Little Box
+and In the Dream. Disproven -- see below. The RTL defect was real; the diagnosis built
+on it was not.)*
 
-| title | palette after 700-2000 frames | effect |
-|---|---|---|
-| Luxsor disk 1 | `0 0 0 0 0 0 0 0` | every colour black -- blank screen whatever VRAM holds |
-| Little Box disk A | `0 1 2 3 4 5 `**`0`**` 7` | entry 6 zeroed |
-| In the Dream disk A | `0 1 `**`0 0`**` 4 `**`7 6 0`** | four entries wrong |
+`PAL.v` wrote `pal[MADDRBUS[2:0]] <= MDATA[2:0]` under `~PLTREGn && ~SFTCLKn`. SFTCLK is
+the VIDEO SHIFT CLOCK and `PLTREGn` is address-only (`MDECODE.v:43,55`), so any cycle
+that merely decoded `$fd38-$fd3f` wrote the entry -- **including a read**. Measured with
+the new `make DEBUG_PAL=1` on Luxsor over 240 frames: 256 writes to the register file, of
+which **224 had WTQEn HIGH**, i.e. the CPU was not writing. After qualifying with
+`~WTQEn`: 48 writes, all genuine. Both references write this register only from a write
+handler (CSP `fm7/display.cpp:3266-3268`, 77AVEMU `fm77av/fm77avio.cpp:251-260`).
 
-*Luxsor is the clearest case, because the reference can be diffed against it directly.*
-At `pc=$E541` both machines read all eight entries and write `$00`:
+**And it changes no title's picture.** Do not re-derive the wrong version:
 
-```
-entry        7    6    5    4    3    2    1    0
-reference   FF   FE   FD   FC   FB   FA   F9   F8     <- identity ramp, $F8|n
-ours        00   f8   f8   f8   f8   f8   f8   f8     <- all zero
-```
+| title | before | after | verdict |
+|---|---|---|---|
+| Luxsor disk 1 | `0 0 0 0 0 0 0 0`, blank | byte-identical, still blank | palette was NOT its cause |
+| Little Box disk A | `0 1 2 3 4 5 0 7` | `0 1 2 3 4 5 2 7` | changed; no evidence either is wrong |
+| In the Dream disk A | `0 1 0 0 4 7 6 0` | unchanged | no evidence of corruption |
 
-**This is the first palette access of the whole run on either machine**, so nothing
-overwrote it: our ramp is simply not there when the title looks. The title is doing a
-read-modify-write fade, so it then writes back what it read -- zeros -- and the screen
-is black for the rest of the run.
+*Where the reasoning went wrong, because the shape of the mistake will recur.* The
+run-stats palette read-out was treated as "should be the identity ramp `0 1 2 3 4 5 6 7`,
+so anything else is corruption". **The identity ramp is only the power-on default** (CSP
+seeds it the same way, `display.cpp:185,302`); a title that programs its own palette
+shows other values and is perfectly healthy. On top of that, the Luxsor "all zeros" that
+started the whole thread is what **the reference does too** -- both machines write `$00`
+to all eight entries at `$E541`, a deliberate fade.
 
-*The candidate, and it is a code fact rather than a measurement.* `PAL.v`'s digital
-palette write is
+*What was genuinely different on Luxsor, and is still unexplained:* at `$E541` the
+reference READS `FF FE FD FC FB FA F9 F8` and this core reads `00 f8 f8 f8 f8 f8 f8 f8`.
+Both then write zeros, so the register file ends the same and the picture does not depend
+on it -- but the read values differ, and the first palette read of a run returns
+`PALDATA`'s reset value on both Luxsor (`$FD3F`) and Mahjong (`$FD3C`), so the capture
+does not fire for it. Separate from the fill bits fixed in `0096c2c`, which are confirmed
+working from read two onwards.
 
-```verilog
-if (~PLTREGn && ~SFTCLKn && (~machine_av || MADDRBUS[3]))
-  pal[MADDRBUS[2:0]] <= MDATA[2:0];
-```
-
-`PLTREGn` is address-only (`MDECODE.v:43,55` -- no strobe) and `SFTCLKn` is the VIDEO
-SHIFT CLOCK. There is no CPU write qualification at all, so a **read** of
-`$FD38-$FD3F` also writes `MDATA[2:0]` into the entry it just read. The analog palette
-ten lines below is qualified correctly (`if (~AV_PALREGn && ~WTQEn)`). Verify with a
-`pal[]` probe before changing it.
-
-*A second, smaller thing in the same register.* The FIRST palette read of a run returns
-`$00` -- `PALDATA`'s reset value -- on both Luxsor (`$FD3F`) and Mahjong (`$FD3C`), so
-the capture does not fire for it. `0096c2c` fixed the fill bits (`$F8|value`, both
-references) and that is confirmed working from read two onwards; this is separate.
+**Luxsor disk 1's actual fault is the RUNAWAY**, untouched by any of this: 12 instruction
+fetches from the `$fdxx` I/O window, IRQ asserted and never taken, sub 95.9% halted,
+`pc now $014e`. Start there, not at the palette.
 
 **5. `vsim/shots-ref/` is stale, and one of its rows is a BLESSED BLANK.**
 `run_tests.sh` reports COUNTERS on every FM-7 row -- main 5555 -> 9387 per frame
