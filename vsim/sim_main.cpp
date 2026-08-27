@@ -660,7 +660,12 @@ static void kanji_check(void) {
 
 static void dump_av_vram(int frame) {
 	const char *vramOut = getenv("FM7_VRAM_DUMP");
-	if (!opt_machine_av || !vramOut) return;
+	// NOT AV-only. The FM-7 uses bank 0 of the same CRTRAM and the reference
+	// dumps all 96 KB under --fm7 too, so gating this on the machine made
+	// FM7_VRAM_DUMP silently write nothing for every FM-7 title -- the one
+	// measurement that separates "the bytes never got stored" from "the raster
+	// will not show them". Compare the first 48 KB for an FM-7 run.
+	if (!vramOut) return;
 	const auto *r = VL_ROOT(top);
 	// decltype rather than VlUnpacked<CData, 8192>* by name: 4.204 generates a
 	// plain C array here, so the concrete type differs between versions while
