@@ -14,7 +14,12 @@
 # the six "actionable" rows -- How Many Robot and Gambler Jikochuushinha -- were
 # the attract sequence photographed at different moments, not bugs.
 #
-#     ref-shots-at-frame.sh <sweep-outdir> [vsim-frame] [jobs]
+#     ref-shots-at-frame.sh <sweep-outdir> [vsim-frame] [jobs] [machine]
+#
+# `machine` is av (default) or fm7. It must match the machine the sweep itself
+# ran, because 77AVEMU boots a DIFFERENT ROM set under --fm7 -- pointing an FM-7
+# sweep at AV references scores every row against the wrong machine and the
+# mismatch does not announce itself.
 #
 # Default frame is the sweep's canonical SHOT (FRAMES - 20 = 1980 at the usual
 # 2000). Writes <outdir>/ref-shots, so compare-ref.py picks it up unchanged;
@@ -30,6 +35,12 @@ REPO=$(cd "$HERE/../.." && pwd)
 OUT=${1:?usage: ref-shots-at-frame.sh <sweep-outdir> [vsim-frame] [jobs]}
 VFRAME=${2:-1980}
 JOBS=${3:-6}
+MACHINE=${4:-av}
+case "$MACHINE" in
+  av)  MFLAG="" ;;
+  fm7) MFLAG="--fm7" ;;
+  *)   echo "machine must be av or fm7, got '$MACHINE'" >&2; exit 1 ;;
+esac
 RFRAME=$(python3 -c "print(round($VFRAME * 60 * 1024 * 262 / 16000000))")
 
 REF=$REPO/refs/local/fm77av_headless
@@ -39,7 +50,7 @@ ROMS=$REPO/refs/local/fm77av-roms
 
 DEST=$OUT/ref-shots-frame$VFRAME
 mkdir -p "$DEST"
-echo "vsim frame $VFRAME -> reference frame $RFRAME, $JOBS jobs"
+echo "vsim frame $VFRAME -> reference frame $RFRAME, $JOBS jobs, machine $MACHINE"
 
 render() {
   img="$1"; base=$(basename "$img" .d77)
@@ -48,9 +59,10 @@ render() {
   safe=$(echo "$base" | tr -c 'A-Za-z0-9._-' '_')
   out="$DEST/$safe.png"
   [ -f "$out" ] && return 0
-  timeout 300 "$REF" "$ROMS" "$img" 800000000 "$out" --stop-at-frame "$RFRAME" >/dev/null 2>&1
+  timeout 300 "$REF" "$ROMS" "$img" 800000000 "$out" --stop-at-frame "$RFRAME" \
+      $MFLAG >/dev/null 2>&1
 }
-export -f render; export DEST REF ROMS RFRAME
+export -f render; export DEST REF ROMS RFRAME MFLAG
 xargs -P "$JOBS" -I{} bash -c 'render "$@"' _ {} < "$OUT/images.txt"
 
 n=$(ls "$DEST"/*.png 2>/dev/null | wc -l | tr -d ' ')
