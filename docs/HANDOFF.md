@@ -36,18 +36,25 @@ matching 77AVEMU on **all 98,304 VRAM bytes**.
 
 Actionable list, frame-matched, worst first:
 
+**THREE titles, not five.** Every row was checked against its own four sampled
+frames before being believed:
+
 | ours | ref | title |
 |---|---|---|
-| 0.0 | 94.5 | Ys II Program disk — draws at frames 1100/1400 (40 KB PNGs) then goes blank. Check whether it is trap 49 before assuming it is a bug. |
-| 0.0 | 27.1 | Luxsor disk 1 — runaway into `$fdxx`, IRQ asserted never taken |
-| 0.1 | 9.6 | Little Box disk A — main CPU at 816 instr/frame against a healthy ~7400 |
-| 0.0 | 9.6 | In the Dream disk A — sub 65% halted, BUSY stuck at 1 |
-| 6.8 | 8.7 | Wizardry IV disk A — **trap 49, not a real row**: samples run 12222/10635/10411/7143 bytes, it renders throughout, and the gate passes it byte-identically at frame 600 |
+| 0.0 | 27.1 | Luxsor disk 1 — blank at all four samples. Runaway into `$fdxx`, IRQ asserted never taken. |
+| 0.1 | 9.6 | Little Box disk A — blank at all four. Main CPU at 816 instr/frame against a healthy ~7400. |
+| 0.0 | 9.6 | In the Dream disk A — blank at all four. Sub 65% halted, BUSY stuck at 1. |
 
-**Cleared as trap 49, do not re-open without checking other frames:** How Many
-Robot disk 0 (our frame 1100 *is* the reference's title screen) and Gambler
-Jikochuushinha (at the matched frame the reference shows the same border and
-portrait as ours; the real gap is missing text, not the title illustration).
+**Cleared as trap 49 — do NOT re-open without checking the other sampled frames
+first.** Four of the seven rows the sweep called actionable were the attract
+sequence photographed at a different moment:
+
+| title | why it is not a bug |
+|---|---|
+| Ys II Program disk | our frame 1100 is the same title screen the reference shows at 1992 — stone relief, logo, "ANCIENT YS VANISHED THE FINAL CHAPTER". The reference itself swings 151 KB → 8.9 KB → 8.9 KB → 98 KB across the same span. |
+| How Many Robot disk 0 | our frame 1100 *is* the reference's title screen, pixel for pixel |
+| Gambler Jikochuushinha | at the matched frame the reference shows the same border and portrait as ours; the real gap is missing **text**, not the title illustration |
+| Wizardry IV disk A | samples 12222/10635/10411/7143 bytes — renders throughout; the gate passes it byte-identically at frame 600 |
 
 ## The RTL fixes, and why they mattered
 
