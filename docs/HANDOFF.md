@@ -9,34 +9,45 @@ Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate green.
 
 ## State in one screen
 
-Against 77AVEMU over the 68-image FM77AV set (`vsim/sweep/`, both runs at 2000
-frames, canonical shot at frame 1980, so the two sides are the same instant).
-`results-av-f2000-shared-window.tsv` is the after, `results-av-f2000-nmi-secreg.tsv`
-the before — the two are one session apart, so the difference is exactly the
-fixes below:
+Against 77AVEMU over the 68-image FM77AV set, **both sides scored at the same
+machine-time instant** — core frame 1980, reference frame 1992 — using
+`sweep/ref-shots-at-frame.sh`. *(Superseded: earlier tables here, including the
+one this replaces, were scored against `ref-sweep.sh` output, which renders by
+INSTRUCTION COUNT. That is a different moment in a title, exactly as
+`ref-sweep.sh`'s own header warns, and it inflated the actionable list — see
+trap 67.)*
 
-| verdict | before | after |
+Both columns re-scored on the frame-matched basis, so they are comparable:
+
+| verdict | `sweep/renders/` | now |
 |---|---|---|
-| CORE-BLANK — reference draws, this core does not | 9 | **4** |
-| CORE-WORSE | 3 | **2** |
-| TEXT-ONLY | 9 | 9 |
-| BOTH-BLANK — neither draws; mostly data/scenario disks, not our bug | 28 | 26 |
-| MATCH | 16 | **22** |
-| REF-WORSE — this core draws and the reference does not | 2 | 4 |
+| CORE-BLANK — reference draws, this core does not | 12 | **5** |
+| CORE-WORSE | 2 | **0** |
+| TEXT-ONLY | 8 | 8 |
+| BOTH-BLANK — neither draws; mostly data/scenario disks | 27 | 27 |
+| MATCH | 18 | **27** |
+| REF-WORSE — this core draws and the reference does not | 1 | 1 |
 
-Gained: FM Sound Editor, Daiva Story 2 disk A, Mahjong Kyou Jidai disk 1 — the
-last matching 77AVEMU on **all 98,304 VRAM bytes**.
+**`sweep/renders/` is two sessions old**, so that delta is not this session
+alone; it carries the previous session's NMI-mask and sector-register fixes as
+well. The three titles verified individually as gained *this* session are FM
+Sound Editor, Daiva Story 2 disk A and Mahjong Kyou Jidai disk 1 — the last
+matching 77AVEMU on **all 98,304 VRAM bytes**.
 
-What is left on the actionable list, worst first:
+Actionable list, frame-matched, worst first:
 
 | ours | ref | title |
 |---|---|---|
-| 0.0 | 27.3 | Luxsor disk 1 — runaway into `$fdxx`, IRQ asserted never taken |
-| 6.8 | 10.2 | Wizardry IV disk A — **probably trap 49, not a real row**; it renders throughout and only the fixed 1980 sample lands mid-transition, and the gate passes it byte-identically at 600. Check other frames before working on it. |
+| 0.0 | 94.5 | Ys II Program disk — draws at frames 1100/1400 (40 KB PNGs) then goes blank. Check whether it is trap 49 before assuming it is a bug. |
+| 0.0 | 27.1 | Luxsor disk 1 — runaway into `$fdxx`, IRQ asserted never taken |
 | 0.1 | 9.6 | Little Box disk A — main CPU at 816 instr/frame against a healthy ~7400 |
 | 0.0 | 9.6 | In the Dream disk A — sub 65% halted, BUSY stuck at 1 |
-| 21.1 | 85.3 | How Many Robot disk 0 — uninvestigated |
-| 10.0 | 74.7 | Gambler Jikochuushinha — uninvestigated |
+| 6.8 | 8.7 | Wizardry IV disk A — **trap 49, not a real row**: samples run 12222/10635/10411/7143 bytes, it renders throughout, and the gate passes it byte-identically at frame 600 |
+
+**Cleared as trap 49, do not re-open without checking other frames:** How Many
+Robot disk 0 (our frame 1100 *is* the reference's title screen) and Gambler
+Jikochuushinha (at the matched frame the reference shows the same border and
+portrait as ours; the real gap is missing text, not the title illustration).
 
 ## The RTL fixes, and why they mattered
 
@@ -179,7 +190,7 @@ twice between frames 240 and 300 and this core never does. Bracketing with
 
 ## How to not waste the first hour
 
-These cost real time this session. `docs/REFERENCE.md` traps 55–66 have the full
+These cost real time this session. `docs/REFERENCE.md` traps 55–67 have the full
 versions; these are the ones that bit hardest.
 
 - **The build lies.** `make DEBUG_FDC=1` does **not** rebuild if no source

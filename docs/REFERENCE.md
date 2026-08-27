@@ -989,6 +989,32 @@ confident wrong answer at least once:
       it is dropping one. **Copy the failing command verbatim, including the flags that
       look irrelevant.**
 
+67. **`compare-ref.py` and `ref-sweep.sh` disagree about what a reference picture IS, and
+    nothing in the pipeline says so.** `ref-sweep.sh` renders by 6809 INSTRUCTION COUNT
+    and its own header warns that this is "the WRONG unit the moment a render is going to
+    be scored against a vsim screenshot"; `compare-ref.py` then scores exactly that way.
+    Joining a sweep against `ref-sweep.sh` output therefore compares two different moments
+    in a title and reports the difference as a verdict. Measured on the 68-title AV set,
+    the same core shots scored two ways:
+
+    | | by instruction count | frame-matched |
+    |---|---|---|
+    | CORE-BLANK | 4 | 5 |
+    | CORE-WORSE | 2 | **0** |
+    | MATCH | 22 | **27** |
+
+    **Two of the six "actionable" rows were not bugs at all.** How Many Robot disk 0
+    looked like 21% against 85% -- our frame 1100 is pixel-for-pixel the reference's
+    title screen, and the canonical 1980 sample merely catches us further into the
+    attract sequence. Gambler Jikochuushinha looked like 10% against 75% -- at the
+    matched frame the reference shows the same border and the same portrait we draw,
+    and the real defect is missing text.
+
+    Use `sweep/ref-shots-at-frame.sh <outdir>` before `compare-ref.py`. It renders every
+    title at `round(vsim_frame * 1.00608)` and drops the result in `ref-shots`. And note
+    the join is on filename: the safe-name rule (`sweep_one.sh:9`) KEEPS `-`, so a
+    retyped `tr` expression silently produces 40 NO-SHOT rows instead of an error.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
