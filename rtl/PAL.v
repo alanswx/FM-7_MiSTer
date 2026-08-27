@@ -61,8 +61,33 @@ always @(posedge CLKSYS) begin
     rst_idx <= rst_idx + 3'b1;
     analog_reset_idx <= analog_reset_idx + 12'd1;
   end
-  if (~PLTREGn && ~SFTCLKn && (~machine_av || MADDRBUS[3])) begin
+  // QUALIFIED BY THE CPU WRITE STROBE, not by the video shift clock.
+  //
+  // This asked for `~SFTCLKn` -- SFTCLK is the VIDEO SHIFT CLOCK -- and PLTREGn
+  // is address-only (`MDECODE.v:43,55`, no strobe in it). So any cycle that
+  // merely decoded $fd38-$fd3f wrote `MDATA[2:0]` into the entry, INCLUDING A
+  // READ, and a read drives no meaningful data. Measured on Luxsor disk 1 over
+  // 240 frames with `make DEBUG_PAL=1`: 256 writes to the register file, of
+  // which **224 had WTQEn HIGH** -- the CPU was not writing -- and every one of
+  // them stored 0.
+  //
+  // The cost is the whole picture on any title that READS the palette. Luxsor
+  // disk 1 does a read-modify-write fade at $E541: the reference reads
+  // FF FE FD FC FB FA F9 F8 (the identity ramp as $F8|n) and writes it back,
+  // this core read its own zeroed entries and wrote zeros, and every colour was
+  // black for the rest of the run. Little Box lost entry 6, In the Dream four.
+  //
+  // The analog palette below has always been qualified correctly
+  // (`~AV_PALREGn && ~WTQEn`); this half was not.
+  if (~PLTREGn && ~WTQEn && (~machine_av || MADDRBUS[3])) begin
     pal[MADDRBUS[2:0]] <= MDATA[2:0];
+`ifdef DEBUG_PAL
+    // Every write to the digital palette, with the CPU write strobe alongside.
+    // WTQEn HIGH here means the CPU is NOT writing -- i.e. this entry is being
+    // clobbered by a read or by an unrelated cycle that merely decoded $fd3x.
+    $display("PALW idx=%0d <- %0d  WTQEn=%0d RDQEn=%0d addr=$%04x",
+             MADDRBUS[2:0], MDATA[2:0], WTQEn, RDQEn, MADDRBUS);
+`endif
   end
 
   // FM77AV's analog palette shares the $FD30-$FD3F block with the FM-7 digital

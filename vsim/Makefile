@@ -142,6 +142,18 @@ ifeq ($(DEBUG_AVDRAW),1)
 V_DEFINE += +define+DEBUG_AVDRAW
 endif
 
+# `make DEBUG_PAL=1` prints one line per write to the eight-entry digital
+# palette, with the CPU write strobe alongside:
+#
+#   PALW idx=<n> <- <value>  WTQEn=<n> RDQEn=<n> addr=$fd3x
+#
+# WTQEn HIGH on that line means the CPU was NOT writing, i.e. the entry was
+# clobbered by a read or by a cycle that merely decoded $fd3x. Touch
+# ../rtl/PAL.v before building or the define does not reach Verilator (trap 3).
+ifeq ($(DEBUG_PAL),1)
+V_DEFINE += +define+DEBUG_PAL
+endif
+
 # `make DEBUG_FDC_READ=1` prints one line per byte the controller hands the CPU
 # during a sector read, plus the buffer base chosen for each sector:
 #
