@@ -90,6 +90,15 @@ served from `core.v`'s `~(SUBSELn | RDQEn)` mux arm and never passes AVMEM's DOU
 the gate lives in both files — gating only the write gives byte-identical output, which
 looks exactly like a build that did not take.
 
+**`SRAM.v` — and the SAME rule again, because a second write path bypassed it.**
+`main_write` was `(~SUBSELn & ~WTQEn) || AV_SHARED_WRITE`; gating only the AVMEM term
+left the FM-7's own `$fcxx` decode ungated, so Mahjong's attention bit at `$FC80` was
+set while halted and then wiped by the very next `CLR $FC80` with the sub running. With
+both gated its **VRAM matches 77AVEMU on all 98,304 bytes**. The lesson is in the
+commit: when a rule has two implementations, gate both, and *instrument the gate* —
+a `DEBUG_AVDRAW` probe printing accepted-vs-dropped with `sub_open` is what proved the
+attention write landed and sent the search after a second writer.
+
 ## Tools built this session — use these before inventing anything
 
 Every wrong answer this session came from inferring a measurement the other
@@ -133,18 +142,9 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
    translation, a sub-system handshake, a display latch and a shared-window
    gate — and the set has not been re-measured since. Build the "before" from the same tree in the same
    session (trap 57); the table at the top of this file predates all three.
-3. **Mahjong Kyou Jidai Special disk 1's title lettering** — the title now
-   renders (see the shared-window fix above); the large kanji do not, and it is
-   a SECOND fault: **the sub-system BUSY flag never clears**, so the main CPU
-   spins at `$2F87` instead of issuing the sub calls that draw them. It reads
-   free 3 times in 1100 frames where the reference reads free 33,973 times.
-   `seqdiff` calls the whole window clean — it collapses runs, so the spin is
-   invisible (trap 65). Everything else is ruled out with measurements; see
-   `CONTINUATION.md`. The BUSY semantics are trap 55 territory and the
-   references disagree, so do not touch them without a same-tree sweep.
-4. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
+3. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
    the logo reads grey/olive here and green on the reference.
-5. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
+4. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
    animations photographed at one global `SHOT_AT`, so they catch whatever
    instant they land on. Kohakuiro draws its logo at frame ~199 and fades by 400.
 6. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work

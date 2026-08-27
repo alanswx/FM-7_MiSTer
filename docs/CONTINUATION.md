@@ -436,74 +436,65 @@ table and is fine. Its samples are 12222 / 10635 / 10411 / 7143 bytes -- it rend
 throughout, and only the frame-1980 canonical lands mid-transition. The gate, which shoots
 at frame 600, passes it byte-identically. Trap 49.
 
-**4. Mahjong Kyou Jidai Special disk 1 -- FIXED, bar the title lettering.** The main
-CPU reaches the shared window `$FC80-$FCFF` only while the sub CPU is halted; this core
-let the write through, so the title's probe read back its own `$00`, concluded the sub
-was already halted, skipped the halt, and drove the drawing ALU through an aperture that
-then -- correctly -- dropped the writes. **211 line triggers issued, 10 landed.** See
-`docs/FM77AV.md` for the rule and both references' citations.
+**4. Mahjong Kyou Jidai Special disk 1 -- FIXED, and VRAM now matches 77AVEMU
+byte for byte.** Two applications of one rule: the main CPU reaches the shared window
+`$FC80-$FCFF` only while the sub CPU is halted. `AVMEM.v` had no gate at all, and after
+that was added `SRAM.v` still had a second, LEGACY main-side write path
+(`~SUBSELn & ~WTQEn`) that bypassed AVMEM entirely -- so half the writes stayed ungated
+and the title only came half right. See `docs/FM77AV.md` for the rule and the citations.
 
-| | before | after | reference |
-|---|---|---|---|
-| PNG at 1100/1400/1700/1980 | 13838 (all) | **42341** (all) | -- |
-| VRAM non-zero at frame 1980 | 6,343 | **33,098** | 33,017 |
-| VRAM bytes equal to reference | 63,150 | **92,704** | of 98,304 |
-| main-CPU `$D42B` / `$D411` writes | 550 / 279 | **485 / 278** | 485 / 278 |
+| | broken | shared-window gate | + legacy path gated | reference |
+|---|---|---|---|---|
+| PNG at 1980 | 13,838 | 42,341 | **46,542** | -- |
+| VRAM non-zero | 6,343 | 33,098 | **33,017** | 33,017 |
+| VRAM bytes equal to reference | 63,150 | 92,704 | **98,304** | of 98,304 |
 
-The ALU command stream is now the reference's **exactly**, and the frame-45 divergence is
-gone -- `W $FD05 80 pc=$1F0C`, the halt that was being skipped, now matches.
+**100.0% of VRAM, every plane byte-identical.**
 
-*Measured clean along the way, do not re-check:* the FDC (110,784 data bytes both sides),
-`$FD37` (3 accesses, same values and PCs), the digital palette (29 writes, identical), and
-**the Bresenham line engine** -- `DEBUG_AVDRAW` now prints `LSTART`/`LEND` with a step
-count, and every line that started also finished at its exact endpoint
-(`(262,0)-(182,80)` in 80 steps, `(401,199)-(489,111)` in 88). The engine was never the
-fault; the writes never arrived.
+*How the title's probe works, because it is the thing that punishes a missing gate:*
 
-*What is left, and it is a SECOND and unrelated fault: the sub-system BUSY flag never
-clears, so the main CPU spins instead of issuing the sub calls that draw the title
-kanji.* At `$2F87`, the wait-for-not-busy at the head of a sub call:
+```
+$1efd  CLR $fc80      ; discarded while the sub runs
+$1f00  LDA $fc80      ; $FF -> window shut -> the sub IS running
+$1f03  BEQ $1f14      ; zero -> "already halted" -> skip the halt
+```
 
-| at `$2F87` | reads `$FE` (busy) | reads `$7E` (free) | halts at `$2F8E` |
-|---|---|---|---|
-| ours | 2,353,206 | **3** | 3 |
-| reference | 1,137,557 | **33,973** | 33,972 |
+and separately, the attention handshake that the legacy path was breaking:
 
-The main CPU makes 1,314,548 reads of `$FD05` at that one PC after frame 700 and gets
-free three times in 1100 frames. **`seqdiff.py` reports the whole 1100-frame window as
-clean** apart from two known-benign rows -- it collapses runs, so a spin loop is
-invisible to it (trap 65). The tell was the raw line counts, ours 2,902,173 filtered
-against the reference's 1,785,020, and a histogram of what ours does that the reference
-does not.
+```
+main  $2fa8  W $FC80 <- $80   ; set attention, sub halted -- lands
+main  $2fab  W $FD05 <- $00   ; release
+main  $2f7f  CLR $FC80        ; sub now running: AVMEM drops it,
+                              ; the legacy path wrote $00 anyway and wiped it
+sub   $e143  LDA $d380        ; $00 forever, so `BMI $e133` never taken,
+                              ; `TST $d40a` never reached, BUSY never cleared
+main  $2f87  R $FD05          ; spins -- 1,314,548 times after frame 700
+```
 
-The lettering itself is confined to VRAM **rows 16-83**; below row 84 the two machines
-are byte-identical. Render the two dumps to compare -- the reference's band carries
-麻雀名時代 SPECIAL over the artwork, ours carries the artwork alone.
+*(Superseded: an earlier note here called the lettering "a SECOND and unrelated fault --
+the sub-system BUSY flag never clears" and named BUSY-on-acknowledge vs BUSY-on-request
+as the lead. Wrong on both counts: same rule, half-applied. The BUSY semantics were not
+touched and should not be -- trap 55.)*
 
-*Ruled out for the lettering, with measurements -- do not re-check:* the ALU line engine
-(command streams byte-identical, only PSET and TILEPAINT, compare never enabled), the
-plane mask `$D41B` (applied, `AVHDRAW.v:284-286`), the compare path (matches 77AVEMU
-`fm77avcrtc.cpp:849-877` including the `condition&1` sense), the sub CPU's own VRAM
-writes (a uniform full-screen clear, 1600 per 20-row band across all 200 rows), and the
-MMR VRAM aperture gate (`DEBUG_AVDRAW`: 55,444 accepted writes, **zero** blocked, zero
-ALU intercepts).
+*What settled it was instrumenting the GATE, not the behaviour.* A `DEBUG_AVDRAW` probe
+on `SHARED_WRITE` prints accepted and dropped writes with `sub_open`; seeing
+`SHW OK addr=$fc80 data=$80 sub_open=1` proved the attention write landed, which is what
+forced the search for a second writer. `AVHDRAW` likewise gained `LSTART`/`LEND` prints
+with a step count, which exonerated the Bresenham engine early (every line finished at
+its exact endpoint). Both probes are in the tree.
 
-*The lead.* Our sub executes ~100,000 `$D40A` command cycles over 2000 frames against the
-reference's ~36,000 pro-rata, and BUSY ends stuck set (`BUSY=1 SHALTn=1 SHALTACn=1`) with
-the sub CPU running. The sub monitor's idle loop clears BUSY once at `$E382` (`TST $d40a`)
-and then polls `$D382` without re-reading `$D40A`, so BUSY should sit CLEAR while it
-idles. Find why ours does not. **Note the BUSY set/clear semantics are trap 55 territory
-and the references disagree** -- 77AVEMU argues from the schematic that the halt
-ACKNOWLEDGE raises the flag (`fm77av/fm77avio.cpp:65-100`), `FLAGS.v` follows MAME and CSP
-in raising it on the halt REQUEST. Do not change that without a same-tree sweep.
+*Measured clean, do not re-check:* the FDC (110,784 data bytes both sides), `$FD37`, the
+digital palette, the ALU command stream (identical to the reference, register for
+register), the ALU line engine, the plane mask, the compare path, and the MMR VRAM
+aperture gate (55,444 accepted, zero blocked, zero intercepts).
 
-*One divergence remains in 700 frames* (besides the benign `$FD1F` FDC logging shift):
-`R $FD3C` returns `$00` here against the reference's `$FC`. `PAL.v` now fills the five
-unused bits with 1s as both references do, and that read STILL returns `$00` -- so
-`PALDATA` is not being captured on that access at all. The capture is a filtered leading
-edge of `RDQEn` qualified by `~PLTREGn`; a read-modify-write like the `CLR $FD3C` this
-title uses may not present it the way a plain load does. Unverified, and benign here
-because `CLR` discards what it read.
+*One divergence remains in 1100 frames*, besides the benign `$FD1F` FDC logging shift:
+`R $FD3C` returns `$00` here against the reference's `$FC`. `PAL.v` fills the five unused
+bits with 1s as both references do, and that read STILL returns `$00`, so `PALDATA` is
+not captured on that access at all. The capture is a filtered leading edge of `RDQEn`
+qualified by `~PLTREGn`; a read-modify-write like the `CLR $FD3C` this title uses may not
+present it the way a plain load does. Unverified, and benign here because `CLR` discards
+what it read.
 
 **5. `vsim/shots-ref/` is stale, and one of its rows is a BLESSED BLANK.**
 `run_tests.sh` reports COUNTERS on every FM-7 row -- main 5555 -> 9387 per frame
