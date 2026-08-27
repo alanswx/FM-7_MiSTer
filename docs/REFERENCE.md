@@ -1015,6 +1015,30 @@ confident wrong answer at least once:
     the join is on filename: the safe-name rule (`sweep_one.sh:9`) KEEPS `-`, so a
     retyped `tr` expression silently produces 40 NO-SHOT rows instead of an error.
 
+68. **The sweep's safe-name is not unique, and a collision merges two different
+    disks into one row.** `sweep_one.sh:9` keys on the disk's *basename* only,
+    so two images with the same filename in different directories become one
+    row -- and because `tr -c` maps every non-ASCII byte to `_`, any two
+    Japanese-named disks of equal length collide as well. Measured on the FM-7
+    half: 663 files, 401 distinct by content, and **3 safe-names hold two
+    genuinely different disks each** (`Tritorn`, `Xevious`, and two Shift-JIS
+    names that both flatten to `________.D77_`). The join is on filename alone,
+    so the two machines can render *different disks* under one verdict.
+
+    The sweep does not fail; it renders 38 pictures for 40 disks. That gap is
+    the only symptom, and if you check for missing renders by name you find
+    none -- the names are all present, two of them just mean two disks. Verify
+    by content: `md5` the sampled paths and confirm one safe-name per hash.
+    `run_tests.sh` already reports this class ("skipped 324 disk(s) whose
+    basename was already taken").
+
+    Related, and the reason `compare-ref.py` calls `.rstrip('_')`: `tr -c
+    'A-Za-z0-9._-' '_'` converts the trailing **newline** too, so every safe
+    name gains a trailing `_` -- `Thexder [b]` becomes `Thexder__b__`. A shell
+    one-liner that pipes many names through one `tr` without re-emitting the
+    newline joins them all into a single line, and a `sort -u | wc -l` on that
+    reports **1**.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
