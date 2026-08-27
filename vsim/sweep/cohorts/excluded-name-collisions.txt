@@ -1,0 +1,10 @@
+# Distinct disks sharing a safe-name with another disk.
+# The sweep would merge them into one row and the two machines
+# could render different disks under one verdict -- trap 68.
+# Sweeping these needs sweep_one.sh to disambiguate the name.
+software/D77/Tritorn.d77
+software/D77/Xevious.d77
+software/D77/‹ã‹Ê“`ã.D77
+software/D77/‹ã‹Ê“`‰º.D77
+software/Fujitsu FM-7/Tritorn (Sein Soft)/Tritorn.d77
+software/Fujitsu FM-7/Xevious (Dempa)/Xevious.d77

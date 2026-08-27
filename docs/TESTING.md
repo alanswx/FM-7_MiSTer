@@ -85,6 +85,49 @@ Extracts the Neo Kobe floppy collection, runs every `.d77`, and writes
 Recorded results live in `vsim/sweep/*.tsv` and are the baseline for per-title
 comparison. Join on `TITLE`.
 
+### Covering the collection in cohorts
+
+Our side of a full sweep is roughly a day at 12 jobs; the reference side is
+minutes. Sweeping everything on every change is therefore not a thing anyone
+will actually do, and "we swept it a while ago" is how the Aug-8 FM-7 numbers
+went 151 commits stale without anyone noticing. The method is to sweep a random
+**cohort** at a time, retire it once it is genuinely covered, and draw the next
+one from what is left. `cohort.py` keeps the bookkeeping:
+
+```sh
+cd vsim/sweep
+python3 cohort.py status                 # coverage so far
+python3 cohort.py next --size 40         # draw -> cohorts/NN-images.txt
+cp cohorts/NN-images.paths /tmp/cNN/images.txt
+MACHINE=fm7 ./sweep-list.sh /tmp/cNN 8 2000
+./ref-shots-at-frame.sh /tmp/cNN 1980 6 fm7
+python3 compare-ref.py /tmp/cNN
+python3 cohort.py retire NN /tmp/cNN     # only if our side rendered all of them
+```
+
+**A cohort is covered when OUR side rendered every disk in it, not when it was
+drawn.** A sweep that returns 37 renders for 40 disks and gets retired anyway
+buries three disks permanently: nothing downstream looks for them again, and
+the coverage count cheerfully reads 40. `retire` recounts against the outdir and
+refuses if any disk is missing a render, naming the ones it would have buried.
+That refusal is the whole point of the subcommand -- retiring is a one-line
+`mv` otherwise.
+
+Disks are deduplicated **by content**, not by name: the collection ships the
+same image under several paths (663 FM-7 files, 401 distinct). Six are excluded
+because their safe-names collide with another disk's, and they are listed in
+`cohorts/excluded-name-collisions.txt` rather than dropped silently -- see trap
+68. Sweeping those six needs `sweep_one.sh` to disambiguate the name first.
+
+Cohort *N* is seeded from its own number, so it is reproducible from the number
+plus the retired set with no hidden state. The retired lists in
+`cohorts/*-images.retired` are data and belong in git; the renders do not.
+
+When every cohort is retired, `cohort.py all <outdir>` writes one list of every
+distinct disk for a final validation pass. That run is there to confirm nothing
+regressed across the cohorts -- it is not where the bugs are expected to be
+found, because by then each disk has already been through a cohort.
+
 ### Scoring the FM-7 sweep against 77AVEMU
 
 The AV sweep has been joined to the reference; **the FM-7 sweep has not, ever**.

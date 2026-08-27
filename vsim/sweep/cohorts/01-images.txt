@@ -1,0 +1,40 @@
+06282c4fddbe27ffd6592ebe5f62cbd3	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Greed (Disk 1).d77
+074fc29ed663ef7edb74a50dd260060f	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Arion (1986)(ASCII)(JP)(Disk 2 of 2).d77
+0de057625ccaa14c2427b4bd199abe7f	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/[Compilation] Game 011.d77
+0ec701fdc837fe10f13c01dc5d2373a9	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Xanadu Scenario II (Disk E - Data).d77
+20975728d26557d4fa43810b209714d7	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Take Out Vol. 6.d77
+32eeb09ac19debc45c526c979ef4df7d	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Arion (1986)(ASCII)(JP)(Disk 1 of 2).d77
+340ca3bd6d99382adcbd3035d1b01cc0	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/The Quest (Disk 1-B).d77
+37602917cbfd0fa3f078a09f93a91e3a	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/FMSOFT1.D77
+3b924242440128e73826c45ec4c78e47	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Topple Zip.d77
+3ec02d6244beabaadb138e248453bb4e	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Front Line (1983)(Nidecom Carry Soft)(Taito)(Hiroshi Hasegawa)(Tetsuya Sasaki).D77
+45ae63215825aa081a616b701efee932	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Ys (FM7) (Disk A).d77
+45d166dbc4d4b12da02d1ef3fa0f248b	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Argo (1988)(Kure Software Koubou)(JP).d77
+5ba4518feaad1558a573827f16822183	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Wibarm (Data disk) [b].d77
+6ac163d35fe0af62ca1f1f6cffca38a1	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Relics (1986)(Bothtec)(JP).d77
+6bc2026da8dd0055191b80c67f069682	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Lupin Sansei - Cagliostro no Shiro (Disk B).d77
+70a34407be7a0a2e5f2de4435e0afcbc	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Solitaire Royale.d77
+714323ace7d1b01eb23ba1e65d353147	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Hot Dog [b].d77
+79466d96a664916664b8bc6dc9fd2b17	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/FLOLITA.D77
+8424b00a5a3027108f4d64ae931cef57	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/[Compilation] Game 011 [Alt 1] [b].d77
+84bf6c693779a890777c72bed31beddd	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Strange Odyssey (1984)(Star Craft)(JP).d77
+8a1fd6e12e66149367a241e5b50437a4	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/File Master FM, The - Hot File Express (1987-12-20)(Kyoto Media)(JP).d77
+8cf4eb545faefa3a3c8369027bb2deea	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Seles (1990)(ASCII)(JP).d77
+8ee17c26c6671a5c17f9909b15f6dfc7	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/[Compilation] Game 2.d77
+9137fd0ef17b55aca14d0cd3465ff64c	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/[Utility] Super Kanji Juushoroku.d77
+960f34f1244c6d5fdb3abbf44301ea9e	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Wing Man 2 (Disk 2).d77
+9f1a30dfb0e60df42b791dc978d49323	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Ishtar_a.d77
+a3be3255352e4abcd921db08b3c6749b	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/01.D77
+afb76ddd56eed368aeba357014cf00ba	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/SOKOBAN2.D77
+ba84c4c0e07d66aa236b4ac3178d6de7	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Amnork.d77
+bb6f2d0cd4ddf95b535d47f4314a8526	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/GAME2.D77
+c49a3543f8fad5e4fccdc24c1e308acb	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/1942.d77
+c61ca9f4bd7de6551813caadf9ef2b35	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Xanadu Scenario II (Disk C - User) [Alt 1] [b].d77
+c8881557ae2548052a8227fc8dc9b5a8	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/YANPARA1.D77
+d63fb9669399e7c6ce2c6a7bafe02958	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Bishoujo Shashinkan - Moving School.d77
+ec7a545fda4963c7a04e0fdc66c4d02d	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Ulysses (Disk 1).d77
+ef83f04e761561ddc54eef6432e390f4	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Transylvania (Disk 1).d77
+f417dfb86c3c011e103fa98c51798961	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Kyoufu no Suiyoubi Botsu Program Shuu.d77
+f6d38eed0c1c90aa73dd40dbe699f611	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Hokuto no Ken (Disk 2).d77
+f977e328a7a357569d95ff0686a47c7f	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Ultima II (Disk 1 - Program).d77
+f9804f1693e8a16c4d00ea2ba5d78f04	/Users/alans/Documents/development/FM-7_MiSTer/software/D77/Skapon Tankentai (FM7) (Disk 3 - Kaiten-hen) [b].d77

@@ -107,6 +107,25 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    151 commits old, and the one title pulled from it at random has since been
    fixed by something. Re-sweep before triaging any of it.
 
+   **Coverage is now tracked in cohorts** (`vsim/sweep/cohort.py status`), so
+   this stops being a number anybody has to remember. 395 distinct FM-7 disks
+   after deduplicating by content, plus 6 excluded for safe-name collisions
+   (`cohorts/excluded-name-collisions.txt` -- sweeping those needs
+   `sweep_one.sh` to disambiguate the name, trap 68). Method is in
+   `docs/TESTING.md`; the short version is draw 40, sweep both sides, join,
+   fix what it finds, retire, draw again. A cohort only retires when **our**
+   side rendered all 40 -- `cohort.py retire` refuses otherwise and names the
+   disks it would have buried.
+
+   | cohort | disks | state |
+   |---|---|---|
+   | 01 | 40 | drawn, reference 40/40, our side running |
+
+   When everything is retired, `cohort.py all` writes one list of every
+   distinct disk for a final validation pass. That pass confirms nothing
+   regressed across the cohorts; it is not where bugs are expected, since each
+   disk will already have been through one.
+
    Run it with `ref-shots-at-frame.sh` so both sides sample the same
    instant -- `reference_frame = round(vsim_frame * 1.00608)`, and note the
    sweep's safe-name rule is `tr -c 'A-Za-z0-9._-' '_'` (it KEEPS `-`); a

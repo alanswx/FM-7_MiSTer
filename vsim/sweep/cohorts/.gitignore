@@ -1,0 +1,2 @@
+# Hash cache -- regenerable from the collection, keyed on (path, size, mtime).
+.hashes.tsv
