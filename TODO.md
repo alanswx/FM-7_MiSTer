@@ -120,7 +120,7 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    | cohort | disks | result |
    |---|---|---|
    | 01 | 40 | retired. **0 CORE-BLANK.** 16 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY, 2 REF-WORSE, 1 CORE-MONO |
-   | 02 | 40 | swept, **4 real CORE-BLANK** (below). 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
+   | 02 | 40 | swept, **4 real CORE-BLANK**: 3 fixed (`0db06c8`, `6f1512d`), Marchen Veil diagnosed below. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
 
    Cohort 01 found **no core bug in 40 disks**. Twelve are blank on our side
    and all twelve are blank on the reference too. Its one CORE-MONO row
@@ -128,6 +128,37 @@ the chip's real I/O ports. **The combined work ships as GPLv3** — see
    CORE-BLANK were all scoring artifacts -- see trap 70, which is the durable
    part of that cohort. On this evidence the Aug-8 "153 blank of 350" says
    almost nothing about how many core bugs remain on the FM-7 side.
+
+### Marchen Veil [b]: an over-declared sector count breaks the D77 scan
+
+**Diagnosed, not fixed.** The title uses a standard FM-7 copy protection: two
+tracks -- 5/side 0 and 32/side 1 -- declare **`nsec=256`** in the .d77 track
+header while physically holding 10 sectors, and the sector order is shuffled so
+sector 1 is *last* (`5/0/2 5/0/3 ... 5/0/10 5/0/1`). Every other track is a
+plain `nsec=10` in order.
+
+The scanner walks the declared count, so on those two tracks it consumes 256
+sector headers of which ~246 are garbage and the table loses sync. Measured:
+the image's declared sectors sum to **1320** and `D77SCAN` builds **810**, so
+`5/0/1` is never indexed. The read then fails with **RECORD NOT FOUND** --
+status `$10`, 12156 times in a 700-frame run, a value the reference never
+returns once. `WDNOMATCH want trk=5 side=0 sec=1 (wdreg_track=5 ...)` confirms
+the search exhausts the table with the track register *correct*.
+
+Second, independent problem on the same data: `sectors_per_track` is
+`reg [7:0]` (wd1793.sv:98), so a declared 256 truncates to **0**, and the guard
+at wd1793.sv:478 (`wdreg_sector > sectors_per_track`) then rejects every sector
+number on that track.
+
+Note what this is NOT, because both were checked and ruled out: not the
+ID-cylinder-vs-track-register disagreement (`wdreg_track` equals `disk_track`
+equals 5 at the failure), and not head movement -- this core and the reference
+issue *identical* type I commands, 5 x RESTORE, 7 x SEEK, 1 x SEEK+verify.
+
+A fix has to bound the per-track scan by the track's actual extent rather than
+trusting the header count, and widen or saturate `sectors_per_track`. Check it
+against Daisenryaku, whose page-zero path is sensitive to the same search
+(FDC.v's ID-cylinder note), and against the two titles above.
 
 ### The Xanadu family draws nothing, and never has
 
