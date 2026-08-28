@@ -1088,6 +1088,34 @@ confident wrong answer at least once:
     across 200 -> 3000 frames means the reference is not running the title
     either, whatever its coverage says.
 
+71. **A dead working directory reads as a core regression, not as a broken
+    harness.** A long-running shell's cwd became inaccessible mid-session
+    (`pwd: .: Operation not permitted`). `run_tests.sh` then reported
+    **REGRESSION** with eight rows at an identical 5589 main / 5137-5158 sub /
+    882 I/O and `RUNAWAY-INTO-IO` -- because vsim's `$readmem` ROM paths are
+    relative, a failed load is a *warning*, and the machine runs away into
+    `$fdxx` while still printing plausible counters. The same run passed
+    `boot-basic`, `boot-dos1` and `av-kohakuiro`, so it looked like a partial,
+    believable failure of an FDC change made minutes earlier.
+
+    **The tell is identical counters across unrelated tests.** `basic-print`
+    and `basic-keys` do not touch the FDC and cannot fail the same way as
+    `boot-dos3` by coincidence. The second tell is in the same log: eight
+    `awk: can't open file shots-ref/counters.tsv` lines, absent from the
+    previous green run. A harness that cannot find its own reference data is
+    not reporting on the core.
+
+    Re-run from a verified directory before believing any regression. Here the
+    clean re-run was 11/11 green with every counter byte-identical, including
+    `boot-dos3` back at 11179/8774/0.
+
+    Two ways this wasted more time than it needed to. `cd <abs> && cmd` is
+    fine, but `pwd && cd <abs> && cmd` is not: the diagnostic runs *first*,
+    fails from the dead directory, and short-circuits the `cd` that would have
+    repaired it. And `ls` kept working throughout while `head`, `python3
+    open()` and the Read tool all returned EPERM on the same file, so "the file
+    is there" proved nothing about being able to read it.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
