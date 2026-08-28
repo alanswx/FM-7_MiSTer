@@ -486,21 +486,29 @@ wire [7:0] sd_buff_din0, sd_buff_din1;
 // "scan in progress"; it goes high a little after img_mounted falls, so the
 // scan is tracked from the mount rather than from prepare alone.
 //
-// Write protect follows the OSD's read-only flag ONLY.
+// Write protect is the OSD's read-only flag OR the .d77's own write-protect
+// byte at header offset $1a, which the scanner lifts out as fmt_wp.
 //
-// A .d77 also carries its own write-protect byte at header offset $1a, and the
-// scanner lifts it out as fmt_wp -- but it is deliberately NOT applied here.
-// Neither reference emulator enforces it: MAME's d88 loader reads it into
-// `tag->write_protect` (refs/mame/src/lib/formats/d88_dsk.cpp:351) and never
-// looks at it again, and common-source-project does not read it at all.
+// (Superseded claim: "Neither reference emulator enforces it ... enforcing it
+// breaks real software", citing Thexder. MAME and CSP indeed ignore the byte,
+// but 77AVEMU -- the emulator this core is actually scored against -- reads it
+// (`header.writeProtected=d77Img[0x1a]`, refs/77AVEMU/src/.../d77.h:1034) and
+// acts on it through IsWriteProtected() at :1601/:1619. And it does NOT break
+// Thexder: Thexder's image has $1a=$10, the reference reports status $44 with
+// b6 set at MAIN:FEB4, and it still renders its title screen. The old note
+// described this core's failure under a blanket "write protect forced on",
+// which is a different thing -- b6 is write-protect only for type I and write
+// commands, and wd1793.sv already gates it that way via `s_wpe <= ~din[7]`.)
 //
-// Enforcing it breaks real software. Thexder's image has $1a = $10, and its
-// boot sector asks the boot ROM for a disk write; with write protect forced on,
-// the ROM's error decoder at $ffad reads status $60, takes the "bit 6 -> error
-// 11" branch, and the boot sector halts on `BRA $0340`. The disk is simply
-// unbootable. fmt_wp is left exported in case it should one day become a
-// default for an OSD toggle, but the byte records how the physical disk was
-// dumped, not whether the emulated drive should refuse writes.
+// XANADU.D77 is why this matters: $1a=$10, and the boot ROM at $FEB4 reads
+// status $04 here against the reference's $44. It then stops -- 4541 $fdxx
+// accesses for the whole run against the reference's 683668 -- and draws
+// nothing. Xanadu (Disk A - Program) carries $1a=$00 and was never affected.
+// fmt_wp is an output of the same instance its `wp` input feeds, but this is
+// not a combinational loop: d77_wp is a register written during the mount-time
+// scan (wd1793.sv:1208) and read combinationally only through s_readonly.
+wire fmt_wp0, fmt_wp1;
+
 reg [1:0] mounted         = 2'b00;
 reg [1:0] scanning        = 2'b00;
 reg [1:0] prepare_seen    = 2'b00;
@@ -559,8 +567,8 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_0
   .intrq        ( intrq0            ),
   .busy         (                   ),
 
-  .wp           ( wp_r[0]           ),
-  .fmt_wp       (                   ),
+  .wp           ( wp_r[0] | fmt_wp0 ),
+  .fmt_wp       ( fmt_wp0           ),
   .size_code    ( 3'd1              ),  // 256-byte sectors, the FM-7 2D norm
   .layout       ( 1'b0              ),  // Track-Side-Sector
   .side         ( fdc_side          ),
@@ -570,6 +578,7 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_0
   // which covers 2D (320-360 KB) and 2DD .d77 images comfortably.
   .img_mounted  ( img_mounted[0]    ),
   .img_size     ( img_size[19:0]    ),
+  .img_size_id  ( img_size[23:0]    ),
   .prepare      ( prepare0          ),
   .sd_lba       ( sd_lba0           ),
   .sd_rd        ( sd_rd0            ),
@@ -604,14 +613,15 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_1
   .drq          ( drq1              ),
   .intrq        ( intrq1            ),
   .busy         (                   ),
-  .wp           ( wp_r[1]           ),
-  .fmt_wp       (                   ),
+  .wp           ( wp_r[1] | fmt_wp1 ),
+  .fmt_wp       ( fmt_wp1           ),
   .size_code    ( 3'd1              ),
   .layout       ( 1'b0              ),
   .side         ( fdc_side          ),
   .ready        ( ready1            ),
   .img_mounted  ( img_mounted[1]    ),
   .img_size     ( img_size[19:0]    ),
+  .img_size_id  ( img_size[23:0]    ),
   .prepare      ( prepare1          ),
   .sd_lba       ( sd_lba1           ),
   .sd_rd        ( sd_rd1            ),

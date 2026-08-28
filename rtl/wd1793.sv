@@ -52,6 +52,13 @@ module wd1793 #(parameter RWMODE=0, EDSK=1)
 	// SD access (RWMODE == 1)
 	input        img_mounted, // signaling that new image has been mounted
 	input [19:0] img_size,    // size of image in bytes. 1MB MAX!
+	// The TRUE image size, untruncated, for format identification only. A .d77
+	// multi-disk container is routinely larger than 1 MB (XANADU.D77 is 2.4 MB,
+	// six disks), and comparing its header size field against the truncated
+	// img_size can never match: 2495040 & $FFFFF = 397888, against a 415840
+	// field. The addressing below stays 20-bit and reaches only the first disk,
+	// which is all any of these titles boots from.
+	input [23:0] img_size_id,
 	output       prepare,
 	output[31:0] sd_lba,
 	output reg   sd_rd,
@@ -1192,7 +1199,21 @@ generate
 				// (EDSK's fields begin at 48, .d77's track table at $20).
 				//
 				// .d77 has no magic number, so it is identified by its total
-				// size field agreeing exactly with the mounted image size.
+				// size field agreeing with the mounted image size.
+				//
+				// NOT exact equality: a .d77 may be a MULTI-DISK CONTAINER,
+				// several images concatenated, where the header's size field
+				// describes only the first. 28 images in the Neo Kobe set are
+				// such containers (2x, 3x, 4x and 6x), and requiring equality
+				// rejected every one of them outright -- fmt=0, no sector
+				// table, no write-protect, the drive never becomes ready and
+				// the title draws nothing. XANADU.D77 is 2495040 bytes with a
+				// 415840-byte header field, exactly 6 disks; the reference
+				// boots it and this core did not.
+				//
+				// The heuristic still has to reject a raw image, so keep the
+				// other three guards (byte $1f zero, top nibble of the size
+				// zero) and require the field to be at least one header long.
 				//---------------------------------------------------------
 				if(scan_addr < 16) begin
 					if(sig_pos[7:0] != scan_data) edsk_bad <= 1;
@@ -1203,7 +1224,8 @@ generate
 				if(scan_addr == 20'h1e) d_tot[23:16]<=scan_data;
 				if(scan_addr == 20'h1f) begin
 					if(!edsk_bad) fmt <= FMT_EDSK;
-					else if(~|scan_data && ~|d_tot[23:20] && (d_tot[19:0] == disk_size)) begin
+					else if(~|scan_data && ~|d_tot[23:20] &&
+					        (d_tot[23:0] <= img_size_id) && (d_tot[19:0] >= 20'h2b0)) begin
 						fmt    <= FMT_D77;
 						d77_wp <= d_wpb;
 					end
