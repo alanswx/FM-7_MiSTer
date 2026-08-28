@@ -1270,21 +1270,41 @@ generate
 						// here, five bytes before the first spt[] write.
 						if(scan_addr == 20'h2b0) spt_size <= {d_max[7:1], 1'b0} + 8'd2;
 
-						case(d_st)
-							0: // between tracks: wait for the next track offset
-								if((d77_rd < d77_cnt) && (scan_addr == d77_off)) begin
-									// this byte is header +0 of its first sector
-									d_track <= d77_idx[7:1];
-									d_side  <= d77_idx[0];
-									d_C     <= scan_data;
-									d_first <= 1;
-									d_hpos  <= 1;
-									d_st    <= 1;
-									// step the cursor now; the value is not
-									// needed again until this track ends, which
-									// is thousands of cycles away.
-									d77_rd  <= d77_rd + 1'd1;
-								end
+						//-----------------------------------------------
+						// A track ENDS where the next present track begins,
+						// whatever its header claimed. This test is hoisted
+						// out of the state machine so it fires in the middle
+						// of a header or of sector data too.
+						//
+						// Marchen Veil [b] is why. Its tracks 5/side 0 and
+						// 32/side 1 declare nsec=256 while physically holding
+						// ten sectors, with the order shuffled so sector 1 is
+						// LAST -- ordinary FM-7 copy protection. Trusting the
+						// count walked ~246 garbage headers and lost sync: the
+						// image's declared sectors sum to 1320 and the scan
+						// built 810, so 5/0/1 was never indexed and every read
+						// of it returned RECORD NOT FOUND (status $10, 12156
+						// times in 700 frames, a value the reference never
+						// returns once).
+						//
+						// Bounding by extent is also the general answer: no
+						// lying count can now walk off its own track.
+						//-----------------------------------------------
+						if((d77_rd < d77_cnt) && (scan_addr == d77_off)) begin
+							// this byte is header +0 of the track's first sector
+							d_track <= d77_idx[7:1];
+							d_side  <= d77_idx[0];
+							d_C     <= scan_data;
+							d_first <= 1;
+							d_hpos  <= 1;
+							d_st    <= 1;
+							// step the cursor now; the value is not needed
+							// again until this track ends, which is thousands
+							// of cycles away.
+							d77_rd  <= d77_rd + 1'd1;
+						end
+						else case(d_st)
+							0: ; // between tracks: the hoisted test above starts one
 
 							1: begin // 16-byte sector header
 									d_hpos <= d_hpos + 1'd1;
@@ -1299,11 +1319,44 @@ generate
 												// and only meaningful in the first
 												// header. Some tools write $1000
 												// where they meant $10.
+												// A count that does not fit in 8 bits is a
+												// lie (Marchen Veil declares 256). Taking
+												// the low byte gave d_left = 0 -- one
+												// sector read from the track -- and
+												// spt = 0, which makes the guard at
+												// `wdreg_sector > sectors_per_track` reject
+												// EVERY sector number on it. Saturate
+												// instead and let the extent bound above
+												// end the track.
+												// CAP the count at 32. No real floppy track
+												// holds more; the densest FM-7 format is 26
+												// sectors. Marchen Veil declares 256 on its
+												// two protected tracks (5/side 0 and
+												// 32/side 1) while physically holding ten
+												// with the order shuffled so sector 1 is
+												// LAST -- taking the low byte gave
+												// d_left = 0, so ONE sector was read and
+												// 5/0/1 was never indexed, and spt = 0 made
+												// the `wdreg_sector > sectors_per_track`
+												// guard reject every sector on the track.
+												//
+												// A cap, NOT a plausibility test on the
+												// header. An earlier attempt ended the
+												// track at the first header with H > 1,
+												// which broke Thexder: its track 1 side 1
+												// is a single sector with a deliberately
+												// lying address mark (C=200 H=186 R=233),
+												// and this scanner indexes such sectors on
+												// purpose so READ ADDRESS can report the
+												// lie. That guard cost 68 $fdxx cycles on
+												// the gate's Thexder row.
 												d_left <= ({scan_data, d_slo} == 16'h1000) ? 8'h10 :
-															 (|{scan_data, d_slo})            ? d_slo : 8'h01;
+															 (|scan_data | (d_slo > 8'd32))   ? 8'd32 :
+															 (|d_slo)                         ? d_slo : 8'h01;
 												spt[(d_side ? (spt_size >> 1) : 8'd0) + d_track] <=
 															({scan_data, d_slo} == 16'h1000) ? 8'h10 :
-															(|{scan_data, d_slo})            ? d_slo : 8'h01;
+															(|scan_data | (d_slo > 8'd32))   ? 8'd32 :
+															(|d_slo)                         ? d_slo : 8'h01;
 										end
 										 8: begin
 												// Status: $00 normal, $10 deleted but
