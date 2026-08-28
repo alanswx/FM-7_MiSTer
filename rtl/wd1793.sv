@@ -873,11 +873,39 @@ always @(posedge clk_sys) begin
 										else ra_sector <= ra_sector + 1'd1;
 									state <= STATE_SEARCH;
 								end
-							'hD:	// interrupt
+							'hD:	// FORCE INTERRUPT (type IV)
 								begin
 									cmd_mode <= 0;
 									if(state != STATE_IDLE) state <= STATE_ABORT;
-										else {s_wrfault,s_seekerr,s_crcerr,s_lostdata, s_drq_busy} <= 0;
+									else begin
+										{s_wrfault,s_seekerr,s_crcerr,s_lostdata, s_drq_busy} <= 0;
+										// I3 (bit 3) is "interrupt immediately". On an
+										// IDLE controller this used to clear the error
+										// bits and stop, so INTRQ was never raised --
+										// the command write above has already done
+										// `s_intrq <= 0` and nothing set it again,
+										// because only STATE_ENDCOMMAND does.
+										//
+										// Both references raise it. 77AVEMU's base
+										// DiskDrive schedules a callback when the
+										// controller is not busy and (cmd & 8)
+										// (diskdrive.cpp:1169-1172), and the callback
+										// lands in FM77AVFDC::MakeReady(), which sets
+										// state.IRQ = true (fm77avfdc.cpp:42).
+										//
+										// Xanadu (Disk A) is the title that found this:
+										// it writes $D8 to $FD18 at pc=$035D with the
+										// FDC idle, then polls $FD1F at $035F for b6.
+										// This core answered $3F 2159554 times and never
+										// drew a pixel; the reference answers $7F and
+										// goes on to draw the title screen.
+										//
+										// Route through ENDCOMMAND rather than setting
+										// s_intrq here, so the raise happens on the
+										// following cycle and shares the one path that
+										// ends a command.
+										if(din[3]) state <= STATE_ENDCOMMAND;
+									end
 								end
 							'hF:  // WRITE TRACK
 								begin
