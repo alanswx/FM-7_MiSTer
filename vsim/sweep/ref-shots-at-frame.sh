@@ -63,7 +63,13 @@ render() {
       $MFLAG >/dev/null 2>&1
 }
 export -f render; export DEST REF ROMS RFRAME MFLAG
-xargs -P "$JOBS" -I{} bash -c 'render "$@"' _ {} < "$OUT/images.txt"
+# NUL-separated, exactly as sweep-list.sh does it. Plain xargs applies its own
+# quote parsing, so a disk whose NAME contains an apostrophe -- "Fairie's
+# Residence (Disk 1).d77" -- aborts the whole batch with "unterminated quote".
+# It still exits 0, so the only tell is the "rendered N" count being short, and
+# compare-ref.py then scores every unrendered row as having no reference.
+tr '\n' '\0' < "$OUT/images.txt" \
+  | xargs -0 -P "$JOBS" -I{} bash -c 'render "$@"' _ {}
 
 n=$(ls "$DEST"/*.png 2>/dev/null | wc -l | tr -d ' ')
 echo "rendered $n"
