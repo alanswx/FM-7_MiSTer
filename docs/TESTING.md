@@ -153,6 +153,11 @@ cd vsim/sweep
 python3 compare-ref.py /tmp/fm7sw
 ```
 
+**The two halves spell the machine differently.** The core takes `fm7` or
+`fm77av`; the reference renderer takes `fm7` or `av`. An invalid value on the
+core side is a printf, not an exit, so `MACHINE=av` silently sweeps as an FM-7
+and produces a full, plausible, wrong result set — see trap 74.
+
 `compare-ref.py` joins purely on filename and knows nothing about the machine,
 so **an FM-7 sweep pointed at AV references scores every row against the wrong
 machine and nothing announces the mismatch** -- the rows just look bad. The

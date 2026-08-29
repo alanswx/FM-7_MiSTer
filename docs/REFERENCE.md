@@ -1179,6 +1179,30 @@ confident wrong answer at least once:
     harmless, and NOT the bug -- the reference reports `$44` at `$516E` too.
     A first divergence is the first difference, not the important one.
 
+74. **An invalid `--machine` value is a printf, not an exit, so a whole sweep
+    runs the wrong machine and says nothing.** `sim_main.cpp:854-858` accepts
+    `fm7` or `fm77av`; anything else prints `Error: --machine needs fm7 or
+    fm77av` and leaves `opt_machine_av` at its default, **FM-7**. `sweep_one.sh`
+    sends stdout to a temp file it discards, so the error is never seen.
+
+    `MACHINE=av ./sweep-list.sh ...` therefore produces a complete, plausible,
+    entirely FM-7 result set. 16 runs were wasted this way. The confusion is
+    real and built in: **`ref-shots-at-frame.sh` takes `av`, the simulator takes
+    `fm77av`** — the reference and the core use different names for the same
+    machine, and the pair is normally written on adjacent lines:
+
+        MACHINE=fm77av ./sweep-list.sh      <- the CORE:      fm7 | fm77av
+        ./ref-shots-at-frame.sh ... fm7     <- the REFERENCE: fm7 | av
+
+    `av-sweep.sh:65` gets this right (`export MACHINE=fm77av`); copying the
+    machine name from the reference invocation is what gets it wrong.
+
+    **The tell is in the data, and it is the same tell as trap 71:** identical
+    results across configurations that cannot legitimately agree. All 16 titles
+    returned byte-identical PNG sizes on "two machines" that boot different ROM
+    sets. Two machines agreeing to the byte on every title is not a result, it
+    is one machine measured twice.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

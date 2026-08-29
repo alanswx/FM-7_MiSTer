@@ -145,7 +145,9 @@ answered `$3F` 2,159,554 times. Fixed Xanadu Disk A and Xanadu Scenario II.
 required the header's size field to equal the file size *exactly*, which a
 container never satisfies; and `img_size` is `[19:0]`, a 1 MB ceiling, so a
 2.4 MB container truncated to 397,888 and no comparison could match. **28
-images in the collection are containers and 19 are over 1 MB.** Fixed
+images in the collection are containers and 16 distinct images are over 1 MB.**
+(Corrected: the earlier figure of 19 counted duplicate paths; deduplicated by
+content, as `cohort.py` counts, it is 16.) Fixed
 XANADU.D77. The same commit applies the `.d77` write-protect byte, correcting
 two wrong claims in `FDC.v` — 77AVEMU *does* read it (`d77.h:1034`) and it does
 *not* break Thexder.
@@ -176,14 +178,48 @@ both in about ten minutes. Run it before triaging anything.
 | Ys - Ancient Ys Vanished Omen `[a]` | CORE-BLANK | **A real bug, now FIXED (`9b9af08`).** An AV title in the FM-7 set, so as an FM-7 the reference rendered *noise* and both halves of the comparison were junk. Run as `av`, the reference drew its title and this core was blank. Root cause was the D77 scan bound, not video at all. See trap 72 for the disk-set half. |
 | Penguin-kun Wars (demo) | CORE-WORSE | **Not a bug.** We draw the title correctly at frame 900, then advance to "1 PLAYER GAME? / PUSH RETURN KEY" by 1000 and wait for input. The reference never leaves the title: byte-identical 83,621 B at frames 2500/3200/4000/5000. We were marked down for reaching a *later* state. |
 
+### The 16 images over 1 MB, re-tested after the scan-bound fix
+
+All 16 swept on **both** machines, before and after, with the "before" built
+from `d2840ab` in a worktree in the same session (trap 57). Frame-matched, and
+every image hash-verified unchanged either side.
+
+**Four titles moved from blank to rendering.** Two were confirmed byte-identical
+to 77AVEMU on all 98,304 VRAM bytes — `[a]` and the plain image are different
+files, so this is two independent confirmations, not one measured twice:
+
+| title | machine | before | after | confirmation |
+|---|---|---|---|---|
+| Ys - Ancient Ys Vanished Omen | fm7 + av | 3,790 | 35,924 | **0 differing VRAM bytes** |
+| Ys - Ancient Ys Vanished Omen `[a]` | fm7 + av | 3,790 | 35,924 | **0 differing VRAM bytes** |
+| Ys (1985)(PSG) | fm7 + av | 3,790 | 35,924 | 32.2% against 32.1% |
+| Reviver | fm7 | 5,492 | 18,374 | 17.8% against 8.9% (we draw more) |
+
+**Four were already working and the fix did nothing for them** — XANADU 38,518
+before and after, Quest 18,104, Psy-O-Blade 24,385, Urusei Yatura 5,330.
+XANADU was already carried by the container fix in `6f1512d`. Worth stating
+because the endpoint alone would credit the scan bound with all eight.
+
+**Machine matters more than expected in this set.** Psy-O-Blade and Urusei
+Yatura are blank as FM-7 and MATCH as AV; Reviver and Death Force are the
+reverse. Sweeping this set on one machine would have produced a wrong answer
+for four of sixteen titles either way.
+
 ### Open on the FM-7 side
 
 - **Draw cohort 04.** 275 disks remain.
-- **Re-test the 19 images over 1 MB.** Every one was scanned against a wrapped
-  bound until `9b9af08` (below). Ys was simply the first whose loader reached
-  past it early enough to go visibly blank; the others were never checked. This
-  also gives the standing "re-test the 28 containers" item a known mechanism
-  instead of a suspicion.
+- **Ys II - The Final Chapter is blank on the AV**, where 77AVEMU draws 94.5%
+  GRAPHICS. NOT the scan bound — it is still blank with `9b9af08` in. It scores
+  BOTH-BLANK under `fm7`, which reads as "not a bug", and that is the only
+  reason it went unnoticed (trap 72).
+- **Death Force is blank on the FM-7**, where 77AVEMU draws 92.3% GRAPHICS. Also
+  not the scan bound. It scores TEXT-ONLY 2.6 against 2.5 under `av` — again a
+  verdict that reads as "nothing to see" on the wrong machine. It is filed as
+  BOTH-BLANK in the AV table above; that entry is wrong.
+- **Audit the AV table's 27 BOTH-BLANK rows for machine.** Two of the three bugs
+  found in this round were hiding in exactly that verdict, on the wrong machine.
+  BOTH-BLANK is the bucket nobody re-examines, which is what makes it worth
+  examining.
 - **Marchen Veil's second fault**, above.
 - **Daisenryaku draws its title art at frame 400 and then erases it.** The art —
   soldier, tank, aircraft — matches the reference; what never appears is the red
