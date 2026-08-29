@@ -1151,6 +1151,34 @@ confident wrong answer at least once:
     28 multi-disk containers, whose first pass ran two FM77AV titles as FM-7 --
     it is a property of the disk set, not of those containers.
 
+73. **A blank screen with a healthy CPU is a disk bug until the I/O profile says
+    otherwise, and the port histogram finds it in one command.** Ys - Ancient Ys
+    Vanished Omen `[a]` wrote ZERO of 98,304 VRAM bytes while running 21.9M
+    instructions from RAM with the sub CPU executing downloaded code, display
+    on, palette at the default identity. Everything about the machine looked
+    well.
+
+    What located it was counting ports on both sides over the same window:
+
+        port           reference     ours
+        $FD1F  status     177,304  762,388
+        $FD18  cmd/stat       259   10,245
+        $FD1A  sector          64    3,402
+        $FD15  PSG         12,271       55
+
+    Hammering the FDC 50x harder while never reaching the music is not a video
+    symptom. `$FD18` then read `$10` -- RECORD NOT FOUND -- 5,633 times at
+    `$0362`/`$03F2`, and the cause was the scan bound (`9b9af08`).
+
+    **The generalisable part is the order.** VRAM dump first: all-zero excludes
+    the raster, the palette and the page-select outright, and costs one run.
+    Then the port histogram, which is one `grep -oE | sort | uniq -c` per side
+    and points at the subsystem. Only then the instruction-level trace. Reading
+    `seqdiff.py` first would have been worse here: its top divergence was a
+    write-protect difference at `$FD18` (`$44` against `$04`) that is real,
+    harmless, and NOT the bug -- the reference reports `$44` at `$516E` too.
+    A first divergence is the first difference, not the important one.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
