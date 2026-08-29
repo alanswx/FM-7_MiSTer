@@ -52,12 +52,18 @@ module wd1793 #(parameter RWMODE=0, EDSK=1)
 	// SD access (RWMODE == 1)
 	input        img_mounted, // signaling that new image has been mounted
 	input [19:0] img_size,    // size of image in bytes. 1MB MAX!
-	// The TRUE image size, untruncated, for format identification only. A .d77
-	// multi-disk container is routinely larger than 1 MB (XANADU.D77 is 2.4 MB,
-	// six disks), and comparing its header size field against the truncated
-	// img_size can never match: 2495040 & $FFFFF = 397888, against a 415840
-	// field. The addressing below stays 20-bit and reaches only the first disk,
-	// which is all any of these titles boots from.
+	// The TRUE image size, untruncated. A .d77 multi-disk container is routinely
+	// larger than 1 MB (XANADU.D77 is 2.4 MB, six disks), and comparing its
+	// header size field against the truncated img_size can never match:
+	// 2495040 & $FFFFF = 397888, against a 415840 field.
+	//
+	// Used for format identification AND for the scan bound (see scan_limit).
+	// (Superseded claim: "for format identification only ... the addressing
+	// below stays 20-bit and reaches only the first disk, which is all any of
+	// these titles boots from." The masking WRAPS rather than clamps, so a
+	// container is not guaranteed to reach even its first disk -- that is what
+	// blanked Ys - Ancient Ys Vanished Omen [a]. Addressing is still 20-bit and
+	// still reaches only the first disk; the BOUND is what had to change.)
 	input [23:0] img_size_id,
 	output       prepare,
 	output[31:0] sd_lba,
@@ -129,6 +135,27 @@ endgenerate
 reg         var_size  = 0;
 reg  [19:0] disk_size;
 reg         layout_r;
+
+// Bound for the mount-time D77 scan. It must be min(true size, the 20-bit
+// address space) -- NOT img_size, which is the true size masked to 20 bits.
+//
+// The mask WRAPS, it does not clamp, and that is the whole bug. Ys - Ancient Ys
+// Vanished Omen [a] is a 1,305,456-byte multi-disk container: 1305456 & $FFFFF
+// = 256,880, which is SMALLER than the container's own first disk (415,840).
+// The scan therefore stopped 80.3% of the way short of the file and every track
+// from index 50 (track 25 side 0) on was never entered in the table. The title
+// boots and runs -- the early tracks are all present -- and then its loader asks
+// for track 33 side 0 sector 4 at offset 343,040, gets RECORD NOT FOUND, and
+// retries: 4,242 read commands against the reference's 64, no VRAM write ever
+// issued, black screen.
+//
+// XANADU.D77 has the same defect and survived it: 2,495,040 wraps to 397,888
+// against a 415,840-byte first disk, so it loses only its tail.
+//
+// Under 1 MB this is bit-identical to the old expression, so ordinary single
+// disk images are untouched -- the gate is unchanged, every counter included.
+wire [19:0] scan_limit = (img_size_id[23:20] != 4'd0) ? 20'hFFFFF
+                                                      : img_size_id[19:0];
 wire [19:0] hs  = (layout_r & side) ? disk_size >> 1 : 20'd0;
 wire  [7:0] dts = {disk_track[6:0], side} >> layout_r;
 always @(posedge clk_sys) begin
@@ -409,7 +436,7 @@ always @(posedge clk_sys) begin
 		if(ack[5:4] == 'b10) sd_busy <= 0;
 
 		if(RWMODE & scan_active) begin
-			if(scan_addr >= img_size) scan_active <= 0;
+			if(scan_addr >= scan_limit) scan_active <= 0;
 			else begin
 				case(scan_state)
 					0:	begin
