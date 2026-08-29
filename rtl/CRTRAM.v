@@ -106,6 +106,43 @@ dpram #(8,13) ram3(
   .wren_b(port_write && (port_block == 2'd3)), .q_b(qb3)
 );
 
+`ifdef DEBUG_VBLOCK
+// Count sub-CPU VRAM writes per block so a page-select fault is visible as a
+// count, not inferred from a dump. block = {page, SVRADRS[13]}, so blocks 0/1
+// are bank 0 and blocks 2/3 are bank 1. A title that double-buffers must show
+// traffic in both banks; Ys II shows bank 1 only.
+integer wcnt [0:3];
+integer wnz  [0:3];
+integer pcnt [0:3];
+integer dcnt [0:3];
+integer wpage0, wpage1;
+integer vb_i;
+initial begin
+  for (vb_i=0; vb_i<4; vb_i=vb_i+1) begin
+    wcnt[vb_i]=0; wnz[vb_i]=0; pcnt[vb_i]=0; dcnt[vb_i]=0;
+  end
+  wpage0=0; wpage1=0;
+end
+always @(posedge CLKSYS) begin
+  if (sub_write) begin
+    wcnt[video_block] = wcnt[video_block] + 1;
+    if (SDATABUS != 8'h00) wnz[video_block] = wnz[video_block] + 1;
+    if (SCASSEL ? AV_ACTIVE_PAGE : AV_DISPLAY_PAGE) wpage1 = wpage1 + 1;
+    else wpage0 = wpage0 + 1;
+  end
+  if (port_write) begin
+    pcnt[port_block] = pcnt[port_block] + 1;
+    if (DRAW_PORT_EN) dcnt[port_block] = dcnt[port_block] + 1;
+  end
+end
+final begin
+  $display("VBLOCK plane%0d SUB : blk0=%0d blk1=%0d blk2=%0d blk3=%0d  (nonzero data: %0d %0d %0d %0d)",
+           COLOR_SEL, wcnt[0], wcnt[1], wcnt[2], wcnt[3], wnz[0], wnz[1], wnz[2], wnz[3]);
+  $display("VBLOCK plane%0d PORT: blk0=%0d blk1=%0d blk2=%0d blk3=%0d  (of which ALU: %0d %0d %0d %0d)",
+           COLOR_SEL, pcnt[0], pcnt[1], pcnt[2], pcnt[3], dcnt[0], dcnt[1], dcnt[2], dcnt[3]);
+end
+`endif
+
 assign Q640 = (video_block == 2'd0) ? qa0 :
               (video_block == 2'd1) ? qa1 :
               (video_block == 2'd2) ? qa2 : qa3;

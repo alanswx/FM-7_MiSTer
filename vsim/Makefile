@@ -526,3 +526,17 @@ distest: dis6809_test.cpp dis6809.cpp dis6809.h
 ifeq ($(DEBUG_D430),1)
 V_DEFINE += +define+DEBUG_D430
 endif
+
+# `make DEBUG_VBLOCK=1` counts sub-CPU VRAM writes per 8 KB block in
+# rtl/CRTRAM.v and prints one line per gun at exit:
+#
+#   VBLOCK plane0: blk0=0 blk1=0 blk2=54321 blk3=12345  pagebit0=0 pagebit1=66666
+#
+# block = {page, SVRADRS[13]}, so blocks 0/1 are VRAM bank 0 and 2/3 are bank 1.
+# A title that double-buffers must write both banks. It turns "bank 0 is empty
+# in the dump" into "the page bit was never 0 at write time", which separates a
+# page-select fault from a drawing fault. Touch ../rtl/CRTRAM.v before building
+# or the define does not reach Verilator (trap 3).
+ifeq ($(DEBUG_VBLOCK),1)
+V_DEFINE += +define+DEBUG_VBLOCK
+endif

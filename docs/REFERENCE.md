@@ -1203,6 +1203,33 @@ confident wrong answer at least once:
     sets. Two machines agreeing to the byte on every title is not a result, it
     is one machine measured twice.
 
+75. **The sweep's single 1980 sample is a verdict generator with a measured
+    false-positive rate: three of four candidates from one cohort were sampling
+    artifacts.** Not a theoretical risk — this is what it cost:
+
+    | title | verdict at 1980 | truth |
+    |---|---|---|
+    | Ys II - The Final Chapter | CORE-BLANK | draws **94.5%** at 1200/1400; animated intro, 1980 falls between scenes |
+    | Penguin-kun Wars | CORE-WORSE | draws its title at 900 and advances to its menu; the REFERENCE is stuck |
+    | Daisenryaku FM | "renders nothing" | draws its title art at 400, erases it by 600 |
+    | Ys Omen `[a]` | CORE-BLANK | **real** — blank at all nine samples |
+
+    **The discriminator is persistence, not the value at any one frame.** The
+    real bug was blank at every sample and had a persistent I/O signature —
+    4,242 retried reads, zero VRAM writes. The three artifacts each had a frame
+    at which the picture was right.
+
+    The same error has a second form, in aggregates rather than screenshots.
+    Ys II's `$FD18` count is **37x** the reference's, which reads as an FDC
+    retry storm; the excess is confined to frames 11-16, the loader waiting out
+    the mount-time scan (`ready0 = mounted & ~scanning`). Excluding it, the FDC
+    matches. **A ratio over a whole run hides its own time distribution — plot
+    the count per frame before believing it.**
+
+    Cheapest defence, and it is nearly free: `SHOTLIST=600,1000,1400,1980`
+    on the sweep. `sweep_one.sh` still copies the last entry to the canonical
+    PNG, so every downstream tool is unchanged.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

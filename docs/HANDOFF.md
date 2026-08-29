@@ -208,30 +208,26 @@ for four of sixteen titles either way.
 ### Open on the FM-7 side
 
 - **Draw cohort 04.** 275 disks remain.
-- **Ys II - The Final Chapter is blank on the AV: it draws into the wrong VRAM
-  bank.** Diagnosed, not fixed. The picture IS drawn — 46,485 non-zero VRAM
-  bytes — and bank 1's planes match 77AVEMU **byte for byte** (blue-hi, red-lo,
-  red-hi, green-lo, green-hi all 8192/8192 identical). But **bank 0 is entirely
-  empty** where the reference holds ~25 KB, and both machines display page 0, so
-  we display an empty bank.
+- **Ys II - The Final Chapter is NOT a bug — cleared as trap 49.** It renders
+  **94.48% GRAPHICS at frames 1200 and 1400**, against the reference's 94.5%.
+  It is an animated intro and the sweep's frame-1980 sample lands on a blank
+  moment between scenes: 1400 draws 94.5%, 1500 and 1600 are blank, 1700 is
+  13.0%, 1800 is 20.3%, 1900 is 23.3%, 1980 is blank again.
 
-  Ruled out by measurement, do not re-check: the FDC (`$FD18` 228 against 235,
-  `$FD1B` 44,642 against 45,112 — the load is fine), the analog palette (both
-  write 4,096 entries with identical values), `$FD37` (both read `$ff`, write
-  `$00` at `pc=$1117`), and the `$D430` register itself — `make DEBUG_D430=1`
-  shows us writing 36x `$85` / 18x `$a5` / 12x `$84`, the same values and the
-  same activePage=0-dominant pattern as the reference's 6/3/2, all with
-  displayPage=0.
+  `displayPage` is **0 for all 757 `$D430` writes over the whole run** (390x
+  `$85`, 355x `$a5`, 12x `$84`), so there is no page flip to chase.
 
-  So the latch is right and the writes land in the wrong place: the next step is
-  the *consumer*, `CRTRAM.v:43-46` — `video_block = {SCASSEL ? AV_ACTIVE_PAGE :
-  AV_DISPLAY_PAGE, SVRADRS[13]}` for the sub CPU and `cpu_block =
-  {AV_VRAM_BANK, AV_VRAM_ADDR[13]}` for the aperture. Both read the correct
-  signal on paper, so instrument which block index each sub-CPU VRAM write
-  actually resolves to. **Note the trap this hid behind:** Ys Omen's bank 0 and
-  bank 1 hold identical content, so its byte-identical VRAM result could not
-  have detected a bank error — Ys II is the first title in this set where the
-  two banks differ.
+  *(Superseded, twice, and both worth knowing because each was a confident wrong
+  answer. First: "an FDC retry storm", from a 37x `$FD18` ratio that was a
+  transient confined to frames 11-16 — the loader waiting out the mount scan.
+  Second: "draws into the wrong VRAM bank", from a single VRAM snapshot at frame
+  2000 showing bank 1 populated and bank 0 empty. At frame 400 the picture is in
+  bank 0, correctly; the buffers alternate and one snapshot cannot show that.
+  What exposed it was two instruments disagreeing — `DEBUG_VBLOCK`'s per-block
+  write counters said bank 0 held the nonzero data while the dump said bank 1
+  did. Run from the SAME frame they agree; the snapshot was simply from a
+  different moment.)*
+
 - **Death Force is blank on the FM-7: sub BUSY is stuck at 1.** Diagnosed, not
   fixed. `BUSY=1`, `$fd05` reads `$fe`, and the main CPU polls `$FD05`
   **1,094,760 times against the reference's 131,773** — from frame 0 straight

@@ -99,11 +99,29 @@ cd vsim/sweep
 python3 cohort.py status                 # coverage so far
 python3 cohort.py next --size 40         # draw -> cohorts/NN-images.txt
 cp cohorts/NN-images.paths /tmp/cNN/images.txt
-MACHINE=fm7 ./sweep-list.sh /tmp/cNN 8 2000
+SHOTLIST=600,1000,1400,1980 MACHINE=fm7 ./sweep-list.sh /tmp/cNN 8 2000
 ./ref-shots-at-frame.sh /tmp/cNN 1980 6 fm7
 python3 compare-ref.py /tmp/cNN
 python3 cohort.py retire NN /tmp/cNN     # only if our side rendered all of them
 ```
+
+**Sample several frames, not one.** `sweep_one.sh` takes `SHOTLIST` and still
+copies the last entry to the canonical `$safe.png`, so every downstream tool
+works unchanged -- but the extra samples are what stop a one-shot verdict being
+believed. The cost of the single 1980 sample is measured, not theoretical: of
+four candidate bugs chased out of one cohort, **three were sampling artifacts**
+and each cost hours.
+
+| title | one-shot verdict at 1980 | what the frame spread shows |
+|---|---|---|
+| Ys II - The Final Chapter | CORE-BLANK | draws 94.5% at 1200/1400 -- an animated intro, 1980 lands between scenes |
+| Penguin-kun Wars | CORE-WORSE | draws the title at 900, then advances to its menu; the REFERENCE is the one stuck |
+| Daisenryaku FM | "renders nothing" | draws its title art at 400 and erases it by 600 |
+| Ys Omen `[a]` | CORE-BLANK | **real** -- blank at all nine samples |
+
+The one real bug was the one with a *persistent* signature. A title that is
+blank at every sample is worth chasing; a title that is blank at one is worth
+re-sampling first.
 
 **A cohort is covered when OUR side rendered every disk in it, not when it was
 drawn.** A sweep that returns 37 renders for 40 disks and gets retired anyway
