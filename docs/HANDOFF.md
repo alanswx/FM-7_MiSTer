@@ -120,14 +120,15 @@ and `sweep/cohort.py` for the tooling.
     python3 cohort.py next --size 40    # draw the next cohort
     python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
 
-**Coverage: 80/395 (20.3%).** Cohorts 01 and 02 retired.
+**Coverage: 120/395 (30.4%).** Cohorts 01, 02 and 03 retired.
 
 | cohort | result |
 |---|---|
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
 | 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
+| 03 | **1 real bug**, unfixed (Ys Omen `[a]`, and only visible on the AV). 12 MATCH, 15 BOTH-BLANK, 11 TEXT-ONLY. Both rows the scorer called actionable meant something other than their verdict — see below |
 
-So the rate is roughly **4 real bugs per 80 disks**, and the old
+So the rate is roughly **5 real bugs per 120 disks**, and the old
 "153 blank of 350" figure from 2026-08-08 says very little — most blanks are
 blank on the reference too, and several apparent findings were scoring
 artifacts (trap 70).
@@ -163,14 +164,49 @@ the scan is provably correct — 828 sectors, exactly the true count. But it
 title screen (40,942 bytes). The disk is being read correctly now; whatever
 stops it next is a separate, undiagnosed fault.
 
+### What cohort 03 got wrong, in both directions
+
+Neither row `compare-ref.py` flagged meant what the verdict column said, and
+they were wrong in **opposite** directions. Trap 70's own test — render the
+reference at several frames and check the PNG size actually changes — settled
+both in about ten minutes. Run it before triaging anything.
+
+| row | verdict | what it actually is |
+|---|---|---|
+| Ys - Ancient Ys Vanished Omen `[a]` | CORE-BLANK | **A real bug, and worse than scored.** An AV title in the FM-7 set: as an FM-7 the reference renders *noise* (7 colours, 40.2%, byte-identical 223,862 B across four frames). Run both sides as `av` and the reference draws its title (32.1%) while this core is still blank. See trap 72 — the `UNDECODED ports $FD80-$FD93` line detects this class without eyeballs. |
+| Penguin-kun Wars (demo) | CORE-WORSE | **Not a bug.** We draw the title correctly at frame 900, then advance to "1 PLAYER GAME? / PUSH RETURN KEY" by 1000 and wait for input. The reference never leaves the title: byte-identical 83,621 B at frames 2500/3200/4000/5000. We were marked down for reaching a *later* state. |
+
 ### Open on the FM-7 side
 
-- **Draw cohort 03.** 315 disks remain.
+- **Draw cohort 04.** 275 disks remain.
+- **Ys - Ancient Ys Vanished Omen `[a]` is blank on the AV** where 77AVEMU draws
+  its title (32.1%). **`FM7_VRAM_DUMP` at frame 2000 is all zeros — 0 of 98,304
+  bytes, every one of the 12 planes — against the reference's 38,094.** So the
+  bytes were never stored: this is not the raster, not the palette and not a
+  page-select, and there is no point looking at any of them. (The reference's
+  bank 0 and bank 1 hold identical content, 2402/2127/4177/3585/3894/2862 per
+  plane.)
+
+  Everything else looks healthy, which is what makes it interesting: main 11006
+  instr/frame almost entirely from RAM (21.9M RAM against 131k ROM fetches), sub
+  running downloaded code in sub RAM at `$c039`, halted 0.1%, display on, digital
+  palette at the default identity 0-7 — so *not* the Luxsor all-zeros-palette
+  shape. A loaded, running game that issues no VRAM write at all.
+
+  Two leads. It touches `$FD96`/`$FD97`, which appear nowhere in `docs/`, `rtl/`
+  or the IO map and are undecoded here (10 accesses each). And the shape — writes
+  issued but dropped by an aperture — is exactly the Mahjong shared-window bug,
+  where 211 line triggers produced 10 landed writes; that one needed the gate
+  instrumented (`DEBUG_AVDRAW`) to prove writes were being discarded rather than
+  never made. Do that before hypothesising.
 - **Marchen Veil's second fault**, above.
-- **Daisenryaku renders nothing** on `Daisenryaku FM.d77` (3,790 bytes = blank)
-  where `FDC.v` claims it reaches its title screen at frame 621 with 67.3%
-  coverage. NOT caused by this session's changes — the baseline is identically
-  blank and the scan fix slightly improves it. The doc and reality disagree.
+- **Daisenryaku draws its title art at frame 400 and then erases it.** The art —
+  soldier, tank, aircraft — matches the reference; what never appears is the red
+  大戦略FM logo, which the reference has by 604. By frame 600 this core is blank
+  (0.2%) and is text-only thereafter. (Superseded: both "reaches its title screen
+  at frame 621" and "renders nothing, 3,790 bytes" — each was a single frame, and
+  a title that is drawn *and then erased* is invisible to any one sample.
+  `docs/REFERENCE.md` corrected.)
 - **Re-test the 28 containers properly.** The first pass ran two FM77AV titles
   in `--machine fm7`, so those results are meaningless.
 - **The AV numbers above are stale on OUR side.** Re-scoring flagged FM Sound
@@ -283,8 +319,8 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-0. **Draw cohort 03** (`python3 sweep/cohort.py next --size 40`). 315 FM-7
-   disks remain and the campaign is finding roughly 4 real bugs per 80.
+0. **Draw cohort 04** (`python3 sweep/cohort.py next --size 40`). 275 FM-7
+   disks remain and the campaign is finding roughly 5 real bugs per 120.
 1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
    and encoder fixes do not touch it — every counter over 2000 frames is
    byte-identical against a same-tree baseline built from `1455e4a` in a

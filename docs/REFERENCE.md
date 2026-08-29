@@ -213,8 +213,15 @@ versus the WD1793 track register. The game leaves the register at 0 while the
 head is physically at track 4; 77AVEMU therefore reports the read as missing,
 restores, and reads track 0 / sector 11. The RTL now checks the ID cylinder
 unconditionally, and its command stream matches the reference through the
-subsequent track loads. The core reaches the Japanese Daisenryaku title screen
-at frame 621. The narrow `$02`/`$42`/`$52` carry-dependent aliases and `$4e`
+subsequent track loads. The core draws the Daisenryaku title art -- soldier,
+tank, aircraft -- at frame 400, then **clears it by frame 600 and never draws
+the red 大戦略FM logo**, where the reference holds art *and* logo at 604/625
+(67.7% coverage, 346 KB). Measured 2026-08-29 at matched instants.
+(Superseded claim: "the core reaches the title screen at frame 621" -- at 621
+this core is blank, 0.2%. Both that claim and the later "Daisenryaku renders
+nothing, 3790 bytes" came from scoring ONE frame: 621 misses the art we do draw
+at 400, and 1980 misses it too. The title is drawn and then erased, which
+neither single sample can show.) The narrow `$02`/`$42`/`$52` carry-dependent aliases and `$4e`
 CLRA correction in `mc6809i.v` remain covered by the local 77AVEMU comparison.
 With the exact FM-7 ROMs, the first BIOS divergence against 77AVEMU is still
 `$fd05`: 77AVEMU reads `$fe` (BUSY asserted after reset), while this core reads
@@ -1115,6 +1122,34 @@ confident wrong answer at least once:
     repaired it. And `ls` kept working throughout while `head`, `python3
     open()` and the Read tool all returned EPERM on the same file, so "the file
     is there" proved nothing about being able to read it.
+
+72. **The FM-7 disk set contains FM77AV software, and sweeping it as an FM-7
+    turns a real core bug into an unreadable one.** Cohort 03 scored
+    `Ys - Ancient Ys Vanished Omen (1987)(Falcom)(JP)[a].d77` CORE-BLANK: ours
+    blank, reference 40.2% / 7 colours. The reference picture is **noise**, and
+    byte-identical (223,862 B) at frames 402/805/1207/1992 -- trap 70's own
+    test. It is an **AV title**: under `--machine av` on both sides the
+    reference draws its proper title screen (32.1%) and this core is still
+    **blank (0.0%)**.
+
+    So the mis-classification did not manufacture a false finding, it **hid a
+    real one** behind a junk comparison. Both readings are wrong in opposite
+    directions, which is why neither "the reference draws and we don't" nor
+    "the reference is broken too" can be trusted until the machine flag is
+    checked.
+
+    **There is a positive detector, so this needs no eyeballs.** The run
+    summary's `UNDECODED ports` line names the AV MMR registers when an AV
+    title is run as an FM-7:
+
+        Ys Omen [a]  UNDECODED ports : ... $80-$90 $93   <- $FD80-$FD93, AV MMR
+        Penguin-kun  UNDECODED ports : $15 $16 $25 $27 $29 $2b   <- ordinary FM-7
+
+    A cohort row that is CORE-BLANK *and* touches `$FD80`-`$FD93` under
+    `--machine fm7` is an AV title in the FM-7 set. Re-run it as `av` before
+    triaging it as anything. This is the same fault the handoff records for the
+    28 multi-disk containers, whose first pass ran two FM77AV titles as FM-7 --
+    it is a property of the disk set, not of those containers.
 
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.

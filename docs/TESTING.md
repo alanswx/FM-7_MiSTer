@@ -113,6 +113,14 @@ refuses if any disk is missing a render, naming the ones it would have buried.
 That refusal is the whole point of the subcommand -- retiring is a one-line
 `mv` otherwise.
 
+**A cohort can contain FM77AV software.** The FM-7 set is not curated by
+machine, so a cohort may draw an AV title; swept as an FM-7 the reference
+renders *noise* and this core renders blank, which scores CORE-BLANK and reads
+as a core bug. The run summary detects it without eyeballs — an AV title run as
+an FM-7 shows the AV MMR registers in its `UNDECODED ports` line, `$FD80`-`$FD93`.
+Re-run any such row as `av` on **both** sides before triaging it. See trap 72;
+this is the same fault already recorded against the 28 multi-disk containers.
+
 Disks are deduplicated **by content**, not by name: the collection ships the
 same image under several paths (663 FM-7 files, 401 distinct). Six are excluded
 because their safe-names collide with another disk's, and they are listed in
