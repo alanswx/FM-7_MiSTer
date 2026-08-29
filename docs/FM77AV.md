@@ -326,6 +326,14 @@ reading — observed on real FM77AV (77AVEMU `fm77avsound.cpp:272-280`).
 
 ## Keyboard encoder (`$D431/$D432`, sub side)
 
+**The physical part is a Fujitsu MB88401 at IC125, clocked at 4 MHz** — named by
+MAME PR #15999 (merged), which adds an MB8840x/MB8850xH core and wires it into
+`src/mame/fujitsu/fm7.cpp`. Note what that PR does NOT give anyone: the device
+is added `.set_disable()` with its ROM marked `NO_DUMP`, so MAME still does not
+execute the keyboard MCU and there is no behavioural reference to compare
+against. The command set below, taken from the FM77AV40 Hardware Reference,
+remains the authority for what this core implements.
+
 The AV adds a command-FIFO keyboard encoder (CSP `keyboard.cpp`, ~660 lines inside
 `_FM77AV_VARIANTS` guards; read handler at `keyboard.cpp:674`). The mode that matters
 for software is scan mode with make/break codes — the FM-7 cannot sense key release at

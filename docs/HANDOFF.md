@@ -7,6 +7,59 @@ traps — read section 5 before trusting any number) and `HARDWARE-HANDOFF.md`
 
 Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate green.
 
+## If file reads intermittently fail with EPERM
+
+While this session ran, the repo lived under `~/Documents`, which macOS
+protects: reads of files in the tree returned `Operation not permitted`
+intermittently, while `ls` and `pwd` kept working. It spoiled four gate runs
+before being recognised.
+
+The symptom to know, because it does NOT look like a tooling problem
+(trap 71): `run_tests.sh` reports **REGRESSION** with several rows at an
+identical `5589` main / `882` I/O and `RUNAWAY-INTO-IO`, plus
+`awk: can't open file shots-ref/counters.tsv`. vsim loads its ROMs with
+`$readmem` on relative paths and a failed load is a *warning*, so the machine
+runs away into `$fdxx` and still prints plausible counters.
+
+**Identical counters across unrelated tests is the tell** — `basic-print` and
+`basic-keys` do not touch the FDC and cannot fail the same way as `boot-dos3`
+by coincidence. Re-run from a verified directory before believing any
+regression. If the repo has since been moved out of `~/Documents`, this should
+be gone.
+
+Related and self-inflicted: do not run anything alongside the gate. Three runs
+were invalidated that way, one of them by `scp`-ing a disk image the gate was
+actively reading.
+
+## Read this first: the sweep used to corrupt the disk collection
+
+`sim/sim_blkdevice.cpp` opened every mounted `.d77` **read-write** and wrote
+sectors back to it. Any title that legitimately saves to disk therefore
+modified the user's image, permanently and silently, and `software/` is
+gitignored so there was no version history to notice it against.
+
+Two disks were damaged during cohort 02, both at 2026-08-27 17:40:08:
+`FM Sound Editor V1.0 (1985)(Fujitsu)(JP).d77` and
+`F-BASIC V3.3L11 System Disk (1985)(Fujitsu)(JP).d77`. **Both have been
+restored** from the MiSTer at `192.168.1.75`
+(`/media/fat/games/fm-7/D77/`) and hash-verified against the pre-damage
+values recorded in `sweep/cohorts/02-images.retired`.
+
+Writes are now opt-in behind `--disk-writable`. The core is still told the
+disk is writable and the write still costs the same cycles, so emulated
+behaviour is unchanged; only the `put()` to the file is skipped.
+
+**How it was found, because the lesson generalises.** `cohort.py status`
+reported 78 disks covered after two 40-disk cohorts. Chasing that two-disk
+discrepancy found the corruption: cohorts identify a disk by content hash, so
+a modified image stops being recognised. The bookkeeping built for coverage
+turned out to be the audit trail — it recorded what each file hashed to
+*before* the sweep ran, which is what made both the diagnosis and the verified
+restore possible.
+
+If you ever see coverage arithmetic that does not add up, chase it. It is
+cheap and it was hiding real data loss.
+
 ## State in one screen
 
 Against 77AVEMU over the 68-image FM77AV set, **both sides scored at the same
@@ -55,6 +108,75 @@ sequence photographed at a different moment:
 | How Many Robot disk 0 | our frame 1100 *is* the reference's title screen, pixel for pixel |
 | Gambler Jikochuushinha | at the matched frame the reference shows the same border and portrait as ours; the real gap is missing **text**, not the title illustration |
 | Wizardry IV disk A | samples 12222/10635/10411/7143 bytes — renders throughout; the gate passes it byte-identically at frame 600 |
+
+## The FM-7 half: cohort sweeping, and what it has found
+
+The AV set above is 68 images. The **FM-7 half is 395 distinct disks** and had
+never been compared to a reference at all until this session. It is being
+covered in **retirable cohorts of 40** — see `docs/TESTING.md` for the method
+and `sweep/cohort.py` for the tooling.
+
+    python3 cohort.py status            # coverage
+    python3 cohort.py next --size 40    # draw the next cohort
+    python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
+
+**Coverage: 80/395 (20.3%).** Cohorts 01 and 02 retired.
+
+| cohort | result |
+|---|---|
+| 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
+| 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
+
+So the rate is roughly **4 real bugs per 80 disks**, and the old
+"153 blank of 350" figure from 2026-08-08 says very little — most blanks are
+blank on the reference too, and several apparent findings were scoring
+artifacts (trap 70).
+
+### The three FDC fixes cohort 02 produced
+
+**Force Interrupt on an IDLE controller never raised INTRQ** (`0db06c8`). Every
+command write clears `s_intrq` and only `STATE_ENDCOMMAND` sets it; the busy
+path reached it via `STATE_ABORT`, the idle path just cleared error bits and
+stopped. Xanadu writes `$D8` to an idle FDC and polls `$FD1F` b6 — this core
+answered `$3F` 2,159,554 times. Fixed Xanadu Disk A and Xanadu Scenario II.
+
+**Multi-disk `.d77` containers were never parsed** (`6f1512d`). Identification
+required the header's size field to equal the file size *exactly*, which a
+container never satisfies; and `img_size` is `[19:0]`, a 1 MB ceiling, so a
+2.4 MB container truncated to 397,888 and no comparison could match. **28
+images in the collection are containers and 19 are over 1 MB.** Fixed
+XANADU.D77. The same commit applies the `.d77` write-protect byte, correcting
+two wrong claims in `FDC.v` — 77AVEMU *does* read it (`d77.h:1034`) and it does
+*not* break Thexder.
+
+**A lying sector count broke the track scan** (`348aaa0`). Marchen Veil's
+tracks 5/side 0 and 32/side 1 declare `nsec=256` while holding ten sectors,
+shuffled so sector 1 is last. The count was taken as its low byte, so 256
+became 0. A track now ends where the next present track begins, and the count
+is capped at 32.
+
+### Marchen Veil is a PARTIAL fix
+
+It boots and draws its SACOM / ALU corp. splash instead of a blank screen, and
+the scan is provably correct — 828 sectors, exactly the true count. But it
+**stalls at that splash through frame 1980**, where the reference is at its
+title screen (40,942 bytes). The disk is being read correctly now; whatever
+stops it next is a separate, undiagnosed fault.
+
+### Open on the FM-7 side
+
+- **Draw cohort 03.** 315 disks remain.
+- **Marchen Veil's second fault**, above.
+- **Daisenryaku renders nothing** on `Daisenryaku FM.d77` (3,790 bytes = blank)
+  where `FDC.v` claims it reaches its title screen at frame 621 with 67.3%
+  coverage. NOT caused by this session's changes — the baseline is identically
+  blank and the scan fix slightly improves it. The doc and reality disagree.
+- **Re-test the 28 containers properly.** The first pass ran two FM77AV titles
+  in `--machine fm7`, so those results are meaningless.
+- **The AV numbers above are stale on OUR side.** Re-scoring flagged FM Sound
+  Editor, Daiva Story 2 and Mahjong, all fixed this session. The frame-matched
+  AV references are rendered and saved in `sweep/renders-postfix/ref-shots`, so
+  only our half needs re-running (~3.5 h).
 
 ## The RTL fixes, and why they mattered
 
@@ -136,7 +258,11 @@ only because nobody had asked.
 | `--trace-fdc` (harness) | the reference's own FDC log, one line per command with `C`/`H`/`R`. The counterpart of `wd1793.sv`'s `WDMATCH`. This is what cracked Pro Yakyuu Fan. |
 | `FM77AV_CPU_DUMP` / `FM77AV_SUBCPU_DUMP` | the reference's logical 64 KB CPU view, the counterpart of `--dump-shadow` / `--dump-shadow-sub`. |
 | `FM77AV_MMR_DUMP` + `make DEBUG_MMR=1` | all four MMR segment maps on both machines. Comparing `$FD8x`/`$FD90` write streams structurally *cannot* see a segment-interleaving difference; only the maps can. |
-| `make DEBUG_FDC=1` | `WDMATCH` (every sector the controller matched), `WDNOMATCH`, `WDDROP`, and a `SECREG` probe printing every sector-register change with the instance name. |
+| `make DEBUG_FDC=1` | `WDMATCH` (every sector the controller matched), `WDNOMATCH`, `WDDROP`, a `SECREG` probe, and `D77SCAN done: fmt/tracks/sectors/wp` — the scan summary is the fastest way to tell a disk that will not parse from one that will. |
+| `sweep/cohort.py` | draw / retire / status for the 395-disk FM-7 set. `retire` REFUSES unless our side rendered every disk in the cohort, which is the only thing stopping a partial sweep from burying disks permanently. |
+| `sweep/sweep-list.sh` | sweep an explicit `images.txt` instead of the whole archive. Same row format and shot naming, so `ref-shots-at-frame.sh`, `compare-ref.py` and `gallery.py` all work on the result unchanged. |
+| `sweep/ref-shots-at-frame.sh <dir> 1980 6 fm7` | reference renders at the MATCHED instant. The 4th arg is the machine and defaults to `av` — an FM-7 sweep pointed at AV references scores every row against the wrong machine and nothing announces it. |
+| `FM7_VRAM_DUMP` | now works for FM-7 titles too (it was gated AV-only and silently wrote no file). The one measurement that separates "the bytes were never stored" from "the raster will not show them". Note `--av-dump-frame` defaults to 870, so a shorter run writes nothing either. |
 
 ### The comparison that works
 
@@ -157,6 +283,8 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
+0. **Draw cohort 03** (`python3 sweep/cohort.py next --size 40`). 315 FM-7
+   disks remain and the campaign is finding roughly 4 real bugs per 80.
 1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
    and encoder fixes do not touch it — every counter over 2000 frames is
    byte-identical against a same-tree baseline built from `1455e4a` in a
