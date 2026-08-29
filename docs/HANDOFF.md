@@ -208,14 +208,42 @@ for four of sixteen titles either way.
 ### Open on the FM-7 side
 
 - **Draw cohort 04.** 275 disks remain.
-- **Ys II - The Final Chapter is blank on the AV**, where 77AVEMU draws 94.5%
-  GRAPHICS. NOT the scan bound — it is still blank with `9b9af08` in. It scores
-  BOTH-BLANK under `fm7`, which reads as "not a bug", and that is the only
-  reason it went unnoticed (trap 72).
-- **Death Force is blank on the FM-7**, where 77AVEMU draws 92.3% GRAPHICS. Also
-  not the scan bound. It scores TEXT-ONLY 2.6 against 2.5 under `av` — again a
-  verdict that reads as "nothing to see" on the wrong machine. It is filed as
-  BOTH-BLANK in the AV table above; that entry is wrong.
+- **Ys II - The Final Chapter is blank on the AV: it draws into the wrong VRAM
+  bank.** Diagnosed, not fixed. The picture IS drawn — 46,485 non-zero VRAM
+  bytes — and bank 1's planes match 77AVEMU **byte for byte** (blue-hi, red-lo,
+  red-hi, green-lo, green-hi all 8192/8192 identical). But **bank 0 is entirely
+  empty** where the reference holds ~25 KB, and both machines display page 0, so
+  we display an empty bank.
+
+  Ruled out by measurement, do not re-check: the FDC (`$FD18` 228 against 235,
+  `$FD1B` 44,642 against 45,112 — the load is fine), the analog palette (both
+  write 4,096 entries with identical values), `$FD37` (both read `$ff`, write
+  `$00` at `pc=$1117`), and the `$D430` register itself — `make DEBUG_D430=1`
+  shows us writing 36x `$85` / 18x `$a5` / 12x `$84`, the same values and the
+  same activePage=0-dominant pattern as the reference's 6/3/2, all with
+  displayPage=0.
+
+  So the latch is right and the writes land in the wrong place: the next step is
+  the *consumer*, `CRTRAM.v:43-46` — `video_block = {SCASSEL ? AV_ACTIVE_PAGE :
+  AV_DISPLAY_PAGE, SVRADRS[13]}` for the sub CPU and `cpu_block =
+  {AV_VRAM_BANK, AV_VRAM_ADDR[13]}` for the aperture. Both read the correct
+  signal on paper, so instrument which block index each sub-CPU VRAM write
+  actually resolves to. **Note the trap this hid behind:** Ys Omen's bank 0 and
+  bank 1 hold identical content, so its byte-identical VRAM result could not
+  have detected a bank error — Ys II is the first title in this set where the
+  two banks differ.
+- **Death Force is blank on the FM-7: sub BUSY is stuck at 1.** Diagnosed, not
+  fixed. `BUSY=1`, `$fd05` reads `$fe`, and the main CPU polls `$FD05`
+  **1,094,760 times against the reference's 131,773** — from frame 0 straight
+  through, not a transient. The sub CPU runs (19.2M instructions, pc `$c090` in
+  sub RAM) but touches `$D40A` only **8 times** against Ys II's 869, so it never
+  reaches its idle loop to clear BUSY. Downstream everything starves: reads stop
+  after **track 0**, the PSG is never touched (`$FD0D`/`$FD0E`/`$FD15`/`$FD16`
+  all zero against 2,088/696/4,530/1,510), not one analog-palette entry is
+  written where the reference writes 4,096, and VRAM ends at 147 non-zero bytes
+  against 14,349. Same shape as the FM Sound Editor fault: the sub is waiting on
+  something this core never answers. Trace the sub side at `$c090` and find what
+  it polls.
 - **Audit the AV table's 27 BOTH-BLANK rows for machine.** Two of the three bugs
   found in this round were hiding in exactly that verdict, on the wrong machine.
   BOTH-BLANK is the bucket nobody re-examines, which is what makes it worth

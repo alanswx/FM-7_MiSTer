@@ -512,3 +512,17 @@ distest: dis6809_test.cpp dis6809.cpp dis6809.h
 	c++ -O1 -o obj_dir/distest dis6809_test.cpp dis6809.cpp -I. && ./obj_dir/distest
 
 .PHONY: distest
+
+# `make DEBUG_D430=1` prints one line per $D430 write latched in rtl/SMEM.v:
+#
+#   D430W <- $a5  displayPage=0 activePage=1 nmimask=1
+#
+# $D430 bit 6 selects the DISPLAYED VRAM bank and bit 5 the one the CPU draws
+# into, so a title that double-buffers -- Ys II writes $85/$a5/$85 in a loop
+# from sub RAM at $c06b/$c071/$c078 -- is invisible in a main-CPU $fdxx trace.
+# 77AVEMU logs the same writes as `IOWRITE SUB: .... IO:D430 VALUE:xx by Sub
+# CPU`, so the two are directly comparable. Touch ../rtl/SMEM.v before building
+# or the define does not reach Verilator (trap 3).
+ifeq ($(DEBUG_D430),1)
+V_DEFINE += +define+DEBUG_D430
+endif

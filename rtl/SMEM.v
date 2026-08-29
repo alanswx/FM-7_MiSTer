@@ -81,6 +81,10 @@ always @(posedge CLKSYS) begin
   else if ((av_d430_sel && ~SREGWEn) ||
            (av_d430_wr_sr[2] & ~av_d430_wr_sr[1])) begin
     av_d430_reg <= SREGDIN;
+`ifdef DEBUG_D430
+    $display("D430W <- $%02h  displayPage=%0d activePage=%0d nmimask=%0d",
+             SREGDIN, SREGDIN[6], SREGDIN[5], SREGDIN[7]);
+`endif
   end
 end
 
