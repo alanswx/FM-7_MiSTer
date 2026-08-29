@@ -28,6 +28,19 @@ SData* img_mounted=NULL;
 CData* img_readonly=NULL;
 QData* img_size=NULL;
 
+// Writes reach the mounted .d77 ONLY when this is set. It defaults off because
+// the harness opens every image read-write and a sweep runs hundreds of them:
+// two disks in cohort 02 (FM Sound Editor V1.0 and F-BASIC V3.3L11 System Disk,
+// both titles that legitimately save to disk) were silently modified at
+// 2026-08-27 17:40:08 while the sweep ran. That mutates the user's collection,
+// and it also breaks the cohort bookkeeping, which identifies a disk by its
+// content hash -- the two showed up as retired-but-not-in-population.
+//
+// The core is still told the disk is writable (img_readonly stays 0) and the
+// write still takes the same number of cycles, so emulated behaviour and the
+// gate's counters are unchanged; only the file on disk is spared.
+bool disk_persist_writes = false;
+
 
 #define bitset(byte,nbit)   ((byte) |=  (1<<(nbit)))
 #define bitclear(byte,nbit) ((byte) &= ~(1<<(nbit)))
@@ -78,7 +91,7 @@ void SimBlockDevice::BeforeEval(uint64_t cycles)
       } else if(writing && *sd_buff_addr != bytecnt && (*sd_buff_addr< kBLKSZ)) {
       //} else if(writing && (bytecnt < kBLKSZ)) {
   	//printf("writing disk %i at sd_buff_addr %x data %x ack %x\n",i,*sd_buff_addr,*sd_buff_din[i],*sd_ack);
-        disk[i].put(*(sd_buff_din[i]));
+        if (disk_persist_writes) disk[i].put(*(sd_buff_din[i]));
         *sd_buff_addr = bytecnt;
       } else {
 	  *sd_buff_wr=0;

@@ -4,6 +4,9 @@
 #include "verilated.h"
 #include "sim_console.h"
 
+// Off by default: a sweep must never modify the user's disk images.
+extern bool disk_persist_writes;
+
 
 #ifndef _MSC_VER
 #else

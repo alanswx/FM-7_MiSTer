@@ -846,6 +846,8 @@ static int parse_args(int argc, char** argv) {
 		else if (a == "--boot-rom")   { const char* v = next(); if (v) boot_rom_path = v; }
 		else if (a == "--tape")       { const char* v = next(); if (v) tape_path = v; }
 		else if (a == "--disk")       { const char* v = next(); if (v) disk_path = v; }
+		// Off by default: a sweep must never modify the user's disk images.
+		else if (a == "--disk-writable") { disk_persist_writes = true; }
 		else if (a == "--disk1")      { const char* v = next(); if (v) disk_path1 = v; }
 		else if (a == "--tape-audio") opt_tape_audio = true;
 		else if (a == "--bootrom")    { const char* v = next(); if (v) opt_bootrom = atoi(v) & 3; }
