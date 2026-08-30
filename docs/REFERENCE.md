@@ -1070,15 +1070,25 @@ confident wrong answer at least once:
     first FM-7 cohort's "actionable" rows were this, and every one dissolved on
     being looked at:
 
-    | title | what the reference actually shows |
-    |---|---|
-    | Argo | flat blue, **100% coverage / 1 colour**, byte-stable frames 200-3000, PC parked in the boot ROM at `$fe0b` |
-    | Hot Dog `[b]` | flat white, 100% / 1 colour, stable from frame 600 |
-    | Ishtar | coloured **noise**, 7 colours -- a garbage screen, not art |
-    | GAME2 | 2 colours against our 1, a marginal difference |
+    | title | what the reference showed as an FM-7 | on the RIGHT machine (2026-08-30) |
+    |---|---|---|
+    | Argo | flat blue, **100% coverage / 1 colour**, byte-stable frames 200-3000, PC parked in the boot ROM at `$fe0b` | **MATCH, 73.2 against 73.8** |
+    | Hot Dog `[b]` | flat white, 100% / 1 colour, stable from frame 600 | **MATCH, 94.9 against 94.5** |
+    | Ishtar | coloured **noise**, 7 colours -- a garbage screen, not art | not re-tested |
+    | GAME2 | 2 colours against our 1, a marginal difference | **MATCH, 49.9 against 51.8** |
+
+    **Superseded, and this is the important half.** Three of those four are
+    FM77AV software that was being swept as an FM-7 (trap 72), and all three
+    render correctly under `--machine fm77av` on both sides. The flat fill and
+    the noise are the *wrong-machine signature*, not evidence that a title is
+    broken everywhere. The observation stands -- coverage cannot tell a picture
+    from a fill -- but the conclusion drawn from it here was wrong: these rows
+    were not "broken everywhere", they were mis-machined. **Check the machine
+    before concluding a title is broken on both sides.**
 
     A flat fill is 100% covered and contains nothing; noise scores well on both
-    coverage and colour count. `compare-ref.py` now rejects the flat-fill case
+    coverage and colour count -- and both are what an AV title renders when run
+    as an FM-7, so treat either as a machine question first (trap 72). `compare-ref.py` now rejects the flat-fill case
     (`colours <= 1 and coverage >= 99`) and reports a genuine colour shortfall
     as its own `CORE-MONO` verdict rather than as `MATCH`. Noise it cannot
     detect, and should not try to -- that is what looking at the picture is

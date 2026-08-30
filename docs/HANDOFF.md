@@ -241,7 +241,47 @@ never screened at all — cohort 01's headline, "0 core bugs in 40 disks, all 12
 blanks were blank on the reference too", rests on twelve blanks that may include
 AV titles scored against FM-7 ROMs. **Screen 01 and 02 before trusting either.**
 
+### Cohorts 01 and 02 screened too: 17 of 80 are AV software
+
+Same 300-frame screen. **17 of 80 (21%)**, consistent with cohort 03's 28%, so
+this is systematic across the campaign rather than one unlucky draw. Re-run
+under `fm77av` on both sides, **nine MATCH**:
+
+| title | as fm7 | as fm77av |
+|---|---|---|
+| Albatross (Disk 1) | blank (Aug-8 sweep) | **MATCH** 95.7 against 98.3 |
+| Hot Dog `[b]` | "flat white, broken everywhere" | **MATCH** 94.9 against 94.5 |
+| Argo | "flat blue, broken everywhere" | **MATCH** 73.2 against 73.8 |
+| FM Sound Editor | — | **MATCH** 69.8 against 69.8 |
+| `[Compilation]` Game 2 | "2 colours against our 1" | **MATCH** 49.9 against 51.8 |
+| Amnork | — | **MATCH** 39.2 against 39.2 |
+| Relics | — | **MATCH** 26.7 against 26.7 |
+| Mugen Sensi Valis | — | **MATCH** 23.8 against 24.3 |
+| Solitaire Royale | — | 61.8 against 82.3 — **a real gap, follow up** |
+| Take Out Vol. 6 | — | REF-WORSE: we draw 15.3, the reference is blank |
+| F-BASIC V3.3L11, Take Out Vol. 7 A, Kohaku Iro | — | genuinely BOTH-BLANK |
+
+**This retires trap 70's cohort-01 conclusion.** That trap examined cohort 01's
+four "actionable" rows and decided each was a title broken on both machines.
+Three of the four — Argo, Hot Dog `[b]`, GAME2 — are AV software, and all three
+render correctly on the right machine. A flat fill and a noise screen are the
+*wrong-machine signature*. `REFERENCE.md` trap 70 is corrected in place.
+
+It also means **cohort 01's "0 core bugs in 40 disks" rested on a
+mis-measurement**: its 12 blanks included AV titles scored against FM-7 ROMs,
+and at least three of them draw.
+
 ### Open on the FM-7 side
+
+- **Lupin Sansei - Cagliostro no Shiro (Disk B) stalls the simulator**, and it
+  is **not** from this session's changes — the pre-`b64f1f7` binary hangs
+  identically, and the scan-bound fix cannot touch it (348,848 bytes, under the
+  1 MB ceiling, so `scan_limit` is bit-identical to the old expression). The
+  curve is a cliff, not a slowdown: frame 40 in 17 s, frame 60 in 25 s
+  (0.42 s/frame), frame 80 not reached in 300 s. Frames stop advancing, so
+  suspect whatever drives vblank rather than the CPU. It is an AV title
+  (`$FD80-$8F`, `$93`, `$FD30-$34`) and this is on the `fm77av` path. It is
+  why the row came back NO-SHOT in the sweep.
 
 - **Draw cohort 04.** 275 disks remain.
 - **Ys II - The Final Chapter is NOT a bug — cleared as trap 49.** It renders
