@@ -366,19 +366,41 @@ drawing lead directly. The gap is widest at the start: 2.5x by frame 200.
 | **ours, measured** | **1.04** (1.00 early) |
 | reference, measured | 0.93 (**0.40** early) |
 
-Ours sustains **78% of the theoretical maximum**, which is only reachable with
-near-1:1 interleave and no rotational latency. The reference's early 0.40 sits
-on 3:1, which is ordinary. `wd1793.sv` models the index hole (a free-running
-counter, `s_index <= cnt < 100`) but only for status bit 1 — a sector read is
-served as soon as its SD block lands, with no rotational wait. **That is the
-mechanism.**
+**(Superseded claim, mine: "ours is 78% of the physical maximum, only reachable
+with no rotational latency — add latency to wd1793.sv." That inference is
+WRONG and it was briefly ranked as the top open item.)**
 
-**NOT changed, deliberately.** Adding rotational latency alters timing for every
-disk title in the suite and the sweeps, needs a full re-bless, and could move
-the four cohorts' recorded verdicts. It is the right fix and it wants its own
-session with the gate and a cohort re-run budgeted. What is settled is the
-diagnosis: the "we are ahead" rows are not individually trap-49 artifacts, they
-share a cause.
+1.04 is *below* 1.34, so our rate is physically achievable, and two further
+measurements say it is not even aggressive:
+
+- Thexder's image stores sectors **1..16 in physical order** on every track,
+  i.e. a 1:1 layout as recorded.
+- It requests them **largely sequentially** — `1,4,5,6 … 4,5,6,7,9,10..16 …
+  1,2,3..16`.
+
+Sequential reads off a 1:1 track arrive one sixteenth of a revolution apart:
+12.5 ms, or 1.34/frame. **Ours is 16.8 ms/sector — slightly SLOWER than the
+ideal, not faster.** It is the reference's early 0.40/frame (42 ms/sector) that
+is slower than a 1:1 layout permits.
+
+So the honest state is: **the lead is real and reproducible, but its cause is
+not established.** Ours is plausible for a 1:1 disk; the reference is
+conservative; and a `.d77` cannot settle which is right, because the format
+records the sector order a dumper wrote and many dumpers write logical order
+regardless of the physical interleave. Do not "fix" the core's timing on this
+evidence — a change that slows every disk title in the gate and four retired
+cohorts needs better grounds than a comparison against the slower of two
+emulators.
+
+**What would settle it**, in order of strength: real FM-7 hardware; the
+`refs/fm7-docs` manuals on the MB8877's sector timing and the drive's specified
+transfer rate; or CSP as a third opinion, since it is the primary authority and
+disagrees with 77AVEMU on the timer constant already.
+
+`wd1793.sv` does model the index hole (free-running counter, `s_index <= cnt <
+100`) but only for status bit 1; a sector read is served as soon as its SD block
+lands. `seektimer` is 0x3FF at the 1 MHz `ce` = 1.02 ms, so it is not the
+limiter either. If latency is ever added, that is where it goes.
 
   **What is actually left is small**: rows 2-46 differ in the GREEN plane only
   (3,394 bytes), and the colour histograms there are near-identical — blue
@@ -505,28 +527,22 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-0. **Give `wd1793.sv` rotational latency.** Fully diagnosed and measured, above:
-   this core sustains 1.04 sectors/frame against a physical maximum of 1.34 and
-   a realistic 0.45-0.67, so disk-paced titles run seconds ahead of the
-   reference. It is the shared cause behind every "we are ahead" row. **Budget
-   the re-bless and a cohort re-run in the same session** — it moves timing for
-   every disk title, so it cannot be landed and left.
-1. **Draw cohort 05** (`python3 sweep/cohort.py next --size 40`). 235 FM-7
+0. **Draw cohort 05** (`python3 sweep/cohort.py next --size 40`). 235 FM-7
    disks remain. The rate is roughly 5 real bugs per 160, and **a quarter of the
    set is AV software** — screen before sweeping (`docs/TESTING.md`).
-2. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
+1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
    and encoder fixes do not touch it — every counter over 2000 frames is
    byte-identical against a same-tree baseline built from `1455e4a` in a
    worktree (trap 57). The `$FD13`/CRT fix changes one line, `display OFF` ->
    `display on`, and it is still blank: **its digital palette is all zeros**,
    so all eight colours are black. Measure that before the CPU runaway.
-3. **A fresh 68-title AV sweep.** The fixes above are systemic — a memory
+2. **A fresh 68-title AV sweep.** The fixes above are systemic — a memory
    translation, a sub-system handshake, a display latch and a shared-window
    gate — and the set has not been re-measured since. Build the "before" from the same tree in the same
    session (trap 57); the table at the top of this file predates all three.
-4. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
+3. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
    the logo reads grey/olive here and green on the reference.
-5. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
+4. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
    animations photographed at one global `SHOT_AT`, so they catch whatever
    instant they land on. Kohakuiro draws its logo at frame ~199 and fades by 400.
 6. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work

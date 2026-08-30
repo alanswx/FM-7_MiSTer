@@ -1332,6 +1332,37 @@ confident wrong answer at least once:
     from the reference; by f800 the reference has them and a *different* band is
     ahead. That is phase, not pixels.
 
+78. **"Below the theoretical maximum" is not the same as "correct", and
+    "different from the reference" is not the same as "wrong" — I combined both
+    errors and nearly sent a session to change FDC timing on it.** The chain:
+    this core loads Thexder's 417 sectors ~100 frames sooner than 77AVEMU, at
+    1.04 sectors/frame against its 0.93 (0.40 early). A 2D drive is 300 RPM with
+    16 sectors per track, so the 1:1 ceiling is 1.34/frame. I read 1.04 as "78%
+    of maximum, only possible with no rotational latency", concluded the FDC was
+    unphysically fast, and ranked "add rotational latency to `wd1793.sv`" as the
+    top open item.
+
+    Two measurements killed it, and both were cheap:
+
+    - the image stores sectors **1..16 in physical order** on every track, a 1:1
+      layout as recorded;
+    - the title requests them **largely sequentially**.
+
+    Sequential reads off a 1:1 track are 12.5 ms apart = 1.34/frame. **Ours is
+    16.8 ms/sector, slightly SLOWER than ideal.** Nothing was unphysical. The
+    reference is the one below what a 1:1 layout permits.
+
+    **The trap has three parts.** A rate under the theoretical ceiling is
+    *permitted*, not *validated* — the ceiling only rules things out. Being
+    faster than one emulator says which is faster, not which is right. And a
+    `.d77` cannot settle interleave at all: the format stores the order a dumper
+    wrote, and many dumpers write logical order regardless of physical layout,
+    so the image is evidence about the dumper as much as the disk.
+
+    Before changing a timing constant to match a reference, ask what would make
+    the reference wrong, and whether the artifact you are matching is a property
+    of the machine or of the file format.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
