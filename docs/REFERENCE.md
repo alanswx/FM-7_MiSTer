@@ -1230,6 +1230,39 @@ confident wrong answer at least once:
     on the sweep. `sweep_one.sh` still copies the last entry to the canonical
     PNG, so every downstream tool is unchanged.
 
+76. **77AVEMU's `--fm7` is not a faithful FM-7 for VIDEO: it applies FM77AV
+    video registers that a real FM-7 does not have.** The write handlers for
+    `$FD12` (320-width), `$FD30`-`$FD34` (analog palette) and `$FD37` are
+    **ungated**; only `$FD13`, `$FD93` and `$D430` carry the
+    `if(MACHINETYPE_FM77AV<=state.machineType)` guard
+    (`fm77av/fm77avio.cpp`). There is a tell-tale asymmetry: the `$FD12` *read*
+    IS gated, so the reference accepts a 320-mode switch in FM-7 mode and then
+    refuses to report it.
+
+    An AV-aware title that writes those registers unconditionally — which is
+    the normal way to write one, since on a real FM-7 they are no-ops — puts
+    the reference into **320x200 4096-colour mode while claiming to be an
+    FM-7**. Death Force does exactly this: the reference is blank at frame 402
+    in 640x400, and from frame 805 it is 320x200 with 57-63 colours at 92.9%
+    coverage. This core, being an actual FM-7, stays in 640x200 with 6 digital
+    colours.
+
+    **The two sides are then running different code paths and their VRAM is not
+    comparable** — the same drawing produces a different plane layout in 320
+    mode. Scoring such a row against `compare-ref.py` compares two machines.
+
+    **The tell is the reference PNG's dimensions.** Every faithful FM-7
+    reference render is 640x400; an AV-mode one is 320x200. Measured over 56
+    FM-7 reference renders (cohort 03 plus the 16 large images), **2 are
+    320x200**: Death Force and DRUAGA. Check the dimension before believing any
+    FM-7 row whose picture disagrees.
+
+    This does NOT invalidate the fault found underneath it — Death Force's sub
+    CPU really was hung (trap 74's neighbour, the `$D400` padding bits) and the
+    fix is confirmed by BUSY, `$D40A` traffic, disk reach and VRAM independently
+    of any picture. It invalidates only the *residual* picture difference. Where
+    an FM-7 render must actually be validated, CSP is the authority, not this.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

@@ -69,9 +69,29 @@ assign MKDATA =
   ~RFD01n ? kdata :
   ~RFD00n ? { P0, 6'b111111,  fm8_switch } : 8'h0;
 
+// $D400 read: scancode bit 8 in b7, and the REST READ AS ONES.
+//
+// CSP is explicit and is the primary authority for the FM-7 (section 1):
+// `retval = (call_read_data8(keyboard,0) != 0) ? 0xff : 0x7f`
+// (common-src-project/src/vm/fm7/display.cpp:2168). MAME returns bit 7 alone
+// with the rest zero (`(m_current_scancode >> 1) & 0x80`, fujitsu/fm7.cpp:509)
+// and this core had followed MAME -- exactly the case REFERENCE.md warns about.
+//
+// The zeros hung Death Force. The FM-7 aliases the sub I/O page every 16 bytes
+// (CSP `(addr - 0xd400) & 0x000f`, which is what subio_alias_block in SDECODE.v
+// reproduces), so $D430 reads $D400 here. Death Force's sub program polls the
+// FM77AV ALU-busy bit with `LDA $D430 / ANDA #$10 / BEQ` at $c08d -- harmless
+// on a real FM-7 because the aliased read returns ones and the branch falls
+// through immediately. With b4 reading 0 the sub spun there for the whole run:
+// it reached its monitor idle loop but never the `TST $d40a` at $E13B, so BUSY
+// stayed set, the main CPU polled $FD05 1,094,760 times against the reference's
+// 131,773, disk reads stopped after track 0 and nothing was ever drawn.
+//
+// Note the main side already did this: $FD00 returns { P0, 6'b111111,
+// fm8_switch }. The two halves of the same register disagreed.
 assign SKDATA =
   ~KACKNGn ? kdata :
-  ~KDATAn ? { P0, 7'd0 } : 8'h0;
+  ~KDATAn ? { P0, 7'b1111111 } : 8'h0;
 
 // Modifier state.
 //

@@ -40,8 +40,24 @@ ports to `unknown_r`.
 | bit | meaning |
 |---|---|
 | 7 | keyboard scancode bit 8 (9th bit) |
-| 6-1 | read 0 in this core |
+| 6-1 | **read 1** (`{P0, 6'b111111, fm8_switch}`) — superseded claim: "read 0 in this core", which was never true of the RTL |
 | 0 | FM-8 compatibility switch — the boot ROM checks it to pick the FM-8 or FM-7 tape routine (`CLKCTRL.v`) |
+
+The sub-CPU counterpart `$d400` is the same register and must read the same
+way. It did not: it returned `{P0, 7'd0}`, following MAME
+(`fujitsu/fm7.cpp:509`, `(m_current_scancode >> 1) & 0x80`) where CSP — the
+primary authority for the FM-7 — returns `0xff`/`0x7f`
+(`fm7/display.cpp:2168`), i.e. every other bit set. The two halves of one
+register disagreed inside this core, and the sub half was the wrong one.
+
+**Why the padding bits are load-bearing.** The FM-7 aliases the sub I/O page
+every 16 bytes (CSP `(addr - 0xd400) & 0x000f`; the AV narrows it to 64,
+`& 0x003f` — `SDECODE.v`'s `subio_alias_block`). So `$D430` reads `$D400` on an
+FM-7, and an FM77AV-aware title that polls the ALU-busy bit with
+`LDA $D430 / ANDA #$10 / BEQ` falls straight through on real hardware because
+the aliased read returns ones. With zeros it spins for ever — which is exactly
+how Death Force hung: the sub never reached `TST $d40a`, BUSY stayed set, and
+the main CPU polled `$FD05` 1,094,760 times against the reference's 131,773.
 
 **Write** (`PERIPHERAL.v`, latch `m10`): bit 0 = tape output, bit 1 = tape
 motor relay, bit 6 = printer strobe (sets the busy latch read back on `$fd02`
