@@ -72,6 +72,33 @@ whole picture (trap 25). `vsim/shots-ref-77avemu/` holds an independent 77AVEMU
 render of the same rows at the same instant for exactly that reason —
 informational, never a gate, scored with `sweep/compare-ref.py`.
 
+**Audit the gate against it occasionally; it is cheap and it has found real
+defects.** Scoring every blessed row against the independent set (2026-08-30):
+
+| row | agreement |
+|---|---|
+| av-kohakuiro | 100.00% |
+| boot-basic, basic-print / keys / shift | 99.84 – 99.89% |
+| av-demo, av-wizardry4 | 99.12 – 99.20% |
+| **disk-Thexder `[b]`** | **81.58% — renders wrong, and has been green the whole time** |
+
+That audit found two things. Thexder carries a band of striped rectangles the
+77AVEMU render does not have, in the *blessed* shot, so the gate has been
+certifying it for as long as the row has existed — `shots-ref/` structurally
+cannot catch it. And av-kohakuiro was scoring **100% by comparing two BLANK
+screens**: it draws 6.81% at frames 150-250 and is blank from 400, while the
+gate shot at the global 600. Rows now take an optional per-row shot frame
+(`av_add <name> <disk> [frame]`), kohakuiro is pinned at 250, and it now agrees
+at 100% on real content.
+
+**A row whose picture is blank on both sides is not passing, it is abstaining.**
+Check coverage, not just the verdict.
+
+`boot-dos1/2/3` have no independent render and cannot get one: 77AVEMU has no
+FM-7 DOS boot ROM (the file under `refs/local` is a 480-byte AV loader padded to
+512), so a render would picture the staging rather than the machine. That is a
+documented limit, not an oversight — see `SKIPPED` in `sweep/ref-gate.py`.
+
 ## The breadth sweep
 
 ```sh

@@ -202,10 +202,13 @@ fi
 # Short test names on purpose: the name becomes the reference file name, and
 # "av-Kohakuiro no Yuigon (FM77AV) (Disk 1).png" is a poor thing to have in git.
 AVTITLES=${AVTITLES:-../software/D77}
-av_add() {   # <short-name> <disk basename>
-  [ -f "$AVTITLES/$2.d77" ] && TESTS+=("$1|--machine fm77av --disk '$AVTITLES/$2.d77'")
+av_add() {   # <short-name> <disk basename> [shot-frame]
+  [ -f "$AVTITLES/$2.d77" ] && TESTS+=("$1|--machine fm77av --disk '$AVTITLES/$2.d77'|${3:-}")
 }
-av_add av-kohakuiro "Kohakuiro no Yuigon (FM77AV) (Disk 1)"
+# Kohakuiro is photographed at 250, not the global 600: its logo is up and
+# stable from frame 150 to 250 (6.81%, 8 colours) and the screen is blank from
+# 400 on. See the per-row note in the runner loop.
+av_add av-kohakuiro "Kohakuiro no Yuigon (FM77AV) (Disk 1)" 250
 av_add av-wizardry4 "Wizardry IV (FM77AV) (Disk A)"
 
 # One entry per tape image found. Types LOAD"" + RETURN, which is what F-BASIC
@@ -238,7 +241,15 @@ diffs=0
 newly=0
 blessed_rows=()
 for entry in "${TESTS[@]}"; do
-  IFS='|' read -r name extra <<< "$entry"
+  IFS='|' read -r name extra rowshot <<< "$entry"
+  # Per-row screenshot instant. A row that photographs an attract animation at
+  # the global SHOT_AT catches whatever moment it lands on, and if that moment
+  # is blank the row passes by comparing two blank screens -- which is exactly
+  # what av-kohakuiro did: it draws 6.81% at frames 150-250, is blank from 400,
+  # and the gate shot at 600. It scored 100% against shots-ref-77avemu/ by
+  # agreeing that both sides were empty. Counters stay keyed on FRAMES, so only
+  # the picture instant moves.
+  shot=${rowshot:-$SHOT_AT}
   matches "$name" || continue
 
   log=$(mktemp)
@@ -248,7 +259,7 @@ for entry in "${TESTS[@]}"; do
   # everything after the space.
   eval "args=($extra)"
   "$EXE" --headless "${args[@]}" \
-         --screenshot-name "$OUT/$name.png" --screenshot "$SHOT_AT" \
+         --screenshot-name "$OUT/$name.png" --screenshot "$shot" \
          --stop-at-frame "$FRAMES" >"$log" 2>&1
 
   frames=$(grep -oE '^frames  *: [0-9]+' "$log" | grep -oE '[0-9]+$')
