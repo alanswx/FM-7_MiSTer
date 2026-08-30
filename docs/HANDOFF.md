@@ -5,7 +5,14 @@ Orientation for picking this branch up cold. Detail lives in
 traps — read section 5 before trusting any number) and `HARDWARE-HANDOFF.md`
 (the FPGA side). `CLAUDE.md` has the documentation rules; follow them.
 
-Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate green.
+Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate 11/11.
+
+**The single most useful thing to know before you start:** most of what looks
+like a core bug in this campaign has turned out to be a MEASUREMENT defect —
+the wrong machine, the wrong frame, or the wrong reference constant. Of the
+candidates chased most recently, three of four dissolved. Read
+`docs/REFERENCE.md` traps 70 and 72-77 before triaging anything; each one cost
+hours and each is a specific, repeatable check.
 
 ## If file reads intermittently fail with EPERM
 
@@ -93,7 +100,7 @@ resolving, not a gain. The remaining three ARE the actionable list below.
 
 **`sweep/renders/` is two sessions old**, so that delta is not this session
 alone; it carries the previous session's NMI-mask and sector-register fixes as
-well. The three titles verified individually as gained *this* session are FM
+well. The three titles verified individually as gained by those fixes are FM
 Sound Editor, Daiva Story 2 disk A and Mahjong Kyou Jidai disk 1 — the last
 matching 77AVEMU on **all 98,304 VRAM bytes**.
 
@@ -177,137 +184,53 @@ the scan is provably correct — 828 sectors, exactly the true count. But it
 title screen (40,942 bytes). The disk is being read correctly now; whatever
 stops it next is a separate, undiagnosed fault.
 
-### What cohort 03 got wrong, in both directions
+### What the cohort campaign has established
 
-Neither row `compare-ref.py` flagged meant what the verdict column said, and
-they were wrong in **opposite** directions. Trap 70's own test — render the
-reference at several frames and check the PNG size actually changes — settled
-both in about ten minutes. Run it before triaging anything.
+Method lives in `docs/TESTING.md`; the traps it cost are 70 and 72-77 in
+`docs/REFERENCE.md`. What matters here is the state.
 
-| row | verdict | what it actually is |
-|---|---|---|
-| Ys - Ancient Ys Vanished Omen `[a]` | CORE-BLANK | **A real bug, now FIXED (`9b9af08`).** An AV title in the FM-7 set, so as an FM-7 the reference rendered *noise* and both halves of the comparison were junk. Run as `av`, the reference drew its title and this core was blank. Root cause was the D77 scan bound, not video at all. See trap 72 for the disk-set half. |
-| Penguin-kun Wars (demo) | CORE-WORSE | **Not a bug.** We draw the title correctly at frame 900, then advance to "1 PLAYER GAME? / PUSH RETURN KEY" by 1000 and wait for input. The reference never leaves the title: byte-identical 83,621 B at frames 2500/3200/4000/5000. We were marked down for reaching a *later* state. |
+**A quarter of the "FM-7" set is FM77AV software.** Screened by a 300-frame run
+per disk, reading the run summary's `UNDECODED ports` line for `$FD80`-`$FD93`,
+`$FD30`-`$FD34` or `$FD12`: cohort 03 11/40, cohorts 01+02 17/80, cohort 04
+10/40. Sweeping those as an FM-7 scores them against the wrong ROM set, and
+`BOTH-BLANK` is where they hide — it reads as "probably a data disk" and nothing
+revisits it.
 
-### The 16 images over 1 MB, re-tested after the scan-bound fix
-
-All 16 swept on **both** machines, before and after, with the "before" built
-from `d2840ab` in a worktree in the same session (trap 57). Frame-matched, and
-every image hash-verified unchanged either side.
-
-**Four titles moved from blank to rendering.** Two were confirmed byte-identical
-to 77AVEMU on all 98,304 VRAM bytes — `[a]` and the plain image are different
-files, so this is two independent confirmations, not one measured twice:
-
-| title | machine | before | after | confirmation |
-|---|---|---|---|---|
-| Ys - Ancient Ys Vanished Omen | fm7 + av | 3,790 | 35,924 | **0 differing VRAM bytes** |
-| Ys - Ancient Ys Vanished Omen `[a]` | fm7 + av | 3,790 | 35,924 | **0 differing VRAM bytes** |
-| Ys (1985)(PSG) | fm7 + av | 3,790 | 35,924 | 32.2% against 32.1% |
-| Reviver | fm7 | 5,492 | 18,374 | 17.8% against 8.9% (we draw more) |
-
-**Four were already working and the fix did nothing for them** — XANADU 38,518
-before and after, Quest 18,104, Psy-O-Blade 24,385, Urusei Yatura 5,330.
-XANADU was already carried by the container fix in `6f1512d`. Worth stating
-because the endpoint alone would credit the scan bound with all eight.
-
-**Machine matters more than expected in this set.** Psy-O-Blade and Urusei
-Yatura are blank as FM-7 and MATCH as AV; Reviver and Death Force are the
-reverse. Sweeping this set on one machine would have produced a wrong answer
-for four of sixteen titles either way.
-
-### The machine audit: 11 of cohort 03's 40 disks are AV software
-
-Trap 72 predicted this; measuring it was cheap and the payoff was large. Screen
-each disk with a 300-frame FM-7 run and read the run summary's `UNDECODED ports`
-line — an AV title names the AV MMR registers `$FD80`-`$FD93`, or the analog
-palette `$FD30`-`$FD34`, or `$FD12`. Forty disks in minutes, against hours for a
-re-sweep.
-
-**11 of 40 (28%)** flagged. Re-run under `fm77av` on BOTH sides, **four** go
-straight from `BOTH-BLANK` to `MATCH` — they were working the whole time:
+**15 titles were recovered by nothing more than running them on the right
+machine**, all previously recorded as blank or broken:
 
 | title | as fm7 | as fm77av |
 |---|---|---|
-| Dragon Buster (Dempa) | BOTH-BLANK | **MATCH**, GRAPHICS 87.3 against 87.2 |
-| Mah-jongg Kyo Jidai Special | BOTH-BLANK | **MATCH**, 66.6 against 66.8 |
-| Silpheed | BOTH-BLANK | **MATCH**, GRAPHICS 13.3 against 13.3 |
-| SIL_A.D77 (a second Silpheed dump) | BOTH-BLANK | **MATCH**, GRAPHICS 13.3 against 13.3 |
-| Ys Omen `[a]` | CORE-BLANK | MATCH 32.2 against 32.1 (after `9b9af08`) |
-| Gambler Jikotyusinha | MATCH | MATCH |
-| Team AB Music Disk | TEXT-ONLY | TEXT-ONLY 2.1 against 2.4 |
-| Girls Paradise | TEXT-ONLY | TEXT-ONLY 1.2 against 1.2 |
-| FM77AV demo `[Alt 1] [b]` | BOTH-BLANK | BOTH-BLANK — genuinely blank on both |
-| OS-9 Level 1 (Disk 2) | TEXT-ONLY | BOTH-BLANK |
-| HARRIER1.D77 | BOTH-BLANK | BOTH-BLANK — blank on both machines |
+| Albatross (Disk 1) | blank | MATCH 95.7 / 98.3 |
+| Hot Dog `[b]` | "flat white, broken" | MATCH 94.9 / 94.5 |
+| Dragon Buster (Dempa) | BOTH-BLANK | MATCH 87.3 / 87.2 |
+| Argo | "flat blue, broken" | MATCH 73.2 / 73.8 |
+| FM Sound Editor | — | MATCH 69.8 / 69.8 |
+| Mah-jongg Kyo Jidai Special | BOTH-BLANK | MATCH 66.6 / 66.8 |
+| `[Compilation]` Game 2 | "2 colours against our 1" | MATCH 49.9 / 51.8 |
+| Amnork | — | MATCH 39.2 / 39.2 |
+| GAME3.D77 | CORE-MONO | MATCH 31.4 / 34.0 |
+| Relics | — | MATCH 26.7 / 26.7 |
+| Mugen Sensi Valis | — | MATCH 23.8 / 24.3 |
+| Silpheed, SIL_A.D77 | BOTH-BLANK | MATCH 13.3 / 13.3 |
+| DAIVA_A.D77 | BOTH-BLANK | MATCH 9.4 / 9.4 |
+| Ys Omen `[a]` | CORE-BLANK | MATCH 32.2 / 32.1 (after `9b9af08`) |
 
-**`BOTH-BLANK` is where this hides.** It reads as "neither side draws it,
-probably a data disk", so nothing revisits it — and six of the eleven were
-sitting in it. `FM77AV demo [Alt 1] [b]` names the machine in its own filename
-and was still swept as an FM-7.
+**Cohorts 01-03 were scored before the pipeline was corrected**, so their
+verdict splits are soft — cohort 01's "0 core bugs, all 12 blanks were blank on
+the reference too" rests on blanks that included AV titles scored against FM-7
+ROMs, and at least three of them draw. Cohort 04 is the first run with machine
+screening and four-frame sampling, and it produced 0 core bugs in 40 disks with
+both flagged rows caught by the new steps rather than by later archaeology.
 
-**This caveats the campaign's own numbers.** Cohort 03's split was measured with
-roughly a quarter of the cohort on the wrong machine, and cohorts 01 and 02 were
-never screened at all — cohort 01's headline, "0 core bugs in 40 disks, all 12
-blanks were blank on the reference too", rests on twelve blanks that may include
-AV titles scored against FM-7 ROMs. **Screen 01 and 02 before trusting either.**
+**Still open from the sweeps**, beyond the list below:
 
-### Cohorts 01 and 02 screened too: 17 of 80 are AV software
+- **Re-test the 28 containers properly.** The first pass ran two FM77AV titles
+  in `--machine fm7`.
+- **Solitaire Royale** is 61.8 against 82.3 on the CORRECT machine — a real gap,
+  unexamined.
+- **Take Out Vol. 6** is REF-WORSE, unexamined.
 
-Same 300-frame screen. **17 of 80 (21%)**, consistent with cohort 03's 28%, so
-this is systematic across the campaign rather than one unlucky draw. Re-run
-under `fm77av` on both sides, **nine MATCH**:
-
-| title | as fm7 | as fm77av |
-|---|---|---|
-| Albatross (Disk 1) | blank (Aug-8 sweep) | **MATCH** 95.7 against 98.3 |
-| Hot Dog `[b]` | "flat white, broken everywhere" | **MATCH** 94.9 against 94.5 |
-| Argo | "flat blue, broken everywhere" | **MATCH** 73.2 against 73.8 |
-| FM Sound Editor | — | **MATCH** 69.8 against 69.8 |
-| `[Compilation]` Game 2 | "2 colours against our 1" | **MATCH** 49.9 against 51.8 |
-| Amnork | — | **MATCH** 39.2 against 39.2 |
-| Relics | — | **MATCH** 26.7 against 26.7 |
-| Mugen Sensi Valis | — | **MATCH** 23.8 against 24.3 |
-| Solitaire Royale | — | 61.8 against 82.3 — **a real gap, follow up** |
-| Take Out Vol. 6 | — | REF-WORSE: we draw 15.3, the reference is blank |
-| F-BASIC V3.3L11, Take Out Vol. 7 A, Kohaku Iro | — | genuinely BOTH-BLANK |
-
-**This retires trap 70's cohort-01 conclusion.** That trap examined cohort 01's
-four "actionable" rows and decided each was a title broken on both machines.
-Three of the four — Argo, Hot Dog `[b]`, GAME2 — are AV software, and all three
-render correctly on the right machine. A flat fill and a noise screen are the
-*wrong-machine signature*. `REFERENCE.md` trap 70 is corrected in place.
-
-It also means **cohort 01's "0 core bugs in 40 disks" rested on a
-mis-measurement**: its 12 blanks included AV titles scored against FM-7 ROMs,
-and at least three of them draw.
-
-### Cohort 04: the corrected pipeline, and what it caught
-
-10 of 40 (25%) screened as AV software — consistent with 28% and 21% before it,
-so roughly **a quarter of the FM-7 set is FM77AV software** and the remaining
-235 disks will need the same split. Swept 30 as `fm7` and 10 as `fm77av`, four
-frames each.
-
-**Zero real core bugs.** Both rows the scorer flagged dissolved, and each was
-caught by one of the two steps added this session:
-
-| row | verdict | what it was |
-|---|---|---|
-| Archon | CORE-WORSE, 4.8 against 58.8 | **The four-frame test.** We draw the title at 600/1000 matching the reference (58.2/58.4 against 58.9/58.3), then run on. The reference follows the SAME trajectory later: ours 1400/1980 = 16.9/4.8 against its 2500/5000 = 17.4/4.7. Same sequence, ours ~2x earlier. |
-| GAME3.D77 | CORE-MONO | **The machine screen** — AV software. MATCHes 31.4 against 34.0 as `fm77av`. |
-
-Two more recovered by routing: GAME3 and DAIVA_A (GRAPHICS 9.4 against 9.4,
-exact). Pro Yakyu Fan, Deep Forest and Woody Poco all match the reference
-exactly — Pro Yakyu Fan being the cohort-02 sector-register fix, confirmed on
-its proper machine.
-
-**A lead, not a finding: two titles now run their attract sequence ~2x ahead of
-the reference** — Archon above, and Penguin-kun Wars, which reaches its menu
-while the reference never leaves its title through frame 5000. The machines
-differ by 0.6% in frame rate (59.6374 against 60 Hz), so a 2x gap is not that.
-Whatever timer these sequences count on is worth measuring, and it would also
-explain REF-WORSE rows recorded elsewhere.
 
 ### Open on the FM-7 side
 
@@ -403,7 +326,7 @@ explain REF-WORSE rows recorded elsewhere.
   We start drawing between 400 and 450; the reference between 503 and 604.
   **We are 120-150 frames — 2 to 2.5 seconds — ahead on a disk-paced draw.**
 
-### A systemic lead: three titles run AHEAD of the reference
+## Three titles run AHEAD of the reference, and the cause is measured
 
 Thexder (above), Archon (attract sequence ~2x early) and Penguin-kun Wars
 (reaches its menu while the reference never leaves its title through f5000) all
@@ -545,7 +468,7 @@ commit: when a rule has two implementations, gate both, and *instrument the gate
 a `DEBUG_AVDRAW` probe printing accepted-vs-dropped with `sub_open` is what proved the
 attention write landed and sent the search after a second writer.
 
-## Tools built this session — use these before inventing anything
+## Tools — use these before inventing anything
 
 Every wrong answer this session came from inferring a measurement the other
 machine could have given directly. Three of these are one-liners that existed
@@ -582,22 +505,28 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-0. **Draw cohort 05** (`python3 sweep/cohort.py next --size 40`). 235 FM-7
+0. **Give `wd1793.sv` rotational latency.** Fully diagnosed and measured, above:
+   this core sustains 1.04 sectors/frame against a physical maximum of 1.34 and
+   a realistic 0.45-0.67, so disk-paced titles run seconds ahead of the
+   reference. It is the shared cause behind every "we are ahead" row. **Budget
+   the re-bless and a cohort re-run in the same session** — it moves timing for
+   every disk title, so it cannot be landed and left.
+1. **Draw cohort 05** (`python3 sweep/cohort.py next --size 40`). 235 FM-7
    disks remain. The rate is roughly 5 real bugs per 160, and **a quarter of the
    set is AV software** — screen before sweeping (`docs/TESTING.md`).
-1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
+2. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
    and encoder fixes do not touch it — every counter over 2000 frames is
    byte-identical against a same-tree baseline built from `1455e4a` in a
    worktree (trap 57). The `$FD13`/CRT fix changes one line, `display OFF` ->
    `display on`, and it is still blank: **its digital palette is all zeros**,
    so all eight colours are black. Measure that before the CPU runaway.
-2. **A fresh 68-title AV sweep.** The fixes above are systemic — a memory
+3. **A fresh 68-title AV sweep.** The fixes above are systemic — a memory
    translation, a sub-system handshake, a display latch and a shared-window
    gate — and the set has not been re-measured since. Build the "before" from the same tree in the same
    session (trap 57); the table at the top of this file predates all three.
-3. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
+4. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
    the logo reads grey/olive here and green on the reference.
-4. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
+5. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
    animations photographed at one global `SHOT_AT`, so they catch whatever
    instant they land on. Kohakuiro draws its logo at frame ~199 and fades by 400.
 6. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work
