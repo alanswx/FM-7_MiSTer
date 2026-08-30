@@ -361,14 +361,42 @@ explain REF-WORSE rows recorded elsewhere.
   found in this round were hiding in exactly that verdict, on the wrong machine.
   BOTH-BLANK is the bucket nobody re-examines, which is what makes it worth
   examining.
-- **Thexder renders wrong, and the gate has been blessing it.** Our
-  `disk-Thexder [b]` shot carries a horizontal band of cyan/white striped
-  rectangles that `shots-ref-77avemu/` does not have; agreement against that
-  independent render is only **81.6%**. It is NOT new — the previously blessed
-  shot has the identical artifacts, so this has been green for as long as the
-  row has existed. `shots-ref/` is the core's own output and structurally cannot
-  catch it (trap 25); `shots-ref-77avemu/` exists precisely for this and nobody
-  had compared this row against it.
+- **Thexder's 81.6% gate agreement is draw-progress PHASE, not wrong pixels.**
+  (Superseded claim, mine, from earlier the same day: "Thexder renders wrong and
+  the gate has been blessing it." That was based on one frame. It is wrong, and
+  so was the retraction I then made off frame 400 — see below.)
+
+  Measured at four matched instants:
+
+  | our f | ref f | agreement | ours | reference |
+  |---|---|---|---|---|
+  | 400 | 403 | 99.98% | **3.9% / 1 colour** | **3.9% / 1 colour** |
+  | 600 | 604 | 81.58% | 58.8% / 6c | 56.7% / 6c |
+  | 800 | 805 | 82.91% | 61.0% / 6c | 59.4% / 6c |
+  | 1000 | 1006 | 85.40% | 60.4% / 6c | 60.7% / 6c |
+
+  **Frame 400's 99.98% is an abstention** — both sides are near-blank, the same
+  failure mode as av-kohakuiro. The reference is text-only at 3.6-3.9% from
+  frame 302 through 503 and the title appears between 503 and 604, so **600 is a
+  legitimate sample point and there is no better one.** Do not re-pin this row.
+
+  The difference is a progressive draw running ahead of the reference. At each
+  sample a band exists in ours that the reference has not drawn yet, and the
+  reference has it by the next sample:
+
+      f600   rows 92-107   ours white+cyan 3066   ref 0
+      f800   rows 60-67    ours            3215   ref 0
+      f800   rows 95-107   ours            2756   ref 2297   <- caught up
+      f1000  rows 60-63    ours            1535   ref 1507   <- caught up
+
+  Same "we are ahead" shape as Archon and Penguin-kun Wars, and since this one
+  draws as the disk loads it is more likely FDC-paced than timer-paced.
+
+  **What is actually left is small**: rows 2-46 differ in the GREEN plane only
+  (3,394 bytes), and the colour histograms there are near-identical — blue
+  17,131 against 16,223, black 9,350 against 10,245. That is a dithering or
+  pattern difference of a few hundred pixels, not a structural fault. Worth a
+  look, but it is not an 18% defect.
 - **Marchen Veil's second fault**, above.
 - **Daisenryaku draws its title art at frame 400 and then erases it.** The art —
   soldier, tank, aircraft — matches the reference; what never appears is the red

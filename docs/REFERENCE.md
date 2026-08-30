@@ -1309,6 +1309,29 @@ confident wrong answer at least once:
     of any picture. It invalidates only the *residual* picture difference. Where
     an FM-7 render must actually be validated, CSP is the authority, not this.
 
+77. **An agreement percentage means nothing without the COVERAGE beside it, and
+    it fails in BOTH directions.** Chasing Thexder's gate row produced two
+    confident wrong answers within twenty minutes, one each way:
+
+    | | reading | why it was wrong |
+    |---|---|---|
+    | 81.58% at frame 600 | "renders wrong, gate has been blessing a defect" | one frame; the difference is draw-progress phase, and the reference catches up by the next sample |
+    | 99.98% at frame 400 | "not a bug, re-pin the row to 400" | **both sides are 3.9% / 1 colour** — near-blank. A high score for an empty screen is an ABSTENTION |
+
+    The second is the more dangerous, and it is the same failure as
+    av-kohakuiro, which scored 100% by comparing two blank screens. Acting on it
+    would have replaced a row that reports a real difference with one that
+    reports nothing.
+
+    **So always print coverage and colour count next to the agreement**, on both
+    sides, at several frames. `compare-ref.py` and `classify.py` already give
+    both; the mistake is quoting one number.
+
+    The corollary for a LOW score: check whether the difference persists or the
+    reference catches up. At f600 Thexder's rows 92-107 are in ours and absent
+    from the reference; by f800 the reference has them and a *different* band is
+    ahead. That is phase, not pixels.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
