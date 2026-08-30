@@ -72,14 +72,24 @@ trap 67.)*
 
 Both columns re-scored on the frame-matched basis, so they are comparable:
 
-| verdict | `sweep/renders/` | now |
-|---|---|---|
-| CORE-BLANK — reference draws, this core does not | 12 | **5** |
-| CORE-WORSE | 2 | **0** |
-| TEXT-ONLY | 8 | 8 |
-| BOTH-BLANK — neither draws; mostly data/scenario disks | 27 | 27 |
-| MATCH | 18 | **27** |
-| REF-WORSE — this core draws and the reference does not | 1 | 1 |
+| verdict | `sweep/renders/` | prev | **re-measured 2026-08-30** |
+|---|---|---|---|
+| CORE-BLANK — reference draws, this core does not | 12 | 5 | **3** |
+| CORE-WORSE | 2 | 0 | **0** |
+| TEXT-ONLY | 8 | 8 | **8** |
+| BOTH-BLANK — neither draws; mostly data/scenario disks | 27 | 27 | **29** |
+| MATCH | 18 | 27 | **27** |
+| REF-WORSE — this core draws and the reference does not | 1 | 1 | **1** |
+
+**The right-hand column is measured, not inherited.** All 68 re-swept on
+`fm77av` with four-frame sampling against the frame-matched references in
+`sweep/renders-postfix/ref-shots`; every image hash-verified unchanged.
+
+**The honest read: this session's three fixes moved this set not at all.**
+MATCH is 27 before and after. The scan bound, the `$D400` padding and the timer
+were all real and verified, but their payoff was on the FM-7 side and in the
+multi-disk containers. CORE-BLANK narrowing 5 -> 3 is the two trap-49 artifacts
+resolving, not a gain. The remaining three ARE the actionable list below.
 
 **`sweep/renders/` is two sessions old**, so that delta is not this session
 alone; it carries the previous session's NMI-mask and sector-register fixes as
@@ -351,6 +361,14 @@ explain REF-WORSE rows recorded elsewhere.
   found in this round were hiding in exactly that verdict, on the wrong machine.
   BOTH-BLANK is the bucket nobody re-examines, which is what makes it worth
   examining.
+- **Thexder renders wrong, and the gate has been blessing it.** Our
+  `disk-Thexder [b]` shot carries a horizontal band of cyan/white striped
+  rectangles that `shots-ref-77avemu/` does not have; agreement against that
+  independent render is only **81.6%**. It is NOT new — the previously blessed
+  shot has the identical artifacts, so this has been green for as long as the
+  row has existed. `shots-ref/` is the core's own output and structurally cannot
+  catch it (trap 25); `shots-ref-77avemu/` exists precisely for this and nobody
+  had compared this row against it.
 - **Marchen Veil's second fault**, above.
 - **Daisenryaku draws its title art at frame 400 and then erases it.** The art —
   soldier, tank, aircraft — matches the reference; what never appears is the red

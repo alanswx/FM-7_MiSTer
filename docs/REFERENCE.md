@@ -13,6 +13,42 @@ history and code comments, not here. `Pn-m` numbers cite sections of the retired
 | **77AVEMU** | `refs/77AVEMU/src/fm77av/` (CaptainYS) | **Tiebreaker.** Cleanest structure; best for CRTC/render behaviour and `.T77`; carries notes from experiments on real hardware. |
 | **MAME** | `refs/mame/src/mame/fujitsu/fm7.cpp`, `fm7.h`, `fm7_v.cpp` | Most readable I/O map — and an **unreliable FM-7 driver**. Never treat it as correct on its own. Littered with `BAD_DUMP`; its VRAM-access halt is commented out at `fm7_v.cpp:643`. Following MAME has been the bug more than once. |
 
+### Where they disagree: the main-CPU periodic timer
+
+`$FD03` b2. The hardware figure is **2.0345 ms = 491.52 Hz**, the 4.9152 MHz
+main clock divided by 10000. Four sources give that, and the strongest is not an
+emulator at all — it is homebrew written for real hardware:
+
+| source | value | |
+|---|---|---|
+| `refs/fm7-docs/github-7032-FM7BaseCode` | 2.0345 ms / 491.52 Hz | **real-hardware code.** "周期は約 2.0345 ms (491.52 Hz)。`$FD03` を読むとタイマのフラグが落ちる" (`functest/ym2203csm/README.md:129`); `TIMER_TICK = 1.0/491.52` in its `wav2csm.py` |
+| CSP | `10000.0 / 4.9152` = 2034.5 us | `fm7_mainio.cpp:332` |
+| XM7 | 2034 us | with the derivation: "CLKは4.9152MHzなので、2.0345ms単位で発生する" |
+| WebM7 | 2034 us | `core/scheduler.js:252` |
+| **77AVEMU** | **2.000 ms** | `fm77av.cpp:631`, `FM77AVTIME_MILLISEC*2` — **1.7% fast, an approximation. Do not take the target from here.** |
+
+We follow CSP/the hardware figure: `CLKCTRL.v` ticks every 4069 SVIDEOCLK cycles
+(2 MHz / 4069 = 491.521 Hz).
+
+**77AVEMU is left unpatched on purpose.** It is 1.7% fast, which is ~34 frames
+of drift over a 1992-frame comparison — below the scene lengths the sweep
+samples, and an order of magnitude under the 2x error that made this visible in
+the first place. Against that: it is the baseline every recorded number in this
+repo was measured against (the 68-title AV table, all four cohorts, the blessed
+shots), and it is vendored third-party source, so a local patch forks it and
+makes our numbers unreproducible against stock upstream. Changing a reference
+under recorded results is trap 57's shape one level up.
+
+If a future investigation genuinely turns on 1.7%, build a **separate, clearly
+named** binary for it (`fm77av_headless_csptimer`) and leave the default alone —
+or use CSP, which already has the right constant and is the primary authority
+anyway.
+
+Note the FM-7 also has a 20 ms NMI, and it is **sub-CPU only, never main**
+(FM-Techknow p.150; the same page carries the `$FD03`/`$FD04` flag figure and
+the "normally 1, the requesting source reads 0" note). The two are unrelated;
+do not conflate them.
+
 **Trap when reading CSP:** large parts are guarded by model defines. Code inside
 `#if defined(_FM77AV40EX)` and friends is **not** the plain FM-7 path. Example: the `$fe00`/`$ffe0`
 split at `fm7_mainmem.cpp:218` is AV40EX-only; the plain FM-7 boot ROM is `$FE00-$FFEF` per

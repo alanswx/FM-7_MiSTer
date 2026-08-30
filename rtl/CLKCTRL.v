@@ -206,6 +206,7 @@ wire m50_qn = ~m50_1;
 //     val = irqstat_reg0 | 0xf0;   // capture FIRST
 //     irqstat_timer = false;        // clear AFTER
 //     return val;                   // pre-clear value
+reg _2MS_en;
 reg _2MS_en_d;
 wire _2MS_tick = _2MS_en & ~_2MS_en_d;   // SVIDEOCLK pulse -> 1 CLKSYS pulse
 
@@ -256,19 +257,54 @@ assign IRQn = m50_1 & KEYINn & LPINTn & FMIRQn;
 
 // This is a simple clock divider that generates the 2MS clock.
 // Bottom right on schematic page.
-reg[9:0] ms_counter;
-reg _2MS_en;
+//
+// PERIOD = 2.0345 ms (491.52 Hz), i.e. the 4.9152 MHz main clock divided by
+// 10000. SVIDEOCLK is CLKSYS/24 = 2 MHz exactly (clocks.svh), so that is 4069
+// SVIDEOCLK cycles: 2e6/4069 = 491.521 Hz, 0.002% off. `$fd03` bit 2 is this
+// tick and reading $fd03 clears it (FM-Techknow p.150 fig 6-4).
+//
+// FIVE sources agree, and the strongest is not an emulator -- it is homebrew
+// written for real hardware:
+//   refs/fm7-docs/github-7032-FM7BaseCode  "周期は約 2.0345 ms (491.52 Hz)。
+//       $FD03 を読むとタイマのフラグが落ちる" (functest/ym2203csm/README.md:129),
+//       and TIMER_TICK = 1.0/491.52 in its wav2csm.py
+//   CSP    register_event(..., 10000.0 / 4.9152, ...)   fm7_mainio.cpp:332
+//   XM7    schedule_setevent(EVENT_MAINTIMER, 2034, ...) with the comment
+//          "CLKは4.9152MHzなので、2.0345ms単位で発生する"
+//   WebM7  "Start with 2034 us"
+//   77AVEMU  next2msTimer = fm77avTime + MILLISEC*2 -- a flat 2 ms, 1.7% fast,
+//          so do NOT take 2.000 ms from it as the target.
+//
+// (Superseded: `reg [9:0] ms_counter` compared against 499 with NO reset. A
+// free-running 10-bit counter wraps at 1024, so the compare hit once per 1024
+// cycles rather than every 500, `_2MS` toggled every 1024, and because
+// `_2MS_en <= _2MS` samples the PRE-toggle value the tick fired only on every
+// second toggle -- one tick per 2048 cycles = 1.024 ms. The timer IRQ ran at
+// very nearly DOUBLE rate.
+//
+// It was invisible because no gate row exercises the timer IRQ at all. What
+// exposed it was two titles running their attract sequences about 2x ahead of
+// the reference -- Archon reaches at frame 1400/1980 what 77AVEMU reaches at
+// 2500/5000, and Penguin-kun Wars reaches its menu while the reference never
+// leaves its title through frame 5000. Ys II's `$fd03` access count is the
+// direct measurement: 5794 against the reference's 2916 over the same window,
+// a ratio of 1.987.)
+reg [11:0] ms_counter;
 always @(posedge SVIDEOCLK) begin
   if (~RESETBn) begin
-    ms_counter <= 10'd0;
+    ms_counter <= 12'd0;
     _2MS_en <= 1'b0;
+    _2MS <= 1'b0;
   end
   else begin
-    ms_counter <= ms_counter + 10'b1;
     _2MS_en <= 1'b0;
-    if (ms_counter == 10'd499) begin
-      _2MS <= ~_2MS;
-      _2MS_en <= _2MS;
+    if (ms_counter == 12'd4068) begin
+      ms_counter <= 12'd0;
+      _2MS <= ~_2MS;      // kept as a divided square wave; nothing outside
+      _2MS_en <= 1'b1;    // this module consumes it
+    end
+    else begin
+      ms_counter <= ms_counter + 12'd1;
     end
   end
 end
