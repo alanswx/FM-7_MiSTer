@@ -415,12 +415,47 @@ load, and 2-2.5 s is a lot of sectors. **The hypothesis is that this core's FDC
 delivers data faster than a real drive** — no rotational latency, optimistic
 seek, or a step rate that is too quick.
 
-The test is direct and does not need a picture: run one title with `--trace-fdc`
-on the reference and `make DEBUG_FDC=1` here, and compare the WALL-CLOCK spacing
-between successive sector reads, not their order. The order already matches on
-the titles checked this session; it is the interval that is suspect. If the
-intervals differ, that is one root cause behind every "we are ahead" row the
-campaign has been clearing individually as a trap-49 artifact.
+**MEASURED, and confirmed.** Neither FDC trace carries a timestamp, so instead
+of patching vendored source: run the reference to six stop-frames and count its
+cumulative `IO:FD18 VALUE:80` commands, and bin ours by the frame column its
+`--trace-io` already prints. Thexder, same disk, same 417 sectors on both sides:
+
+| frame | reference | ours |
+|---|---|---|
+| 100 | 0 | 0 |
+| 200 | 40 | **100** |
+| 300 | 129 | **207** |
+| 400 | 229 | **328** |
+| 500 | 382 | 417 (done) |
+| 600 | 417 | 417 |
+
+We finish the load ~100 frames early, which accounts for the 120-150 frame
+drawing lead directly. The gap is widest at the start: 2.5x by frame 200.
+
+**And our rate is not physically plausible.** A 2D drive is 300 RPM = 200 ms =
+11.93 frames per revolution, 16 sectors of 256 B per track:
+
+| | sectors/frame |
+|---|---|
+| 1:1 interleave, zero rotational latency — the PHYSICAL MAXIMUM | 1.34 |
+| 2:1 interleave | 0.67 |
+| 3:1 interleave | 0.45 |
+| **ours, measured** | **1.04** (1.00 early) |
+| reference, measured | 0.93 (**0.40** early) |
+
+Ours sustains **78% of the theoretical maximum**, which is only reachable with
+near-1:1 interleave and no rotational latency. The reference's early 0.40 sits
+on 3:1, which is ordinary. `wd1793.sv` models the index hole (a free-running
+counter, `s_index <= cnt < 100`) but only for status bit 1 — a sector read is
+served as soon as its SD block lands, with no rotational wait. **That is the
+mechanism.**
+
+**NOT changed, deliberately.** Adding rotational latency alters timing for every
+disk title in the suite and the sweeps, needs a full re-bless, and could move
+the four cohorts' recorded verdicts. It is the right fix and it wants its own
+session with the gate and a cohort re-run budgeted. What is settled is the
+diagnosis: the "we are ahead" rows are not individually trap-49 artifacts, they
+share a cause.
 
   **What is actually left is small**: rows 2-46 differ in the GREEN plane only
   (3,394 bytes), and the colour histograms there are near-identical — blue
