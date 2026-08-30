@@ -389,8 +389,38 @@ explain REF-WORSE rows recorded elsewhere.
       f800   rows 95-107   ours            2756   ref 2297   <- caught up
       f1000  rows 60-63    ours            1535   ref 1507   <- caught up
 
-  Same "we are ahead" shape as Archon and Penguin-kun Wars, and since this one
-  draws as the disk loads it is more likely FDC-paced than timer-paced.
+  Same "we are ahead" shape as Archon and Penguin-kun Wars, and this one
+  QUANTIFIES the lead, because both sides sit on an identical text screen until
+  one of them starts drawing:
+
+  | frame | ours | reference |
+  |---|---|---|
+  | 400 | text 3.88% | text 3.88% |
+  | 450 | **lowcolour 43.66%** | text 3.88% |
+  | 500 | **lowcolour 56.44%** | text 3.88% |
+  | 600 | lowcolour 58.78% | lowcolour 56.70% |
+
+  We start drawing between 400 and 450; the reference between 503 and 604.
+  **We are 120-150 frames — 2 to 2.5 seconds — ahead on a disk-paced draw.**
+
+### A systemic lead: three titles run AHEAD of the reference
+
+Thexder (above), Archon (attract sequence ~2x early) and Penguin-kun Wars
+(reaches its menu while the reference never leaves its title through f5000) all
+run ahead. The frame-rate difference between the machines is 0.6% and the timer
+is now correct to 0.002%, so neither explains it.
+
+Thexder is the one with a mechanism attached: its draw is paced by the disk
+load, and 2-2.5 s is a lot of sectors. **The hypothesis is that this core's FDC
+delivers data faster than a real drive** — no rotational latency, optimistic
+seek, or a step rate that is too quick.
+
+The test is direct and does not need a picture: run one title with `--trace-fdc`
+on the reference and `make DEBUG_FDC=1` here, and compare the WALL-CLOCK spacing
+between successive sector reads, not their order. The order already matches on
+the titles checked this session; it is the interval that is suspect. If the
+intervals differ, that is one root cause behind every "we are ahead" row the
+campaign has been clearing individually as a trap-49 artifact.
 
   **What is actually left is small**: rows 2-46 differ in the GREEN plane only
   (3,394 bytes), and the colour histograms there are near-identical — blue
