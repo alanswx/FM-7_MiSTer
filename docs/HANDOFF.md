@@ -120,12 +120,13 @@ and `sweep/cohort.py` for the tooling.
     python3 cohort.py next --size 40    # draw the next cohort
     python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
 
-**Coverage: 120/395 (30.4%).** Cohorts 01, 02 and 03 retired.
+**Coverage: 160/395 (40.5%).** Cohorts 01-04 retired.
 
 | cohort | result |
 |---|---|
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
 | 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
+| 04 | **0 core bugs in 40 disks**, and the first cohort run with machine screening AND four-frame sampling. 23 MATCH, 9 BOTH-BLANK, 7 TEXT-ONLY. Both flagged rows were caught by the new steps, not by hindsight — see below |
 | 03 | **1 real bug, fixed** — Ys Omen `[a]`, visible only on the AV, root-caused to the D77 scan bound (`9b9af08`) and now byte-identical to 77AVEMU on all 98,304 VRAM bytes. 12 MATCH, 15 BOTH-BLANK, 11 TEXT-ONLY. Both rows the scorer called actionable meant something other than their verdict — see below |
 
 So the rate is roughly **5 real bugs per 120 disks**, and the old
@@ -271,6 +272,33 @@ It also means **cohort 01's "0 core bugs in 40 disks" rested on a
 mis-measurement**: its 12 blanks included AV titles scored against FM-7 ROMs,
 and at least three of them draw.
 
+### Cohort 04: the corrected pipeline, and what it caught
+
+10 of 40 (25%) screened as AV software — consistent with 28% and 21% before it,
+so roughly **a quarter of the FM-7 set is FM77AV software** and the remaining
+235 disks will need the same split. Swept 30 as `fm7` and 10 as `fm77av`, four
+frames each.
+
+**Zero real core bugs.** Both rows the scorer flagged dissolved, and each was
+caught by one of the two steps added this session:
+
+| row | verdict | what it was |
+|---|---|---|
+| Archon | CORE-WORSE, 4.8 against 58.8 | **The four-frame test.** We draw the title at 600/1000 matching the reference (58.2/58.4 against 58.9/58.3), then run on. The reference follows the SAME trajectory later: ours 1400/1980 = 16.9/4.8 against its 2500/5000 = 17.4/4.7. Same sequence, ours ~2x earlier. |
+| GAME3.D77 | CORE-MONO | **The machine screen** — AV software. MATCHes 31.4 against 34.0 as `fm77av`. |
+
+Two more recovered by routing: GAME3 and DAIVA_A (GRAPHICS 9.4 against 9.4,
+exact). Pro Yakyu Fan, Deep Forest and Woody Poco all match the reference
+exactly — Pro Yakyu Fan being the cohort-02 sector-register fix, confirmed on
+its proper machine.
+
+**A lead, not a finding: two titles now run their attract sequence ~2x ahead of
+the reference** — Archon above, and Penguin-kun Wars, which reaches its menu
+while the reference never leaves its title through frame 5000. The machines
+differ by 0.6% in frame rate (59.6374 against 60 Hz), so a 2x gap is not that.
+Whatever timer these sequences count on is worth measuring, and it would also
+explain REF-WORSE rows recorded elsewhere.
+
 ### Open on the FM-7 side
 
 - **Lupin Sansei - Cagliostro no Shiro (Disk B) stalls the simulator**, and it
@@ -283,7 +311,10 @@ and at least three of them draw.
   (`$FD80-$8F`, `$93`, `$FD30-$34`) and this is on the `fm77av` path. It is
   why the row came back NO-SHOT in the sweep.
 
-- **Draw cohort 04.** 275 disks remain.
+- **Draw cohort 05.** 235 disks remain. Screen it for machine FIRST, then sweep
+  each half on its own machine with `SHOTLIST=600,1000,1400,1980`. On cohort 04
+  that pipeline turned two flagged rows into zero real bugs without any
+  after-the-fact archaeology.
 - **Ys II - The Final Chapter is NOT a bug — cleared as trap 49.** It renders
   **94.48% GRAPHICS at frames 1200 and 1400**, against the reference's 94.5%.
   It is an animated intro and the sweep's frame-1980 sample lands on a blank
@@ -440,8 +471,9 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-0. **Draw cohort 04** (`python3 sweep/cohort.py next --size 40`). 275 FM-7
-   disks remain and the campaign is finding roughly 5 real bugs per 120.
+0. **Draw cohort 05** (`python3 sweep/cohort.py next --size 40`). 235 FM-7
+   disks remain. The rate is roughly 5 real bugs per 160, and **a quarter of the
+   set is AV software** — screen before sweeping (`docs/TESTING.md`).
 1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
    and encoder fixes do not touch it — every counter over 2000 frames is
    byte-identical against a same-tree baseline built from `1455e4a` in a

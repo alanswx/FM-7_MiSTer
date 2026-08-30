@@ -140,6 +140,12 @@ whole cohort, against hours for a re-sweep, and it is not a rare correction:
 
     tr '\n' '\0' < images.txt | xargs -0 -P8 -n1 probe.sh   # see trap 72
 
+Then sweep the two halves separately, each on its own machine, and score each
+against references rendered for that machine. **Strip the extension in either
+case when splitting the list**: the collection holds both `.d77` and `.D77`, and
+`basename x .d77` leaves `FOO.D77` intact, which silently routes an AV-flagged
+disk into the FM-7 half. That misrouted two of cohort 04's ten.
+
 **A cohort can contain FM77AV software.** The FM-7 set is not curated by
 machine, so a cohort may draw an AV title; swept as an FM-7 the reference
 renders *noise* and this core renders blank, which scores CORE-BLANK and reads
