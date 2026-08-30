@@ -131,6 +131,15 @@ refuses if any disk is missing a render, naming the ones it would have buried.
 That refusal is the whole point of the subcommand -- retiring is a one-line
 `mv` otherwise.
 
+**Screen every cohort for machine before scoring it.** One 300-frame FM-7 run
+per disk; an AV title names `$FD80`-`$FD93` (AV MMR), `$FD30`-`$FD34` (analog
+palette) or `$FD12` in the run summary's `UNDECODED ports` line. Minutes for a
+whole cohort, against hours for a re-sweep, and it is not a rare correction:
+**11 of cohort 03's 40 disks were AV software**, and re-running those under
+`fm77av` moved three from BOTH-BLANK to MATCH.
+
+    tr '\n' '\0' < images.txt | xargs -0 -P8 -n1 probe.sh   # see trap 72
+
 **A cohort can contain FM77AV software.** The FM-7 set is not curated by
 machine, so a cohort may draw an AV title; swept as an FM-7 the reference
 renders *noise* and this core renders blank, which scores CORE-BLANK and reads

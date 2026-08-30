@@ -205,6 +205,42 @@ Yatura are blank as FM-7 and MATCH as AV; Reviver and Death Force are the
 reverse. Sweeping this set on one machine would have produced a wrong answer
 for four of sixteen titles either way.
 
+### The machine audit: 11 of cohort 03's 40 disks are AV software
+
+Trap 72 predicted this; measuring it was cheap and the payoff was large. Screen
+each disk with a 300-frame FM-7 run and read the run summary's `UNDECODED ports`
+line — an AV title names the AV MMR registers `$FD80`-`$FD93`, or the analog
+palette `$FD30`-`$FD34`, or `$FD12`. Forty disks in minutes, against hours for a
+re-sweep.
+
+**11 of 40 (28%)** flagged. Re-run under `fm77av` on BOTH sides, **four** go
+straight from `BOTH-BLANK` to `MATCH` — they were working the whole time:
+
+| title | as fm7 | as fm77av |
+|---|---|---|
+| Dragon Buster (Dempa) | BOTH-BLANK | **MATCH**, GRAPHICS 87.3 against 87.2 |
+| Mah-jongg Kyo Jidai Special | BOTH-BLANK | **MATCH**, 66.6 against 66.8 |
+| Silpheed | BOTH-BLANK | **MATCH**, GRAPHICS 13.3 against 13.3 |
+| SIL_A.D77 (a second Silpheed dump) | BOTH-BLANK | **MATCH**, GRAPHICS 13.3 against 13.3 |
+| Ys Omen `[a]` | CORE-BLANK | MATCH 32.2 against 32.1 (after `9b9af08`) |
+| Gambler Jikotyusinha | MATCH | MATCH |
+| Team AB Music Disk | TEXT-ONLY | TEXT-ONLY 2.1 against 2.4 |
+| Girls Paradise | TEXT-ONLY | TEXT-ONLY 1.2 against 1.2 |
+| FM77AV demo `[Alt 1] [b]` | BOTH-BLANK | BOTH-BLANK — genuinely blank on both |
+| OS-9 Level 1 (Disk 2) | TEXT-ONLY | BOTH-BLANK |
+| HARRIER1.D77 | BOTH-BLANK | BOTH-BLANK — blank on both machines |
+
+**`BOTH-BLANK` is where this hides.** It reads as "neither side draws it,
+probably a data disk", so nothing revisits it — and six of the eleven were
+sitting in it. `FM77AV demo [Alt 1] [b]` names the machine in its own filename
+and was still swept as an FM-7.
+
+**This caveats the campaign's own numbers.** Cohort 03's split was measured with
+roughly a quarter of the cohort on the wrong machine, and cohorts 01 and 02 were
+never screened at all — cohort 01's headline, "0 core bugs in 40 disks, all 12
+blanks were blank on the reference too", rests on twelve blanks that may include
+AV titles scored against FM-7 ROMs. **Screen 01 and 02 before trusting either.**
+
 ### Open on the FM-7 side
 
 - **Draw cohort 04.** 275 disks remain.
