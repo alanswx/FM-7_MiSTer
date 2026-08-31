@@ -137,12 +137,13 @@ and `sweep/cohort.py` for the tooling.
     python3 cohort.py next --size 40    # draw the next cohort
     python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
 
-**Coverage: 160/395 (40.5%).** Cohorts 01-04 retired.
+**Coverage: 200/395 (50.6%) — half the set.** Cohorts 01-05 retired.
 
 | cohort | result |
 |---|---|
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
 | 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
+| 05 | **0 core bugs in 40 disks.** 19 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. 9 of 40 screened AV. Nothing flagged actionable on either half |
 | 04 | **0 core bugs in 40 disks**, and the first cohort run with machine screening AND four-frame sampling. 23 MATCH, 9 BOTH-BLANK, 7 TEXT-ONLY. Both flagged rows were caught by the new steps, not by hindsight — see below |
 | 03 | **1 real bug, fixed** — Ys Omen `[a]`, visible only on the AV, root-caused to the D77 scan bound (`9b9af08`) and now byte-identical to 77AVEMU on all 98,304 VRAM bytes. 12 MATCH, 15 BOTH-BLANK, 11 TEXT-ONLY. Both rows the scorer called actionable meant something other than their verdict — see below |
 
@@ -191,8 +192,10 @@ Method lives in `docs/TESTING.md`; the traps it cost are 70 and 72-77 in
 
 **A quarter of the "FM-7" set is FM77AV software.** Screened by a 300-frame run
 per disk, reading the run summary's `UNDECODED ports` line for `$FD80`-`$FD93`,
-`$FD30`-`$FD34` or `$FD12`: cohort 03 11/40, cohorts 01+02 17/80, cohort 04
-10/40. Sweeping those as an FM-7 scores them against the wrong ROM set, and
+`$FD30`-`$FD34` or `$FD12`. Five cohorts, 200 disks, all in a 21-28% band:
+01+02 17/80, 03 11/40, 04 10/40, 05 9/40 — **about 90 of the 395 are AV
+software**, and for the 195 still unswept the screen is not prudence, it is the
+difference between a verdict and a coin flip. Sweeping those as an FM-7 scores them against the wrong ROM set, and
 `BOTH-BLANK` is where they hide — it reads as "probably a data disk" and nothing
 revisits it.
 
@@ -229,6 +232,9 @@ both flagged rows caught by the new steps rather than by later archaeology.
   in `--machine fm7`.
 - **Solitaire Royale** is 61.8 against 82.3 on the CORRECT machine — a real gap,
   unexamined.
+- **Jesus (1987)(ENIX)** shows nothing where the reference shows a static 0.66%
+  text line, at all four sampled frames on both sides. Persistent and small;
+  neither side runs the game, but we are strictly worse. Cohort 05, AV.
 - **Take Out Vol. 6** is REF-WORSE, unexamined.
 
 
@@ -527,8 +533,8 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-0. **Draw cohort 05** (`python3 sweep/cohort.py next --size 40`). 235 FM-7
-   disks remain. The rate is roughly 5 real bugs per 160, and **a quarter of the
+0. **Draw cohort 06** (`python3 sweep/cohort.py next --size 40`). 195 FM-7
+   disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
    set is AV software** — screen before sweeping (`docs/TESTING.md`).
 1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
    and encoder fixes do not touch it — every counter over 2000 frames is
