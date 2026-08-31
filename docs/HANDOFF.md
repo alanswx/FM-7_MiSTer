@@ -137,12 +137,13 @@ and `sweep/cohort.py` for the tooling.
     python3 cohort.py next --size 40    # draw the next cohort
     python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
 
-**Coverage: 200/395 (50.6%) — half the set.** Cohorts 01-05 retired.
+**Coverage: 240/395 (60.8%).** Cohorts 01-06 retired.
 
 | cohort | result |
 |---|---|
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
 | 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
+| 06 | **1 real bug, known**: LUXSOR_1 blank against the reference's 27.1%, reproducing the Luxsor disk-1 fault on an INDEPENDENT dump while LUXSOR_2 matches exactly. 19 MATCH, 14 BOTH-BLANK/TEXT-ONLY, 2 REF-WORSE. 9 of 40 AV |
 | 05 | **0 core bugs in 40 disks.** 19 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. 9 of 40 screened AV. Nothing flagged actionable on either half |
 | 04 | **0 core bugs in 40 disks**, and the first cohort run with machine screening AND four-frame sampling. 23 MATCH, 9 BOTH-BLANK, 7 TEXT-ONLY. Both flagged rows were caught by the new steps, not by hindsight — see below |
 | 03 | **1 real bug, fixed** — Ys Omen `[a]`, visible only on the AV, root-caused to the D77 scan bound (`9b9af08`) and now byte-identical to 77AVEMU on all 98,304 VRAM bytes. 12 MATCH, 15 BOTH-BLANK, 11 TEXT-ONLY. Both rows the scorer called actionable meant something other than their verdict — see below |
@@ -232,6 +233,9 @@ both flagged rows caught by the new steps rather than by later archaeology.
   in `--machine fm7`.
 - **Solitaire Royale** is 61.8 against 82.3 on the CORRECT machine — a real gap,
   unexamined.
+- **Team AB Music Disk No. 0 and ... (2D) Disk 1** show nothing (0.04%) where the
+  reference shows a static 2.0% text line, at all four sampled frames on both
+  sides. Cohort 06, AV. Same shape as Jesus below.
 - **Jesus (1987)(ENIX)** shows nothing where the reference shows a static 0.66%
   text line, at all four sampled frames on both sides. Persistent and small;
   neither side runs the game, but we are strictly worse. Cohort 05, AV.
@@ -533,7 +537,7 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-0. **Draw cohort 06** (`python3 sweep/cohort.py next --size 40`). 195 FM-7
+0. **Draw cohort 07** (`python3 sweep/cohort.py next --size 40`). 155 FM-7
    disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
    set is AV software** — screen before sweeping (`docs/TESTING.md`).
 1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
@@ -555,6 +559,21 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
    on hardware.
 
 ## Luxsor disk 1 — read this before touching it
+
+**Two constraints from cohort 06 that were not available before, both cheap and
+both narrowing:**
+
+1. **It reproduces on an INDEPENDENT dump.** `LUXSOR_1.D77`
+   (md5 `62c6c90f8843bdad05fec7d906ecdea4`) is a different file from
+   `Luxsor (FM77AV) (Disk 1).d77` (`5da20f511fdbd946fa8c26643d78c9e8`) and fails
+   identically: ours blank 0.0% at all four sampled frames, the reference
+   drawing GRAPHICS at all four (98.3 / 20.3 / 26.6 / 27.2%). **It is not a bad
+   image.**
+2. **Disk 2 of the same game is PERFECT.** `LUXSOR_2.D77` matches the reference
+   exactly, 81.7% against 81.7%. So the machine runs this title's code and
+   renders its graphics correctly — whatever disk 1 does differently is where
+   the fault is, and a diff of what the two disks ask the FDC and the sub system
+   to do is a much smaller search than the five hypotheses already dead.
 
 **It is NOT a regression.** The build that renders is the one that *loses* the
 `$FD05` sub-BUSY race against the reference; HEAD matches the reference there and
