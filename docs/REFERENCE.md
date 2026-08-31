@@ -1363,6 +1363,35 @@ confident wrong answer at least once:
     the reference wrong, and whether the artifact you are matching is a property
     of the machine or of the file format.
 
+79. **When the two machines run at different speeds, EVERY state-at-an-instant
+    comparison is confounded. Compare SEQUENCES instead.** Chasing Luxsor disk 1
+    produced four confident wrong answers in one sitting, and all four have the
+    same shape — sampling two machines at the same frame while they sit at
+    different points in an identical sequence:
+
+    | claimed | actually |
+    |---|---|
+    | "it draws into the wrong VRAM bank" | one snapshot; the buffers alternate |
+    | "the write-protect status diverges" | one status read; both report `$44`/`$40` at the same PCs over the run |
+    | "aperture writes spread evenly over all four blocks, the working disk's do not" | the aperture is gated on the sub being halted, and only disk 1 halts it |
+    | "the MMR maps differ, so the `measured clean` note is stale" | `$FD80` gets `10,19,10,19` here and `10,19,10` there from the same PC; we were three writes in at f400, the reference two at f403 |
+
+    This core loads Thexder's 417 sectors ~100 frames sooner than 77AVEMU, so on
+    any disk-paced title the two are simply at different points in the same
+    program. **A register, a palette, an MMR map or a VRAM dump compared at
+    "the same frame" is comparing different moments.**
+
+    What survives the confound: the ORDER of events. The sector-read sequence is
+    what localised Luxsor — reads 0-142 identical, divergence at #143, ours to
+    track 16 and the reference to track 4 — because a sequence has no
+    wall-clock in it. Same for the `$FD90`/`$FD80` interleaving, which is
+    identical by PC and order.
+
+    And the corollary that actually settles things: **prefer a comparison that
+    does not involve the reference at all.** `DEBUG_FDC_READ` checks the bytes
+    the controller delivers against the disk image itself — 15 of 15 sectors
+    byte-perfect, no phase, no second emulator, no argument.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
