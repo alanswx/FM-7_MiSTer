@@ -581,6 +581,37 @@ goes blank. The old picture was an artifact of being wrong. **Do not revert the
 cycle-steal change to "fix" it** — that change is more correct (77AVEMU's
 `CRTCHaltsSubCPU` defaults false, XM7's `cycle_steal` true) and gained six titles.
 
+**Cohort-06 session: three hypotheses killed, one live divergence.** All of it
+measured with our disk 1 against BOTH the reference on disk 1 and **our own disk
+2** — same core, machine and session, a tighter control than the reference, and
+what killed most of these:
+
+| checked | result |
+|---|---|
+| the all-zero digital palette | **NOT the cause.** Disk 2 has the identical all-zero digital palette and renders 81.7%. Both disks write `$fd38-$fd3f` to zero themselves, and so does the reference. The superseded note — "its digital palette is all zeros, so all eight colours are black, measure that before the CPU runaway" — names a symptom, not a cause |
+| the halted sub CPU | **NOT the difference.** Ours is 96.0% halted with `SHALTn=0`, but the reference writes `$FD05` **identically** (2x `$00`, 3x `$80`, ending halted) and still draws 27.1%. It is drawing from the MAIN side through the aperture — the Argo path |
+| the analog palette | identical: **41,040 accesses each side**, matching value histograms on `$FD30`-`$FD34` |
+| `$D430` page select | identical sequence `84 E4 84 E4 84 E4 A4 84 A4 E4 84`, both ending display page 0 |
+| VRAM | **ours holds MORE — 57,889 non-zero against 12,001** — including four bank-1 planes the reference never touches. The bytes are stored and the raster shows none of them |
+| render size | 320x200 reference against our 640x200 proves **nothing**: this sim always emits 640x200. Checked properly via `$FD12` bit 6, both agree on the mode |
+
+**The one live divergence**, a `$FD12` readback at `pc=$01C8`:
+
+    ours       f234  R $fd12 -> $fc      bits[1:0] = 00
+    reference        R  FD12 -> $FD      bits[1:0] = 01
+
+Bit 0 is "in vsync" (77AVEMU `NonDestructiveReadFD12`: base `$BF`,
+`if(!InVSYNC) &= 0xFE`, `if(InBlank) &= 0xFD`; `AVMEM.v` implements exactly that
+as `~SVSYNCn` / `~(~VBLANKn | ~SBLANKn)`). The reference was in vsync at that
+read and we were not, and control flow then parts — we make a FOURTH `$FD12`
+write (`$40` at `pc=$4061`, frame 484) the reference never makes.
+
+**Treat it as a timing symptom, not a proven cause.** The register matches the
+reference and was already corrected once for Woody Poco's identical `LDA $fd12 /
+ANDA #$03 / DECA / BNE` wait, so this is a read landing at a different raster
+moment rather than a wrong register. It is the first concrete divergence this
+title has produced, which is why it is recorded.
+
 Measured clean, do not re-check: the FDC (first 142 reads identical, zero
 NOMATCH), the sector data (~99.8 % over 40,000 bytes, the residual being the
 reference's one-position pre-side-effect log shift), the boot ROM's seek logic,
