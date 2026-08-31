@@ -621,22 +621,38 @@ worth not repeating:
   against `$04` that `seqdiff` reports as the first divergence is a one-off
   timing artifact of a status register, not a write-protect difference.
 
-**The sharpest remaining clue** is from `DEBUG_VBLOCK`, which counts VRAM writes
-per 8 KB block and per port:
+**Where it actually stands.** `DEBUG_VBLOCK` counts VRAM writes per 8 KB block
+and per port:
 
     disk 1 (fails)  PORT: blk0=78208 blk1=78208 blk2=78208 blk3=78208
     disk 2 (works)  PORT: blk0=41656 blk1=41656 blk2=52616 blk3=52616
 
-On the failing disk the main-side aperture writes are spread **exactly evenly
-over all four blocks**; on the working disk they are not. That is what fills our
-bank-1 blue and red planes, which the reference leaves at zero, and in 320-mode
-those extra plane bits move every pixel's 12-bit palette index — into entries
-this title has written black, since `$FD32`-`$FD34` are `$00` for 4,353 of their
-writes. **That is the most likely mechanism for "VRAM full, screen black".**
+*(Superseded reading, mine: "the failing disk spreads aperture writes exactly
+evenly over all four blocks and the working one does not, so that is the clue."
+It is not. The aperture is gated on the sub being halted — `sub_open = ~SHALTn`,
+`vram_sel = vram_addr_sel && sub_open` in `AVMEM.v` — and disk 1 halts the sub
+while disk 2 does not. Disk 1 therefore uses the aperture heavily and disk 2
+barely at all. The difference between the two disks is EXPECTED.)*
 
-What it needs next is instruction-level: why does this core execute aperture
-writes into bank 1 that the reference does not? The `$FD12` divergence below is
-the only known point where control flow parts, so start there.
+Timing, which does rule something out: blocks 2 and 3 reach their final count by
+frame 400 and stop, so the `$FD12` control-flow divergence at frame 484 is
+**downstream of the bank-1 writes, not their cause**.
+
+So the open question is narrow and unanswered: **our VRAM holds 57,889 non-zero
+bytes against the reference's 12,001, including bank-1 blue and red which the
+reference leaves at zero while writing bank-1 green.** With the sub halted the
+main CPU reaches VRAM through the aperture at physical `$10000-$1BFFF`
+(`VRAM_PLANE = physical_address[15:14]`, bank from `$D430` b5, both matching the
+documented map), and `AVMEM.v` already warns that in this state *"any ordinary
+main-CPU read that happens to land in a mapped VRAM page fires a paint"*. The
+excess is the shape of exactly that. The MMR maps were measured byte-identical
+on this title, so if that is the mechanism the difference is in WHICH accesses
+land in the window, not in the mapping itself.
+
+In 320-mode the extra plane bits move every pixel's 12-bit palette index, and
+this title writes `$FD32`-`$FD34` as `$00` for 4,353 of their writes, so extra
+bits land on black entries. That remains the most plausible route from "VRAM
+full" to "screen black" — plausible, not demonstrated.
 
 **Treat it as a timing symptom, not a proven cause.** The register matches the
 reference and was already corrected once for Woody Poco's identical `LDA $fd12 /
