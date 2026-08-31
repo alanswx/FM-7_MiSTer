@@ -690,6 +690,36 @@ The immediate context is a sector-read byte loop:
 
 then `$502e` -> `$4061` -> `$EF01` on our side only.
 
+**THE DIVERGENCE IS READ #143**, settled with the right instruments
+(`--trace-fdc` on the reference against `make DEBUG_FDC=1` WDMATCH here) rather
+than the two I/O traces:
+
+      142  ours trk 39 h1 s1     ref trk 39 h1 s1     identical through here
+      143  ours trk 16 h0 s5     ref trk  4 h0 s1     <<< parts here
+      144  ours trk 16 h1 s1     ref trk  4 h0 s2
+
+**Reads 0-142 are the same sectors in the same order on both machines.** Then
+the reference seeks to track 4 and reads it sequentially; we seek to track 16
+and read a scattered pattern. Our FDC is healthy at that point — **209 WDMATCH,
+zero WDNOMATCH, zero WDDROP**, and `D77SCAN done: fmt=2 tracks=80 sectors=400`.
+The controller finds every sector it is asked for; **the CPU is asking for the
+wrong one.**
+
+Since the preceding 143 reads delivered the same sectors, the loader computed a
+different next target from nominally identical data. That points at the sector
+CONTENT rather than the sector sequence, and there is already an instrument for
+the obvious candidate: `make DEBUG_FDC_READ=1`, which exists to settle "whether
+the FIRST byte of every sector is lost because the read pointer is wrong or
+because the SD block fetch has not landed in the buffer when DRQ is first
+raised" (`vsim/Makefile`). **That is the next thing to run.**
+
+*(Method note, because it nearly produced a wrong answer: comparing our reads at
+frame 600 against the reference's at 604 showed us "reaching only track 16 while
+the reference reached 39", which reads as us falling behind. That was two
+different window lengths — trap 63. Re-running the reference to frame 1400 shows
+the first 143 reads identical and the divergence at #143. Match the windows
+before comparing sequences.)*
+
 **Do not take that read comparison at face value.** Section 1 of this file
 documents that 77AVEMU's `--trace-io` logs the data register BEFORE the side
 effect, so it shows the previous byte — comparing `$FD1B` reads across the two
