@@ -626,6 +626,32 @@ always @(posedge clk_sys) begin
 						s_drq_busy <= 2'b01;
 						s_lostdata <= watchdog_bark;
 
+						// EVERY byte handed to the CPU passes THROUGH the Data
+						// Register on a WD1793 -- it is the single path for read
+						// and write data -- so when the command ends the register
+						// holds the LAST BYTE READ. Both references model exactly
+						// that: CSP `datareg = disk[drvreg]->sector[index]`
+						// (mb8877.cpp:506, and :543 for READ ADDRESS) and 77AVEMU
+						// `dataReg = state.data[state.dataReadPointer++]`
+						// (fm77avfdc.cpp:851).
+						//
+						// This core never updated wdreg_data from the disk. It is
+						// written only by a CPU store (A_DATA below), and the idle
+						// readback at the top of this file returns it, so after a
+						// completed read $FD1B gave back the last value WRITTEN
+						// instead of the last byte READ.
+						//
+						// That is not cosmetic: the FM-7 boot ROM's seek helper
+						// reads $FD1B at $FED3 and uses the value as a TRACK
+						// NUMBER. On Luxsor disk 1 this core read $10 there and
+						// seeked to track 16 where the reference seeks to track 4,
+						// at read #143 of an otherwise byte-identical load -- it
+						// renders the Telenet splash correctly and then never
+						// loads its title screen.
+						if(read_data & s_drq)
+							wdreg_data <= buff_rd ? (RWMODE ? buff_dout : buff_din)
+							                      : read_addr[byte_addr[2:0]];
+
 						if(next_length == 0) begin
 							// either read the next sector, or stop if this is track end
 							if(multisector) begin
