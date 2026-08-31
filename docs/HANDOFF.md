@@ -732,7 +732,35 @@ delivered byte-perfect data, **the inputs are identical and the computation
 differs** — which means CPU state, and that is where the next session has to
 look.
 
-**What it needs, and why it is not cheap:** aligned CPU snapshots. Our frame for
+**THE COMPUTATION IS LOCALISED.** `--trace-cpu --trace-from/--trace-until`
+around frame 485 shows exactly how the wrong track is produced. The BIOS seek at
+`pc=$fe91` only copies it; the loader computes it:
+
+    500d  LEAY $007b,PCR   y=$508C        table base
+    5011  LSLB             b=08 -> 10
+    5012  LSLB             b=20           index 8, stride 4
+    5013  LEAY B,Y         y=$50AC        entry 8
+    501b  LDA  1,Y         a=$20          second byte of entry 8
+    5048  LSRA             a=$10          track = $20 >> 1 = 16
+    504a  STA  $0038,PCR                  into the parameter block at $5086
+    fe93  LDA  4,X         a=$10          BIOS reads it back from $5086
+
+`--trace-mem 5086-5086` shows the parameter going `$26, $27, $27 ... $27` and
+then `$10` at frame 485 — one write per attempt from `pc=$504a`.
+
+For the reference to seek track 4 it must read `$08` there instead of `$20`. The
+table at `$508C` is part of the loader's own code and the load is byte-identical
+for all 143 preceding reads, so **the table content cannot differ — which points
+at the INDEX `B=8`**, set before this window. That is where the next session
+should pick up: trace back to where `B` is loaded.
+
+One thing to look at on the way: immediately before this, the loader fills the
+MMR bank registers `$FD8B`-`$FD8F` with `$3a`-`$3f` through `STA ,Y+` with `Y`
+walking the I/O page, then does `LDA #$fd / TFR A,DP`. `$FD8x` writes land in
+whichever segment `$FD90` selects, so anything that perturbs the segment during
+that loop moves where those banks land.
+
+**Why the obvious alternative is not cheap:** aligned CPU snapshots. Our frame for
 the decision is ~487; the reference is still on track 37/38 at frame 604 and
 makes its track-4 decision somewhere between 604 and 1400, because it runs
 behind us. Bracket that frame first, then compare — and note trap 60, that
