@@ -714,7 +714,30 @@ first-byte losses.**
 
 **The disk path is fully exonerated** — right sectors (0 WDNOMATCH, 0 WDDROP),
 right bytes, right offsets. Whatever diverges at read #143 is machine state, not
-data. Since the data going in is provably identical, the leading candidate is
+data.
+
+**The two machines load an identical track sequence and then part completely:**
+
+    reference  0, 1, 3, 18, 19, 2, 3, 30..39, 4, 5, 6, 7
+    ours       0, 1, 3, 18, 19, 2, 3, 30..39, 16  (and stays there)
+
+**The reference never reads track 16. We never read track 4.** So this is not an
+ordering or phase difference — it is a wrong target. Note the arithmetic:
+`$04` -> `$10` is exactly **x4, a two-bit left shift**, which looks like a
+computation going wrong rather than a corrupted byte.
+
+The seek is issued by the boot ROM at `pc=$fe91`, so the track is already in a
+CPU register by then and the loader computed it. Since the preceding 143 reads
+delivered byte-perfect data, **the inputs are identical and the computation
+differs** — which means CPU state, and that is where the next session has to
+look.
+
+**What it needs, and why it is not cheap:** aligned CPU snapshots. Our frame for
+the decision is ~487; the reference is still on track 37/38 at frame 604 and
+makes its track-4 decision somewhere between 604 and 1400, because it runs
+behind us. Bracket that frame first, then compare — and note trap 60, that
+`--dump-shadow` is a HISTORY while `FM77AV_CPU_DUMP` is a true snapshot, so the
+two are not directly comparable without care. Since the data going in is provably identical, the leading candidate is
 the phase difference itself: this core runs the loader ahead of the reference
 (see the FDC-rate section) and something in it samples a time-dependent value.
 
