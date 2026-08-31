@@ -706,12 +706,23 @@ The controller finds every sector it is asked for; **the CPU is asking for the
 wrong one.**
 
 Since the preceding 143 reads delivered the same sectors, the loader computed a
-different next target from nominally identical data. That points at the sector
-CONTENT rather than the sector sequence, and there is already an instrument for
-the obvious candidate: `make DEBUG_FDC_READ=1`, which exists to settle "whether
-the FIRST byte of every sector is lost because the read pointer is wrong or
-because the SD block fetch has not landed in the buffer when DRQ is first
-raised" (`vsim/Makefile`). **That is the next thing to run.**
+different next target from nominally identical data — which pointed at sector
+CONTENT, and **that has now been tested and eliminated.** `make
+DEBUG_FDC_READ=1` compares what the controller hands the CPU against the image
+itself, needing no reference at all: **15 of 15 sectors byte-perfect, zero
+first-byte losses.**
+
+**The disk path is fully exonerated** — right sectors (0 WDNOMATCH, 0 WDDROP),
+right bytes, right offsets. Whatever diverges at read #143 is machine state, not
+data. Since the data going in is provably identical, the leading candidate is
+the phase difference itself: this core runs the loader ahead of the reference
+(see the FDC-rate section) and something in it samples a time-dependent value.
+
+*(Trap, and it cost a wrong answer: `off=` in a WDMATCH line is the DATA offset,
+not the sector header. Adding 16 to it makes every sector look corrupt — this
+first read as "14 of 14 sectors mismatch, ~95% of bytes differing", a result
+that should have been dismissed on sight given the machine boots and disk 2
+renders perfectly.)*
 
 *(Method note, because it nearly produced a wrong answer: comparing our reads at
 frame 600 against the reference's at 604 showed us "reaching only track 16 while
