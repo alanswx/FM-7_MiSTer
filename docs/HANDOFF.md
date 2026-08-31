@@ -732,6 +732,42 @@ delivered byte-perfect data, **the inputs are identical and the computation
 differs** — which means CPU state, and that is where the next session has to
 look.
 
+**THE CAUSAL CHAIN, END TO END.** `--trace-cpu` at frame 484-485 gives the whole
+thing, and it ends in a runaway rather than a bad computation:
+
+    405f  LDA  #$40
+    4061  STA  $fd12          select 320 mode
+    4067  STD  $e079          parameter
+    406a  LBSR $e073 -> LBRA $eeff -> $ef01     a legitimate BIOS call
+    ef01  LDA  $fd93          reads $be
+    ef53  STA  $fd93   a=3e   ** DISABLES MMR (bit 7 clear) **
+    ef56  PULS CC,A,DP,PC
+    f093  LDX  $804c   x=81fc
+    3b1a  NEG  <$00           ** RUNAWAY -- PC lands in a zero region **
+          ... 627 instructions of NEG <$00 sled, dp=$80 so each one writes $8000
+    4000  PSHS / TSTA / LBNE $4b84    A=$02, branch taken
+    4b84  LDB  #$08                   the wrong table index
+    5013  LEAY B,Y -> $50AC           table entry 8
+    501b  LDA  1,Y  a=$20
+    5048  LSRA      a=$10             track = $20 >> 1 = 16
+    504a  STA  $0038,PCR              into the parameter block at $5086
+    fe91  (BIOS seek uses it)         seek track 16; the reference seeks 4
+
+**The break is at `$F093`, immediately after MMR is disabled.** `$F093` is NOT in
+the always-mapped `$FE00-$FFFF` boot ROM, so turning MMR off remaps memory under
+the executing code. The reference survives this and we do not — it never
+executes a single `$EFxx` address in its whole run, because it never gets here
+in this state.
+
+**That is the thing to chase**: what `$F093` maps to with MMR off, in this core
+versus the reference. Everything downstream — the sled, `B=8`, track 16 — is
+consequence, not cause. The 627-instruction sled also writes `$8000` once per
+instruction (`dp=$80`), so it is corrupting memory as it runs.
+
+**Superseded framing, mine:** "the table content cannot differ, which points at
+the INDEX B=8." True as far as it goes, but B=8 is itself downstream of the
+runaway; chasing the index would have been chasing a symptom.
+
 **THE COMPUTATION IS LOCALISED.** `--trace-cpu --trace-from/--trace-until`
 around frame 485 shows exactly how the wrong track is produced. The BIOS seek at
 `pc=$fe91` only copies it; the loader computes it:
