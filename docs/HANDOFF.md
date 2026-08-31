@@ -660,6 +660,45 @@ ANDA #$03 / DECA / BNE` wait, so this is a read landing at a different raster
 moment rather than a wrong register. It is the first concrete divergence this
 title has produced, which is why it is recorded.
 
+**THE DIVERGENCE POINT IS FRAME 484**, and the MMR "measured clean" claim below
+is WRONG — measured 2026-08-31 with `make DEBUG_MMR=1` against
+`FM77AV_MMR_DUMP`:
+
+| | ours, f600 | reference, f604 |
+|---|---|---|
+| **MMR enabled** | **1** | **0** |
+| selected segment | 3 | 0 |
+| seg0 / seg1 / seg2 | identical | identical |
+| **seg3 page 0** | **`30`/`31`** | **`1b`** |
+
+Enabled-versus-disabled changes the whole main-CPU address translation, and
+`$1b000` is inside the VRAM aperture window (`$10000-$1BFFF`). So the superseded
+line — "the MMR, all four segment maps byte-identical, page 6 → `$36` on both" —
+is stale: seg0-2 do match, but the enable bit and seg3 page 0 do not. The
+`DEBUG_MMR` comment in `AVMEM.v` already suspected this and was right.
+
+**We execute a BIOS routine the reference never enters.** `$EF01`/`$EF06`/
+`$EF24`/`$EF29`/`$EF53` run three times on our side starting at **frame 484**;
+the reference has **zero** accesses anywhere in `$EFxx` for its whole run. Same
+frame as our extra `$FD12` write at `pc=$4061`. That is where control flow
+parts.
+
+The immediate context is a sector-read byte loop:
+
+    ours       484  R $fd1b -> $00   pc=$ff98     x4, then leaves the loop
+    reference       R  FD1B -> $FF   pc=$FF98     x4, still looping
+
+then `$502e` -> `$4061` -> `$EF01` on our side only.
+
+**Do not take that read comparison at face value.** Section 1 of this file
+documents that 77AVEMU's `--trace-io` logs the data register BEFORE the side
+effect, so it shows the previous byte — comparing `$FD1B` reads across the two
+traces is the exact comparison known to mislead. A one-position shift cannot
+turn a run of `$00` into a run of `$FF`, so it may well be real, but it needs an
+instrument that is not the reference's trace. `--trace-fdc` against
+`make DEBUG_FDC=1` WDMATCH is the pair that settles what each machine actually
+read off the disk.
+
 Measured clean, do not re-check: the FDC (first 142 reads identical, zero
 NOMATCH), the sector data (~99.8 % over 40,000 bytes, the residual being the
 reference's one-position pre-side-effect log shift), the boot ROM's seek logic,
