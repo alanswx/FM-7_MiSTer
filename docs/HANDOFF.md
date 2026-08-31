@@ -606,6 +606,38 @@ as `~SVSYNCn` / `~(~VBLANKn | ~SBLANKn)`). The reference was in vsync at that
 read and we were not, and control flow then parts — we make a FOURTH `$FD12`
 write (`$40` at `pc=$4061`, frame 484) the reference never makes.
 
+Two more eliminations from the same session, both cheap and both dead ends
+worth not repeating:
+
+- **`$FD37` CPU-access masking is not involved.** The obvious reading of "the
+  reference leaves bank-1 blue and red empty while writing bank-1 green" is a
+  per-gun access mask. **Neither side writes `$FD37` at all**, on either disk —
+  it sits at its reset `$00`, so no plane is masked anywhere.
+- **The FDC is not involved.** Command histograms are effectively equal (ours
+  152 `$80` / 17 `$1e` / 5 `$0a` / 2 `$08` against 130 / 15 / 5 / 2 — the ~17%
+  excess is this core running ahead, see the section above), and the `$FD18`
+  status histograms match by PC including both sides reporting `$40` at `$FEB4`
+  and `$44` at `$FEE9`. **Both honour the disk's `wp=0x10`.** The `$5184` `$44`
+  against `$04` that `seqdiff` reports as the first divergence is a one-off
+  timing artifact of a status register, not a write-protect difference.
+
+**The sharpest remaining clue** is from `DEBUG_VBLOCK`, which counts VRAM writes
+per 8 KB block and per port:
+
+    disk 1 (fails)  PORT: blk0=78208 blk1=78208 blk2=78208 blk3=78208
+    disk 2 (works)  PORT: blk0=41656 blk1=41656 blk2=52616 blk3=52616
+
+On the failing disk the main-side aperture writes are spread **exactly evenly
+over all four blocks**; on the working disk they are not. That is what fills our
+bank-1 blue and red planes, which the reference leaves at zero, and in 320-mode
+those extra plane bits move every pixel's 12-bit palette index — into entries
+this title has written black, since `$FD32`-`$FD34` are `$00` for 4,353 of their
+writes. **That is the most likely mechanism for "VRAM full, screen black".**
+
+What it needs next is instruction-level: why does this core execute aperture
+writes into bank 1 that the reference does not? The `$FD12` divergence below is
+the only known point where control flow parts, so start there.
+
 **Treat it as a timing symptom, not a proven cause.** The register matches the
 reference and was already corrected once for Woody Poco's identical `LDA $fd12 /
 ANDA #$03 / DECA / BNE` wait, so this is a read landing at a different raster
