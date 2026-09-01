@@ -434,7 +434,8 @@ limiter either. If latency is ever added, that is where it goes.
 
 ## The RTL fixes, and why they mattered
 
-**`mc6809i.v` — NMI was never masked after reset.** `CPUSTATE_RESET` assigns
+**`mc6809i.v` — NMI was never masked after reset. Fixed in TWO parts; the
+first was necessary but not sufficient.** `CPUSTATE_RESET` assigns
 `s_nxt = $FFFD`, which satisfied the `s != s_nxt` release condition on the same
 cycle that set the mask, so the 6809's documented "NMI masked until S is loaded"
 never applied. Invisible on a cold boot; fatal on the FM77AV's `$FD13`
@@ -442,6 +443,26 @@ sub-system reset, where the display NMI is already running — the sub CPU takes
 NMI during its `$D000-$D35F` clear loop, before its init reaches `LDS`, pushes 12
 bytes to `S=$FFFD` (ROM, discarded), and walks a `NEG <$00` sled through VRAM
 for the rest of the run. Fixed Luxsor disk 2.
+
+**Part two: the mask was computed and then ignored.** Keeping `NMIMask` correct
+does nothing on its own, because `NMILatched` is set by an async block with **no
+reset**, so an NMI latched *before* the reset survives it — and the two places
+that actually *recognise* the interrupt (the instruction fetch, and CWAI) tested
+`NMILatched` alone. Disk 1 shows the residue: sub reset at frame 235, one
+instruction at `$E000`, then the `$FEBF` NMI vector with `S=$FFFD`, same `$8DE0`
+sled. Both recognition points now also require `NMIMask == 0`, so a pending NMI
+is **deferred, not lost**, and is serviced once `LDS` makes the stack valid.
+`SYNC` is left alone on purpose: it exits on any pending line whether or not the
+interrupt is masked, which is documented `SYNC` behaviour.
+
+**`vsim/sim.v` — the kanji ROM window was dead in simulation only.**
+`FM-7_MiSTer.sv` connects `.KANJI_ADDR/RD/GNT/READY/DATA` on both its core
+instance and `SDRAM_MUX`; `sim.v` connected them only on `SDRAM_MUX`, so
+`kanji_rd` never reached the arbiter and every read of `$fd22/$fd23` returned
+`$00`. Luxsor is the first title in the set that reads kanji at all, which is why
+this survived. **Hardware was never affected.** `--kanji-check` did not catch it
+and cannot: it reads `u_sdram.mem[]` directly, never the window — see the Luxsor
+section. `make DEBUG_KANJI=1` watches the real handshake.
 
 **`FDC.v` — the sector register belongs to the controller, not the drive.** A
 real FM-7 has one WD1793 whose registers all drives share; this core instantiates
@@ -540,12 +561,12 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 0. **Draw cohort 07** (`python3 sweep/cohort.py next --size 40`). 155 FM-7
    disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
    set is AV software** — screen before sweeping (`docs/TESTING.md`).
-1. **Luxsor disk 1** — see below. Deep, and five hypotheses have died. The TWR
-   and encoder fixes do not touch it — every counter over 2000 frames is
-   byte-identical against a same-tree baseline built from `1455e4a` in a
-   worktree (trap 57). The `$FD13`/CRT fix changes one line, `display OFF` ->
-   `display on`, and it is still blank: **its digital palette is all zeros**,
-   so all eight colours are black. Measure that before the CPU runaway.
+1. **Luxsor disk 1** — see below. The CPU runaway is **fixed** (NMI recognition,
+   and the sim's dead kanji window). It still renders black, and the fault is now
+   isolated to the 320-mode plane path: VRAM holds the image (42% non-zero), the
+   analog palette is richly programmed (84,630 writes), the mode bit and page
+   select are right. Probe `analog_code_next` and the twelve `*SHIFT` registers
+   in `PAL.v` next. Ground truth is checked in at `vsim/sweep/luxsor-ref/`.
 2. **A fresh 68-title AV sweep.** The fixes above are systemic — a memory
    translation, a sub-system handshake, a display latch and a shared-window
    gate — and the set has not been re-measured since. Build the "before" from the same tree in the same
@@ -558,286 +579,102 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 6. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work
    on hardware.
 
-## Luxsor disk 1 — read this before touching it
+## Luxsor disk 1 — the CPU runaway is FIXED; it still renders black
 
-**Two constraints from cohort 06 that were not available before, both cheap and
-both narrowing:**
+`software/D77/LUXSOR_1.D77`, md5 `62c6c90f8843bdad05fec7d906ecdea4`.
+Ground truth is checked in at `vsim/sweep/luxsor-ref/` — `ref_700.png` is the
+title screen, `ours_frame_0700_black.png` is what we draw. Regenerate with the
+command in that directory's README.
 
-1. **It reproduces on an INDEPENDENT dump.** `LUXSOR_1.D77`
-   (md5 `62c6c90f8843bdad05fec7d906ecdea4`) is a different file from
-   `Luxsor (FM77AV) (Disk 1).d77` (`5da20f511fdbd946fa8c26643d78c9e8`) and fails
-   identically: ours blank 0.0% at all four sampled frames, the reference
-   drawing GRAPHICS at all four (98.3 / 20.3 / 26.6 / 27.2%). **It is not a bad
-   image.**
-2. **Disk 2 of the same game is PERFECT.** `LUXSOR_2.D77` matches the reference
-   exactly, 81.7% against 81.7%. So the machine runs this title's code and
-   renders its graphics correctly — whatever disk 1 does differently is where
-   the fault is, and a diff of what the two disks ask the FDC and the sub system
-   to do is a much smaller search than the five hypotheses already dead.
+**What was wrong, and is now fixed.** Both faults below were real and are
+committed; the chain that produced the "CPU runaway" is closed.
 
-**It is NOT a regression.** The build that renders is the one that *loses* the
-`$FD05` sub-BUSY race against the reference; HEAD matches the reference there and
-goes blank. The old picture was an artifact of being wrong. **Do not revert the
-cycle-steal change to "fix" it** — that change is more correct (77AVEMU's
-`CRTCHaltsSubCPU` defaults false, XM7's `cycle_steal` true) and gained six titles.
+1. **A pending NMI survived the `$FD13` sub-system reset and fired on an
+   uninitialised stack.** `rtl/mc6809i.v` computed `NMIMask` correctly but never
+   consulted it where the interrupt is *recognised* — the instruction fetch and
+   CWAI tested `NMILatched` alone. `NMILatched` is set by an async block with no
+   reset, so an NMI latched *before* the reset stayed pending across it. The
+   main CPU writes `$FD13` at `$E539` (frame 235), the sub restarts at `$E000`
+   (its type-C reset vector, TK p.88), and after **one** instruction it vectored
+   to `$FEBF` (the type-C NMI vector) with `S=$FFFD` — the value
+   `CPUSTATE_RESET` loads. The 12-byte push went to `$FFF1`, inside sub-monitor
+   ROM, so pushes were discarded and `PULS Y,PC` at `$FF69` returned ROM bytes
+   as a PC. The sub then walked a `NEG <$00` sled from `$8DE0`. The MC6809
+   inhibits NMI after RESET until S is loaded precisely to prevent this; the fix
+   gates both recognition points on `NMIMask`. `SYNC` is deliberately left
+   alone — it exits on any pending line whether or not the interrupt is masked.
 
-**Cohort-06 session: three hypotheses killed, one live divergence.** All of it
-measured with our disk 1 against BOTH the reference on disk 1 and **our own disk
-2** — same core, machine and session, a tighter control than the reference, and
-what killed most of these:
+   The earlier fix in that comment (excluding `CPUSTATE_RESET` from the
+   `s != s_nxt` test) was necessary but **not sufficient**, and the comment
+   claiming it closed the disk-2 case has been corrected in place.
+
+   Verified: sled gone (0 `NEG <$00`), stack now `LDS #$D000` then `$CFxx`
+   exactly as TK p.85 specifies, main-CPU runaway at `$3B1A` gone, and disk
+   reads went from stalling to **tracks 0-62, 1356 DMA reads**. The sub now sits
+   in a healthy mailbox wait at `$C07A` (`LDA $d380 / BEQ`).
+
+2. **The kanji ROM window was dead in simulation only.** `FM-7_MiSTer.sv`
+   connects `.KANJI_ADDR/RD/GNT/READY/DATA` on **both** its core instance and
+   `SDRAM_MUX`; `vsim/sim.v` connected them only on `SDRAM_MUX`. So `kanji_rd`
+   never reached the arbiter, `KANJI_GNT` never asserted, and all 3104 reads of
+   `$fd22/$fd23` returned `$00`. Luxsor is the first title in the set that reads
+   kanji at all. Fixed in `vsim/sim.v`; reads now return real glyph data.
+   **Hardware was never affected** — do not go looking for this on the DE10.
+
+**`--kanji-check` is a FALSE instrument — do not trust it.** Its comment claims
+it reads "back through the `$fd20-$fd23` window" and is "the only thing that
+proves the download, the base address, the arbiter and the prefetch all line
+up". It does none of that: it reads `u_sdram.mem[]` directly out of the Verilog
+hierarchy and compares against the file. It passed 16/16 while the window was
+returning `$00` for every read. It proves the download landed at the right base
+and nothing else. Use `make DEBUG_KANJI=1` (added this session) to watch the
+real request/grant/ready handshake in `rtl/KANJI.v` and `rtl/SDRAM_MUX.v`.
+
+**Where it stands now: the bytes are stored and the raster shows none of them.**
+Everything upstream of the 320-mode plane path is measured good:
 
 | checked | result |
 |---|---|
-| the all-zero digital palette | **NOT the cause.** Disk 2 has the identical all-zero digital palette and renders 81.7%. Both disks write `$fd38-$fd3f` to zero themselves, and so does the reference. The superseded note — "its digital palette is all zeros, so all eight colours are black, measure that before the CPU runaway" — names a symptom, not a cause |
-| the halted sub CPU | **NOT the difference.** Ours is 96.0% halted with `SHALTn=0`, but the reference writes `$FD05` **identically** (2x `$00`, 3x `$80`, ending halted) and still draws 27.1%. It is drawing from the MAIN side through the aperture — the Argo path |
-| the analog palette | identical: **41,040 accesses each side**, matching value histograms on `$FD30`-`$FD34` |
-| `$D430` page select | identical sequence `84 E4 84 E4 84 E4 A4 84 A4 E4 84`, both ending display page 0 |
-| VRAM | **ours holds MORE — 57,889 non-zero against 12,001** — including four bank-1 planes the reference never touches. The bytes are stored and the raster shows none of them |
-| render size | 320x200 reference against our 640x200 proves **nothing**: this sim always emits 640x200. Checked properly via `$FD12` bit 6, both agree on the mode |
+| VRAM contents | **42.26% non-zero, 41,543 bytes over 9 planes** (`FM7_VRAM_DUMP=<path>` — note the name, `FM77AV_VRAM_DUMP` silently writes nothing). Bank 1 fully populated; bank 0 non-zero only in the second 8 KB half of each gun |
+| `$FD12` mode bit | 320 mode **on** at render time — last write `$40` at frame 878. `av_mode_320 <= DIN[6]` is right |
+| analog palette | **84,630 writes**, full `$00-$0f` level range on all three guns. Not black |
+| `$D430` page select | 1222 writes alternating `$84`/`$e4` (display+active page 0 then 1). Page flipping works |
+| `$FD37` multipage | game **never writes it**; `m46` resets to `8'h0` = all six G/R/B display bits enabled (TK p.479: `1 = disable`, and TK p.322 `CLR $FD37` = "DISPLAY PAGE ENABLE") |
+| the 12 plane wires | `SVDATAB3..B0/R3..R0/G3..G0` are wired CRTRAM -> core -> PAL, and the shift registers load them on `sftlod` |
 
-**The one live divergence**, a `$FD12` readback at `pc=$01C8`:
+**So the next thing to chase is inside `CRTRAM.v` -> `PAL.v`:** whether the
+twelve planes carry real data at `sftlod` time in 320 mode, and whether
+`analog_code_next` is therefore non-zero. If the code is stuck at 0 the palette
+returns entry 0, which the reset identity ramp makes black — that is exactly the
+symptom. Probe `analog_code_reg` and the twelve `*SHIFT` registers on `SFTCLK`
+before touching anything.
 
-    ours       f234  R $fd12 -> $fc      bits[1:0] = 00
-    reference        R  FD12 -> $FD      bits[1:0] = 01
+**Constraints that are still live, and cheap:**
 
-Bit 0 is "in vsync" (77AVEMU `NonDestructiveReadFD12`: base `$BF`,
-`if(!InVSYNC) &= 0xFE`, `if(InBlank) &= 0xFD`; `AVMEM.v` implements exactly that
-as `~SVSYNCn` / `~(~VBLANKn | ~SBLANKn)`). The reference was in vsync at that
-read and we were not, and control flow then parts — we make a FOURTH `$FD12`
-write (`$40` at `pc=$4061`, frame 484) the reference never makes.
+1. **It reproduces on an INDEPENDENT dump.** `LUXSOR_1.D77` is a different file
+   from `Luxsor (FM77AV) (Disk 1).d77` (`5da20f511fdbd946fa8c26643d78c9e8`) and
+   fails identically. **It is not a bad image.**
+2. **Disk 2 of the same game is PERFECT** — 81.7% against 81.7%. Same core, same
+   machine: whatever disk 1 does differently is the fault, and that is a much
+   smaller search than the whole video path.
+3. **It is NOT a regression.** The build that rendered is the one that *loses*
+   the `$FD05` sub-BUSY race; HEAD matches the reference there and goes blank.
+   The old picture was an artifact of being wrong. **Do not revert the
+   cycle-steal change to "fix" it** — it is more correct (77AVEMU's
+   `CRTCHaltsSubCPU` defaults false, XM7's `cycle_steal` true) and gained six
+   titles.
 
-Two more eliminations from the same session, both cheap and both dead ends
-worth not repeating:
+**Hypotheses already dead — do not re-run these:**
 
-- **`$FD37` CPU-access masking is not involved.** The obvious reading of "the
-  reference leaves bank-1 blue and red empty while writing bank-1 green" is a
-  per-gun access mask. **Neither side writes `$FD37` at all**, on either disk —
-  it sits at its reset `$00`, so no plane is masked anywhere.
-- **The FDC is not involved.** Command histograms are effectively equal (ours
-  152 `$80` / 17 `$1e` / 5 `$0a` / 2 `$08` against 130 / 15 / 5 / 2 — the ~17%
-  excess is this core running ahead, see the section above), and the `$FD18`
-  status histograms match by PC including both sides reporting `$40` at `$FEB4`
-  and `$44` at `$FEE9`. **Both honour the disk's `wp=0x10`.** The `$5184` `$44`
-  against `$04` that `seqdiff` reports as the first divergence is a one-off
-  timing artifact of a status register, not a write-protect difference.
+| checked | result |
+|---|---|
+| the all-zero digital palette | **NOT the cause.** Disk 2 has the identical all-zero digital palette and renders 81.7%. Both disks write `$fd38-$fd3f` to zero themselves, and so does the reference |
+| the halted sub CPU | **NOT the difference.** Ours is 96.0% halted with `SHALTn=0`, but the reference writes `$FD05` identically and still draws |
+| the FIRQ vector `$3B1A` | **not corruption.** Software installs it at frame 234 from `pc=$E09B` and it reads back byte-exact; only 4 accesses in the whole run. Downstream of fault 1 above, now gone |
+| the `$FFE0-$FFFD` decode gap | real but **not this bug.** `bootram_sel` stops at `$FFE0`, so the vector table falls through to main RAM at `phys=$3FFF6` where CSP gives it a dedicated 30-byte array. It round-trips correctly, so it did not cause this. Worth fixing on its own account |
+| our MMR-off physical map | **correct.** Logical `$XXXX` -> physical `$3XXXX` matches CSP's `main_begin = 0x30000` exactly |
+| render size | 320x200 reference against our 640x200 proves **nothing**: this sim always emits 640x200. Check `$FD12` bit 6 instead |
 
-**Where it actually stands.** `DEBUG_VBLOCK` counts VRAM writes per 8 KB block
-and per port:
-
-    disk 1 (fails)  PORT: blk0=78208 blk1=78208 blk2=78208 blk3=78208
-    disk 2 (works)  PORT: blk0=41656 blk1=41656 blk2=52616 blk3=52616
-
-*(Superseded reading, mine: "the failing disk spreads aperture writes exactly
-evenly over all four blocks and the working one does not, so that is the clue."
-It is not. The aperture is gated on the sub being halted — `sub_open = ~SHALTn`,
-`vram_sel = vram_addr_sel && sub_open` in `AVMEM.v` — and disk 1 halts the sub
-while disk 2 does not. Disk 1 therefore uses the aperture heavily and disk 2
-barely at all. The difference between the two disks is EXPECTED.)*
-
-Timing, which does rule something out: blocks 2 and 3 reach their final count by
-frame 400 and stop, so the `$FD12` control-flow divergence at frame 484 is
-**downstream of the bank-1 writes, not their cause**.
-
-So the open question is narrow and unanswered: **our VRAM holds 57,889 non-zero
-bytes against the reference's 12,001, including bank-1 blue and red which the
-reference leaves at zero while writing bank-1 green.** With the sub halted the
-main CPU reaches VRAM through the aperture at physical `$10000-$1BFFF`
-(`VRAM_PLANE = physical_address[15:14]`, bank from `$D430` b5, both matching the
-documented map), and `AVMEM.v` already warns that in this state *"any ordinary
-main-CPU read that happens to land in a mapped VRAM page fires a paint"*. The
-excess is the shape of exactly that. The MMR maps were measured byte-identical
-on this title, so if that is the mechanism the difference is in WHICH accesses
-land in the window, not in the mapping itself.
-
-In 320-mode the extra plane bits move every pixel's 12-bit palette index, and
-this title writes `$FD32`-`$FD34` as `$00` for 4,353 of their writes, so extra
-bits land on black entries. That remains the most plausible route from "VRAM
-full" to "screen black" — plausible, not demonstrated.
-
-**Treat it as a timing symptom, not a proven cause.** The register matches the
-reference and was already corrected once for Woody Poco's identical `LDA $fd12 /
-ANDA #$03 / DECA / BNE` wait, so this is a read landing at a different raster
-moment rather than a wrong register. It is the first concrete divergence this
-title has produced, which is why it is recorded.
-
-**THE DIVERGENCE POINT IS FRAME 484**, and the MMR "measured clean" claim below
-is WRONG — measured 2026-08-31 with `make DEBUG_MMR=1` against
-`FM77AV_MMR_DUMP`:
-
-| | ours, f600 | reference, f604 |
-|---|---|---|
-| **MMR enabled** | **1** | **0** |
-| selected segment | 3 | 0 |
-| seg0 / seg1 / seg2 | identical | identical |
-| **seg3 page 0** | **`30`/`31`** | **`1b`** |
-
-Enabled-versus-disabled changes the whole main-CPU address translation, and
-`$1b000` is inside the VRAM aperture window (`$10000-$1BFFF`). So the superseded
-line — "the MMR, all four segment maps byte-identical, page 6 → `$36` on both" —
-is stale: seg0-2 do match, but the enable bit and seg3 page 0 do not. The
-`DEBUG_MMR` comment in `AVMEM.v` already suspected this and was right.
-
-**We execute a BIOS routine the reference never enters.** `$EF01`/`$EF06`/
-`$EF24`/`$EF29`/`$EF53` run three times on our side starting at **frame 484**;
-the reference has **zero** accesses anywhere in `$EFxx` for its whole run. Same
-frame as our extra `$FD12` write at `pc=$4061`. That is where control flow
-parts.
-
-The immediate context is a sector-read byte loop:
-
-    ours       484  R $fd1b -> $00   pc=$ff98     x4, then leaves the loop
-    reference       R  FD1B -> $FF   pc=$FF98     x4, still looping
-
-then `$502e` -> `$4061` -> `$EF01` on our side only.
-
-**THE DIVERGENCE IS READ #143**, settled with the right instruments
-(`--trace-fdc` on the reference against `make DEBUG_FDC=1` WDMATCH here) rather
-than the two I/O traces:
-
-      142  ours trk 39 h1 s1     ref trk 39 h1 s1     identical through here
-      143  ours trk 16 h0 s5     ref trk  4 h0 s1     <<< parts here
-      144  ours trk 16 h1 s1     ref trk  4 h0 s2
-
-**Reads 0-142 are the same sectors in the same order on both machines.** Then
-the reference seeks to track 4 and reads it sequentially; we seek to track 16
-and read a scattered pattern. Our FDC is healthy at that point — **209 WDMATCH,
-zero WDNOMATCH, zero WDDROP**, and `D77SCAN done: fmt=2 tracks=80 sectors=400`.
-The controller finds every sector it is asked for; **the CPU is asking for the
-wrong one.**
-
-Since the preceding 143 reads delivered the same sectors, the loader computed a
-different next target from nominally identical data — which pointed at sector
-CONTENT, and **that has now been tested and eliminated.** `make
-DEBUG_FDC_READ=1` compares what the controller hands the CPU against the image
-itself, needing no reference at all: **15 of 15 sectors byte-perfect, zero
-first-byte losses.**
-
-**The disk path is fully exonerated** — right sectors (0 WDNOMATCH, 0 WDDROP),
-right bytes, right offsets. Whatever diverges at read #143 is machine state, not
-data.
-
-**The two machines load an identical track sequence and then part completely:**
-
-    reference  0, 1, 3, 18, 19, 2, 3, 30..39, 4, 5, 6, 7
-    ours       0, 1, 3, 18, 19, 2, 3, 30..39, 16  (and stays there)
-
-**The reference never reads track 16. We never read track 4.** So this is not an
-ordering or phase difference — it is a wrong target. Note the arithmetic:
-`$04` -> `$10` is exactly **x4, a two-bit left shift**, which looks like a
-computation going wrong rather than a corrupted byte.
-
-The seek is issued by the boot ROM at `pc=$fe91`, so the track is already in a
-CPU register by then and the loader computed it. Since the preceding 143 reads
-delivered byte-perfect data, **the inputs are identical and the computation
-differs** — which means CPU state, and that is where the next session has to
-look.
-
-**THE CAUSAL CHAIN, END TO END.** `--trace-cpu` at frame 484-485 gives the whole
-thing, and it ends in a runaway rather than a bad computation:
-
-    405f  LDA  #$40
-    4061  STA  $fd12          select 320 mode
-    4067  STD  $e079          parameter
-    406a  LBSR $e073 -> LBRA $eeff -> $ef01     a legitimate BIOS call
-    ef01  LDA  $fd93          reads $be
-    ef53  STA  $fd93   a=3e   ** DISABLES MMR (bit 7 clear) **
-    ef56  PULS CC,A,DP,PC
-    f093  LDX  $804c   x=81fc
-    3b1a  NEG  <$00           ** RUNAWAY -- PC lands in a zero region **
-          ... 627 instructions of NEG <$00 sled, dp=$80 so each one writes $8000
-    4000  PSHS / TSTA / LBNE $4b84    A=$02, branch taken
-    4b84  LDB  #$08                   the wrong table index
-    5013  LEAY B,Y -> $50AC           table entry 8
-    501b  LDA  1,Y  a=$20
-    5048  LSRA      a=$10             track = $20 >> 1 = 16
-    504a  STA  $0038,PCR              into the parameter block at $5086
-    fe91  (BIOS seek uses it)         seek track 16; the reference seeks 4
-
-**The break is at `$F093`, immediately after MMR is disabled.** `$F093` is NOT in
-the always-mapped `$FE00-$FFFF` boot ROM, so turning MMR off remaps memory under
-the executing code. The reference survives this and we do not — it never
-executes a single `$EFxx` address in its whole run, because it never gets here
-in this state.
-
-**That is the thing to chase**: what `$F093` maps to with MMR off, in this core
-versus the reference. Everything downstream — the sled, `B=8`, track 16 — is
-consequence, not cause. The 627-instruction sled also writes `$8000` once per
-instruction (`dp=$80`), so it is corrupting memory as it runs.
-
-**Superseded framing, mine:** "the table content cannot differ, which points at
-the INDEX B=8." True as far as it goes, but B=8 is itself downstream of the
-runaway; chasing the index would have been chasing a symptom.
-
-**THE COMPUTATION IS LOCALISED.** `--trace-cpu --trace-from/--trace-until`
-around frame 485 shows exactly how the wrong track is produced. The BIOS seek at
-`pc=$fe91` only copies it; the loader computes it:
-
-    500d  LEAY $007b,PCR   y=$508C        table base
-    5011  LSLB             b=08 -> 10
-    5012  LSLB             b=20           index 8, stride 4
-    5013  LEAY B,Y         y=$50AC        entry 8
-    501b  LDA  1,Y         a=$20          second byte of entry 8
-    5048  LSRA             a=$10          track = $20 >> 1 = 16
-    504a  STA  $0038,PCR                  into the parameter block at $5086
-    fe93  LDA  4,X         a=$10          BIOS reads it back from $5086
-
-`--trace-mem 5086-5086` shows the parameter going `$26, $27, $27 ... $27` and
-then `$10` at frame 485 — one write per attempt from `pc=$504a`.
-
-For the reference to seek track 4 it must read `$08` there instead of `$20`. The
-table at `$508C` is part of the loader's own code and the load is byte-identical
-for all 143 preceding reads, so **the table content cannot differ — which points
-at the INDEX `B=8`**, set before this window. That is where the next session
-should pick up: trace back to where `B` is loaded.
-
-One thing to look at on the way: immediately before this, the loader fills the
-MMR bank registers `$FD8B`-`$FD8F` with `$3a`-`$3f` through `STA ,Y+` with `Y`
-walking the I/O page, then does `LDA #$fd / TFR A,DP`. `$FD8x` writes land in
-whichever segment `$FD90` selects, so anything that perturbs the segment during
-that loop moves where those banks land.
-
-**Why the obvious alternative is not cheap:** aligned CPU snapshots. Our frame for
-the decision is ~487; the reference is still on track 37/38 at frame 604 and
-makes its track-4 decision somewhere between 604 and 1400, because it runs
-behind us. Bracket that frame first, then compare — and note trap 60, that
-`--dump-shadow` is a HISTORY while `FM77AV_CPU_DUMP` is a true snapshot, so the
-two are not directly comparable without care. Since the data going in is provably identical, the leading candidate is
-the phase difference itself: this core runs the loader ahead of the reference
-(see the FDC-rate section) and something in it samples a time-dependent value.
-
-*(Trap, and it cost a wrong answer: `off=` in a WDMATCH line is the DATA offset,
-not the sector header. Adding 16 to it makes every sector look corrupt — this
-first read as "14 of 14 sectors mismatch, ~95% of bytes differing", a result
-that should have been dismissed on sight given the machine boots and disk 2
-renders perfectly.)*
-
-*(Method note, because it nearly produced a wrong answer: comparing our reads at
-frame 600 against the reference's at 604 showed us "reaching only track 16 while
-the reference reached 39", which reads as us falling behind. That was two
-different window lengths — trap 63. Re-running the reference to frame 1400 shows
-the first 143 reads identical and the divergence at #143. Match the windows
-before comparing sequences.)*
-
-**Do not take that read comparison at face value.** Section 1 of this file
-documents that 77AVEMU's `--trace-io` logs the data register BEFORE the side
-effect, so it shows the previous byte — comparing `$FD1B` reads across the two
-traces is the exact comparison known to mislead. A one-position shift cannot
-turn a run of `$00` into a run of `$FF`, so it may well be real, but it needs an
-instrument that is not the reference's trace. `--trace-fdc` against
-`make DEBUG_FDC=1` WDMATCH is the pair that settles what each machine actually
-read off the disk.
-
-Measured clean, do not re-check: the FDC (first 142 reads identical, zero
-NOMATCH), the sector data (~99.8 % over 40,000 bytes, the residual being the
-reference's one-position pre-side-effect log shift), the boot ROM's seek logic,
-and the MMR (all four segment maps byte-identical, page 6 → `$36` on both).
-**Re-check the TWR window**, though — the "640 bytes, zero differ" result predates
-the `AVMEM.v` offset fix, and this title's boot-time reads of `$7C00-$7FFF` were
-31 KB off the reference's when it was taken.
-
-The live lead: the reference rewrites the loader's dispatch table at `$5090`
-twice between frames 240 and 300 and this core never does. Bracketing with
-`FM77AV_CPU_DUMP` at a spread of frames works and costs about a minute a sample.
 
 ## How to not waste the first hour
 

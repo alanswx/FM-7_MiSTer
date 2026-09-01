@@ -1392,6 +1392,41 @@ confident wrong answer at least once:
     the controller delivers against the disk image itself — 15 of 15 sectors
     byte-perfect, no phase, no second emulator, no argument.
 
+80. **A self-check is only worth what it actually drives. `--kanji-check` says it
+    reads "back through the `$fd20-$fd23` window" and that it is "the only thing
+    that proves the download, the base address, the arbiter and the prefetch all
+    line up". It does none of that** — it reads
+    `emu__DOT__u_sdram__DOT__mem[]` straight out of the Verilog hierarchy and
+    compares it against `boot.rom`. It reported **16 words sampled, 0
+    mismatched** while every one of Luxsor's 3104 reads of that window returned
+    `$00`, because the core's `KANJI_*` ports were not connected in `vsim/sim.v`
+    at all. It proves the download landed at the right SDRAM base and nothing
+    else.
+
+    Two general rules. **A check that bypasses the path it names is worse than no
+    check**, because it converts "untested" into "tested and fine". And when a
+    comment describes what a piece of code proves, verify the code does what the
+    comment claims before trusting either — this one had been wrong since it was
+    written, and its own wording is what made the window look measured.
+
+    The corollary for this project's two top levels: `FM-7_MiSTer.sv` and
+    `vsim/sim.v` instantiate the core **separately**, so a port added to one can
+    silently be missing from the other. `SDRAM_MUX.v`'s own header warns about
+    exactly this class ("the two would then disagree about how") — and it was
+    the arbiter's client that diverged, not the arbiter. When a signal works on
+    hardware and not in sim (or vice versa), **diff the two instantiations
+    first**: `grep -n '\.KANJI' FM-7_MiSTer.sv vsim/sim.v` found it in one line.
+
+81. **`make DEBUG_FOO=1` does not rebuild if the last build was
+    `make DEBUG_BAR=1`.** `V_DEFINE` is not a dependency `make` tracks, so it
+    prints `make: Nothing to be done for 'all'` and you run the PREVIOUS build's
+    binary. This produced a confident "0 `$D430` writes in 1200 frames" for a
+    title that makes 1222 of them. `touch` a file the define reaches
+    (`touch ../rtl/SMEM.v && make DEBUG_D430=1`) before every probe build, and
+    treat "the counter is exactly zero" as a build claim before it is a hardware
+    claim — the same instinct as **byte-identical output means suspect the build
+    first**.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 
