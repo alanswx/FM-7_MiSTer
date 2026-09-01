@@ -656,6 +656,23 @@ begin
         // LDS -- and the 12-byte push goes to S=$FFFD, i.e. into ROM. The handler
         // then returns through a PULS that reads ROM, and the sub CPU walks a
         // NEG <$00 sled through VRAM from $8DE0 for the rest of the run.
+        //
+        // Keeping NMIMask correct here is necessary but NOT sufficient, and the
+        // first version of this fix stopped at "necessary". NMILatched is set by
+        // an async block with no reset, so an NMI that latched BEFORE the $FD13
+        // reset stays pending across it: the mask blocks new edges from latching
+        // and does nothing about the one already latched. The recognition points
+        // then fired on NMILatched alone and took the interrupt anyway, on the
+        // first instruction fetch after reset, with S still $FFFD.
+        //
+        // Luxsor disk 1 shows the residue: sub reset at frame 235 ($E539
+        // CLR $fd13), one instruction at $E000, then straight to the NMI vector
+        // $FEBF with s=$FFFD -> $FFF1. Same $8DE0 sled as disk 2. So the mask is
+        // now also consulted where the interrupt is RECOGNISED (the instruction
+        // fetch and CWAI); a pending NMI is deferred, not lost, and is serviced
+        // as soon as LDS makes the stack valid. SYNC is deliberately left alone:
+        // it exits on any pending line whether or not the interrupt is masked,
+        // which is the documented SYNC behaviour.
         if ((s != s_nxt) && (CpuState != CPUSTATE_RESET))
             NMIMask <= 1'b0;
     end
@@ -1815,8 +1832,11 @@ begin
             InstPage2_nxt  =  0;
             InstPage3_nxt  =  0;
 
-            // New instruction fetch; service interrupts pending
-            if (NMILatched == 0)
+            // New instruction fetch; service interrupts pending.
+            // NMIMask must be consulted here, not just where NMILatched is
+            // set -- see the NMIMask comment above for why masking the latch
+            // alone is not enough.
+            if ((NMILatched == 0) && (NMIMask == 0))
             begin
                 pc_nxt = pc;
                 rAVMA = 1'b1;
@@ -4156,7 +4176,7 @@ begin
         CpuState_nxt = CPUSTATE_CWAI_POST;
 
         // Wait for an interrupt
-        if (NMILatched == 0)
+        if ((NMILatched == 0) && (NMIMask == 0))
         begin
             rAVMA = 1'b1;
             IntType_nxt = INTTYPE_NMI;
