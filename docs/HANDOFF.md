@@ -81,14 +81,35 @@ trap 67.)*
 
 Both columns re-scored on the frame-matched basis, so they are comparable:
 
-| verdict | `sweep/renders/` | prev | **re-measured 2026-08-30** |
+| verdict | `sweep/renders/` | 08-30 | **re-measured 2026-09-01** |
 |---|---|---|---|
-| CORE-BLANK — reference draws, this core does not | 12 | 5 | **3** |
+| CORE-BLANK — reference draws, this core does not | 12 | 3 | **2** |
 | CORE-WORSE | 2 | 0 | **0** |
-| TEXT-ONLY | 8 | 8 | **8** |
-| BOTH-BLANK — neither draws; mostly data/scenario disks | 27 | 27 | **29** |
-| MATCH | 18 | 27 | **27** |
-| REF-WORSE — this core draws and the reference does not | 1 | 1 | **1** |
+| TEXT-ONLY | 8 | 8 | **9** |
+| BOTH-BLANK — neither draws; mostly data/scenario disks | 27 | 29 | **29** |
+| MATCH | 18 | 27 | **28** |
+| REF-WORSE — this core draws and the reference does not | 1 | 1 | **0** |
+
+The 09-01 column is a full 68-title sweep on HEAD at 2000 frames with four-frame
+sampling, joined against `ref-shots-at-frame.sh` references at the matched
+instant; data in `sweep/results-av-f2000-2026-09-01.tsv`. The one move is Luxsor
+disk 1, CORE-BLANK -> MATCH. The REF-WORSE row did not regress — it is now
+counted as TEXT-ONLY (Urusei Yatsura disks 2/3 and Yami no Iyo Densetsu disk 2
+draw 1.9 % here against the reference's 0.1 %).
+
+**A NEARLY-HALTED SUB CPU IS NORMAL ON THE AV, NOT A SYMPTOM.** Thirteen titles
+run the sub under 1000 instructions/frame and **eleven of them MATCH the
+reference** — Woody Poco disk 1 at 40/frame and 57.3 %, Laydock at 74, Silpheed
+at 136, Daiva Story 2 at 134, Psy-O-Blade at 166, Luxsor disk 1 at 315, Deep
+Forest at 591, Dragon Buster at 888. These titles halt the sub and drive video
+from the main side, which is what the AV drawing ALU is for. So "sub 65 % halted"
+localises nothing, and the two remaining CORE-BLANK rows are **two unrelated
+faults, not a cluster**:
+
+| title | MAIN/f | SUB/f | the actual signal |
+|---|---|---|---|
+| Little Box disk A | **286** | 8781 | main CPU 25x slower than every healthy title in the set. A stall, not a video bug |
+| In the Dream disk A | 7286 | 976 | **nothing distinctive** — both counters are in the normal band and it simply draws nothing |
 
 **The right-hand column is measured, not inherited.** All 68 re-swept on
 `fm77av` with four-frame sampling against the frame-matched references in
@@ -567,15 +588,25 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 0. **Draw cohort 07** (`python3 sweep/cohort.py next --size 40`). 155 FM-7
    disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
    set is AV software** — screen before sweeping (`docs/TESTING.md`).
-1. **Re-measure the two AV titles that still render nothing** — Little Box
-   disk A and In the Dream disk A, both re-checked 2026-09-01 and both still
-   blank at all four sampled frames. *(Luxsor disk 1 was the third; it is fixed
-   and now matches the reference exactly — see below. It was already fixed when
-   this list was written, which is the argument for item 2.)*
-2. **A fresh 68-title AV sweep.** The fixes above are systemic — a memory
-   translation, a sub-system handshake, a display latch and a shared-window
-   gate — and the set has not been re-measured since. Build the "before" from the same tree in the same
-   session (trap 57); the table at the top of this file predates all three.
+1. **Little Box disk A** — the sharpest signal left in the AV set, and the only
+   one of the two remaining CORE-BLANK rows that has one: its **main CPU runs
+   286 instructions/frame** against 6000-11000 everywhere else, with a healthy
+   sub at 8781. That is a stall, not a video bug, and stalls of this class have
+   each freed several titles at once before (the TWR fault, the sub-I/O decode,
+   the shared-window gate). Trace what the main CPU is spinning on.
+
+   **In the Dream disk A is NOT the companion bug.** Its main is 7286/frame and
+   its sub 976, both inside the normal band — eleven titles that MATCH run their
+   sub slower than that. It has no counter-level signature at all, so it is a
+   from-scratch trace with no lead; do it after item 0, not before.
+   *(Luxsor disk 1 was the third of these; fixed, and it was already fixed when
+   this list was first written — see below.)*
+2. ~~A fresh 68-title AV sweep.~~ **Done 2026-09-01** — the table at the top of
+   this file is that measurement. Net effect of the whole run of fixes on this
+   set: **one title**, Luxsor disk 1, CORE-BLANK -> MATCH. The AV half is
+   squeezed: 28 MATCH, 0 CORE-WORSE, 2 CORE-BLANK, and the 29 BOTH-BLANK rows
+   are blank on the reference too. **The unknowns are on the FM-7 half now**,
+   which is why item 0 outranks the AV singletons.
 3. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
    the logo reads grey/olive here and green on the reference.
 4. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
