@@ -69,6 +69,10 @@ tools/hw/shots/
 # fixed or the collection changes, so they are not worth versioning -- the
 # per-title numbers that ARE worth keeping go in vsim/sweep/*.tsv, checked in.
 vsim/sweep/renders/
+# Same for the postfix/variant sweeps -- `renders-postfix/` is 15 MB of the
+# same PNGs under a different name, and its numbers are already checked in as
+# vsim/sweep/results-av-f2000-postfix.tsv.
+vsim/sweep/renders-*/
 
 # Agent worktrees and session scratch
 .claude/
