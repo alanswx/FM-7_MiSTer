@@ -260,7 +260,17 @@ core u_core(
   .sd_buff_addr ( sd_buff_addr    ),
   .sd_buff_dout ( sd_buff_dout    ),
   .sd_buff_din  ( sd_buff_din     ),
-  .sd_buff_wr   ( sd_buff_wr      )
+  .sd_buff_wr   ( sd_buff_wr      ),
+  // Kanji ROM in SDRAM. FM-7_MiSTer.sv connects these on its own core
+  // instance; this one did not, so kanji_rd never reached SDRAM_MUX, the
+  // client was never granted, and every read of the $fd22/$fd23 window
+  // returned $00 in simulation while working on hardware. --kanji-check did
+  // not catch it: it reads u_sdram.mem[] directly and never drives the window.
+  .KANJI_ADDR  ( kanji_addr      ),
+  .KANJI_RD    ( kanji_rd        ),
+  .KANJI_GNT   ( kanji_gnt       ),
+  .KANJI_READY ( kanji_ready     ),
+  .KANJI_DATA  ( sdram_data      )
 );
 
 wire [1:0] sd_rd_0, sd_wr_0;

@@ -626,10 +626,19 @@ static void save_screenshot(int frame) {
 // two 8 KB halves.  Diffing the two files plane by plane is what distinguishes
 // "the raster draws it wrong" from "the wrong bytes are stored", and the second
 // is what the FM77AV colour-bar bug turned out to be.  See docs/TESTING.md.
-// --kanji-check: read glyph words back through the $fd20-$fd23 window and
-// compare against the boot.rom file. The image moved from block RAM to SDRAM,
-// so this is the only thing that proves the download, the base address, the
-// arbiter and the prefetch all line up -- no title in the test set reads kanji.
+// --kanji-check: compare SDRAM contents against the boot.rom file.
+//
+// WHAT THIS DOES NOT DO. It does not touch the $fd20-$fd23 window, the arbiter
+// or the prefetch -- it indexes u_sdram.mem[] directly. It proves the download
+// landed at the right base address and NOTHING ELSE. The comment here used to
+// claim it read "back through the window" and was "the only thing that proves
+// the download, the base address, the arbiter and the prefetch all line up",
+// and on that strength the window looked measured when it was dead: the core's
+// KANJI_* ports were never connected in vsim/sim.v, so every read returned $00
+// while this reported 16 words sampled, 0 mismatched. See REFERENCE.md trap 80.
+//
+// To exercise the real path use `make DEBUG_KANJI=1` and run a title that reads
+// kanji -- Luxsor disk 1 does, 3104 reads; most of the test set never does.
 static int  kanji_check_frame = -1;
 static bool kanji_checked = false;
 static void kanji_check(void) {

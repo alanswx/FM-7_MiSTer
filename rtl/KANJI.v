@@ -115,6 +115,25 @@ always @(posedge CLKSYS) begin
   end
 end
 
+`ifdef DEBUG_KANJI
+// Probe the SDRAM handshake. The window returns $00 for every read on Luxsor
+// while --kanji-check passes, and that check never touches the window (it reads
+// u_sdram.mem[] directly), so the fetch path itself is unmeasured. Print each
+// state change of the request/grant/ready chain.
+integer kdbg_n = 0;
+reg req_d, gnt_d, out_d, rdy_d;
+always @(posedge CLKSYS) begin
+  req_d <= req; gnt_d <= KANJI_GNT; out_d <= outstanding; rdy_d <= KANJI_READY;
+  if (kdbg_n < 60 &&
+      ({req,KANJI_GNT,outstanding,KANJI_READY} != {req_d,gnt_d,out_d,rdy_d})) begin
+    $display("KANJI req=%b gnt=%b outst=%b rdy=%b addr=%05x data=%04x word=%04x",
+             req, KANJI_GNT, outstanding, KANJI_READY,
+             KANJI_ADDR, KANJI_DATA, word);
+    kdbg_n = kdbg_n + 1;
+  end
+end
+`endif
+
 wire [7:0] rom_dout = (~RFD23n) ? word[15:8] : word[7:0];
 assign MDATABUS_out = (RFD22n & RFD23n) ? 8'h00 : rom_dout;
 

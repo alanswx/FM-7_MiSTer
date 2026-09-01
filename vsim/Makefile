@@ -537,6 +537,12 @@ endif
 # in the dump" into "the page bit was never 0 at write time", which separates a
 # page-select fault from a drawing fault. Touch ../rtl/CRTRAM.v before building
 # or the define does not reach Verilator (trap 3).
+# `make DEBUG_KANJI=1` prints each state change of the kanji SDRAM
+# request/grant/ready handshake in rtl/KANJI.v.
+ifeq ($(DEBUG_KANJI),1)
+V_DEFINE += +define+DEBUG_KANJI
+endif
+
 ifeq ($(DEBUG_VBLOCK),1)
 V_DEFINE += +define+DEBUG_VBLOCK
 endif

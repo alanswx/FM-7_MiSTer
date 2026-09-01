@@ -63,6 +63,21 @@ always @(posedge CLKSYS) begin
   if (SD_RD) owner_kanji <= KANJI_GNT & ~TAPE_RD;
 end
 
+`ifdef DEBUG_KANJI
+// Why the kanji client never gets granted: print the two signals that can
+// veto it, on any change, while a kanji request is asserted.
+integer mdbg_n = 0;
+reg tr_d, dl_d, kr_d;
+always @(posedge CLKSYS) begin
+  tr_d <= TAPE_RD; dl_d <= DL_WR; kr_d <= KANJI_RD;
+  if (mdbg_n < 40 && KANJI_RD) begin
+    $display("MUX  TAPE_RD=%b DL_WR=%b KANJI_RD=%b -> GNT=%b",
+             TAPE_RD, DL_WR, KANJI_RD, KANJI_GNT);
+    mdbg_n = mdbg_n + 1;
+  end
+end
+`endif
+
 assign TAPE_READY  = SD_READY;
 assign KANJI_READY = SD_READY & owner_kanji;
 assign SD_DOUT_OUT = SD_DOUT;
