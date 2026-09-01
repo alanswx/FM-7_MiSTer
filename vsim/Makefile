@@ -546,3 +546,23 @@ endif
 ifeq ($(DEBUG_VBLOCK),1)
 V_DEFINE += +define+DEBUG_VBLOCK
 endif
+
+# `make DEBUG_PLANES=1` counts the FM77AV 320-mode plane path in rtl/PAL.v and
+# prints three lines at exit:
+#
+#   PLANES lod=... lod320=... visible=... anynonzero=...
+#   PLANES nonzero-byte loads  B3=... B2=... ... G0=...
+#   PLANES step=... code_nz=... code_or=$fff first_code=$abc q_nz=... rgb_nz=...
+#
+# Read them as a chain: bytes arrive at the shift registers (`anynonzero`), the
+# twelve of them build a code (`code_nz`, `code_or`), the palette RAMs answer
+# (`q_nz`) and a colour leaves (`rgb_nz`). The first counter that is zero is
+# where the picture dies, which is what "it renders black" on its own cannot
+# say. `code_or` is the OR of every code built, so a plane stuck at 0 shows as a
+# missing bit rather than as a guess from a VRAM dump.
+#
+# Touch ../rtl/PAL.v before building or the define does not reach Verilator
+# (trap 3).
+ifeq ($(DEBUG_PLANES),1)
+V_DEFINE += +define+DEBUG_PLANES
+endif

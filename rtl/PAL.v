@@ -294,6 +294,104 @@ always @(posedge SFTCLK, posedge sftlod, posedge clr3) begin
 end
 
 
+`ifdef DEBUG_PLANES
+// ---------------------------------------------------------------------------
+// The 320-mode plane path, counted rather than inferred.
+//
+// Twelve plane bytes -> twelve shift registers -> a 12-bit code -> three
+// palette RAMs -> ANALOG_RGB. Every stage is a separate counter, so a black
+// screen answers "it dies HERE" instead of "somewhere in the video path".
+//
+// WHAT IT ALREADY SETTLED. Luxsor disk 1 was black while its VRAM was IDENTICAL
+// to 77AVEMU on all 98,304 bytes, and that was read as localising the fault to
+// this stretch. It does not. Run against the black state (the NMI-recognition
+// fix in mc6809i.v reverted) and against HEAD, every counter down to the code is
+// IDENTICAL -- anynonzero 1,815,008, code_nz 14,138,553, code_or $fff, all
+// twelve per-plane counts equal to the digit. Only the RAM's answer moves:
+// q_nz 234,780 against 13,787,206 for the same codes. The picture was in VRAM,
+// this path fetched it and built the right code for every pixel, and the screen
+// was black because the palette ENTRIES those codes index were black -- which a
+// write count cannot see. See REFERENCE.md trap 82.
+//
+// Sampled in two clock domains on purpose. sftlod and the SVDATA* buses are
+// CLKSYS-synchronous (MB60H010 registers SFTLODn on CLKSYS); the code, the RAM
+// output and ANALOG_RGB move on SFTCLK. Counting both from one always block
+// would be a race, and this project has published two findings that were an
+// instrument disagreeing with itself -- see REFERENCE.md trap 63.
+// ---------------------------------------------------------------------------
+integer dbg_lod, dbg_lod320, dbg_lod_vis, dbg_lod_anynz;
+integer dbg_pl [0:11];        // per-plane count of non-zero bytes at sftlod
+integer dbg_step, dbg_code_nz, dbg_q_nz, dbg_rgb_nz;
+integer dbg_i;
+reg [11:0] dbg_code_or;       // OR of every code the raster built
+reg [11:0] dbg_first_code;
+reg dbg_have_first;
+reg dbg_lod_d;
+initial begin
+  dbg_lod = 0; dbg_lod320 = 0; dbg_lod_vis = 0; dbg_lod_anynz = 0;
+  dbg_step = 0; dbg_code_nz = 0; dbg_q_nz = 0; dbg_rgb_nz = 0;
+  dbg_code_or = 12'd0; dbg_first_code = 12'd0; dbg_have_first = 1'b0;
+  dbg_lod_d = 1'b0;
+  for (dbg_i = 0; dbg_i < 12; dbg_i = dbg_i + 1) dbg_pl[dbg_i] = 0;
+end
+
+always @(posedge CLKSYS) begin
+  dbg_lod_d <= sftlod;
+  if (sftlod & ~dbg_lod_d) begin              // rising edge of the load pulse
+    dbg_lod = dbg_lod + 1;
+    if (AV_MODE_320) begin
+      dbg_lod320 = dbg_lod320 + 1;
+      // m25_3 is the blanking clear; a load inside blanking is immediately
+      // wiped, so count the visible ones separately.
+      if (~m25_3) dbg_lod_vis = dbg_lod_vis + 1;
+      if (SVDATAB3 != 8'd0) dbg_pl[0]  = dbg_pl[0]  + 1;
+      if (SVDATAB2 != 8'd0) dbg_pl[1]  = dbg_pl[1]  + 1;
+      if (SVDATAB1 != 8'd0) dbg_pl[2]  = dbg_pl[2]  + 1;
+      if (SVDATAB0 != 8'd0) dbg_pl[3]  = dbg_pl[3]  + 1;
+      if (SVDATAR3 != 8'd0) dbg_pl[4]  = dbg_pl[4]  + 1;
+      if (SVDATAR2 != 8'd0) dbg_pl[5]  = dbg_pl[5]  + 1;
+      if (SVDATAR1 != 8'd0) dbg_pl[6]  = dbg_pl[6]  + 1;
+      if (SVDATAR0 != 8'd0) dbg_pl[7]  = dbg_pl[7]  + 1;
+      if (SVDATAG3 != 8'd0) dbg_pl[8]  = dbg_pl[8]  + 1;
+      if (SVDATAG2 != 8'd0) dbg_pl[9]  = dbg_pl[9]  + 1;
+      if (SVDATAG1 != 8'd0) dbg_pl[10] = dbg_pl[10] + 1;
+      if (SVDATAG0 != 8'd0) dbg_pl[11] = dbg_pl[11] + 1;
+      if ((SVDATAB3 | SVDATAB2 | SVDATAB1 | SVDATAB0 |
+           SVDATAR3 | SVDATAR2 | SVDATAR1 | SVDATAR0 |
+           SVDATAG3 | SVDATAG2 | SVDATAG1 | SVDATAG0) != 8'd0)
+        dbg_lod_anynz = dbg_lod_anynz + 1;
+    end
+  end
+end
+
+always @(posedge SFTCLK) begin
+  if (AV_MODE_320 & SFTSTEP) begin
+    dbg_step = dbg_step + 1;
+    dbg_code_or = dbg_code_or | analog_code_next;
+    if (analog_code_next != 12'd0) begin
+      dbg_code_nz = dbg_code_nz + 1;
+      if (!dbg_have_first) begin
+        dbg_have_first = 1'b1;
+        dbg_first_code = analog_code_next;
+      end
+    end
+    if ({analog_q_g, analog_q_r, analog_q_b} != 12'd0) dbg_q_nz = dbg_q_nz + 1;
+    if (ANALOG_RGB != 24'd0) dbg_rgb_nz = dbg_rgb_nz + 1;
+  end
+end
+
+final begin
+  $display("PLANES lod=%0d lod320=%0d visible=%0d anynonzero=%0d",
+           dbg_lod, dbg_lod320, dbg_lod_vis, dbg_lod_anynz);
+  $display("PLANES nonzero-byte loads  B3=%0d B2=%0d B1=%0d B0=%0d  R3=%0d R2=%0d R1=%0d R0=%0d  G3=%0d G2=%0d G1=%0d G0=%0d",
+           dbg_pl[0], dbg_pl[1], dbg_pl[2],  dbg_pl[3],
+           dbg_pl[4], dbg_pl[5], dbg_pl[6],  dbg_pl[7],
+           dbg_pl[8], dbg_pl[9], dbg_pl[10], dbg_pl[11]);
+  $display("PLANES step=%0d code_nz=%0d code_or=$%03x first_code=$%03x q_nz=%0d rgb_nz=%0d",
+           dbg_step, dbg_code_nz, dbg_code_or, dbg_first_code, dbg_q_nz, dbg_rgb_nz);
+end
+`endif
+
 endmodule
 
 // One gun of the FM77AV analog palette: 4096 x 4 bits, written by the main CPU
