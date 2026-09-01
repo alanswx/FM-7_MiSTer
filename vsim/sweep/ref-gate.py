@@ -163,6 +163,9 @@ def build_tests(frames):
     t.append(('av-wizardry4',
               os.path.join(d77, 'Wizardry IV (FM77AV) (Disk A).d77'),
               False, []))
+    t.append(('av-luxsor1',
+              os.path.join(d77, 'Luxsor (FM77AV) (Disk 1).d77'),
+              False, []))
     return t
 
 

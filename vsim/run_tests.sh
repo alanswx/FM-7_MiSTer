@@ -195,6 +195,9 @@ fi
 #   Kohakuiro no Yuigon  81% coverage, 18 colours -- the strongest exercise of
 #                        the 320-mode plane path outside the demo
 #   Wizardry IV          colour sprites over text, a different draw path
+#   Luxsor disk 1        the only row that takes an NMI across the $FD13
+#                        sub-system reset, and 98.30% coverage in 378 colours,
+#                        the richest 320-mode picture in the set
 #
 # Deliberately NOT here: Tetris, which renders its title screen but goes from
 # 21% to 57% coverage between 700 and 2000 frames, so it is mid-draw at the
@@ -210,6 +213,17 @@ av_add() {   # <short-name> <disk basename> [shot-frame]
 # 400 on. See the per-row note in the runner loop.
 av_add av-kohakuiro "Kohakuiro no Yuigon (FM77AV) (Disk 1)" 250
 av_add av-wizardry4 "Wizardry IV (FM77AV) (Disk A)"
+# Luxsor disk 1 earns its place on coverage, not on being another AV title. An
+# NMI latched before the $FD13 sub-system reset survived it INDEFINITELY --
+# `2ea9fc0` -- and no gate row took a timer interrupt at all, so nothing here
+# could have caught it. This title is what did. It also gives the check real
+# teeth: at the global SHOT_AT it is 98.30% coverage in 378 colours and
+# byte-identical to 77AVEMU on all 64,000 logical pixels, and frames 600 and 700
+# are byte-identical to each other, so it is not photographed mid-draw. Both
+# dumps in the collection ("Luxsor (FM77AV) (Disk 1).d77" and LUXSOR_1.D77)
+# produce the same PNG; the conventionally-named one is used because av_add
+# looks for a lower-case .d77.
+av_add av-luxsor1 "Luxsor (FM77AV) (Disk 1)"
 
 # One entry per tape image found. Types LOAD"" + RETURN, which is what F-BASIC
 # needs before it will start the motor -- t77_decode.v only advances while
