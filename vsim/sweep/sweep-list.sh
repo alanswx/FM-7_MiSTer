@@ -15,9 +15,18 @@
 # Reads <outdir>/images.txt, one absolute path per line. Writes <outdir>/shots
 # and <outdir>/results.tsv exactly where the joining tools expect them.
 #
-# MACHINE is inherited, defaulting to fm7 in sweep_one.sh. Set MACHINE=av for
-# FM77AV titles -- they will not boot as an FM-7 and sweeping them without it
-# reports a uniform "nothing boots".
+# MACHINE is inherited, defaulting to fm7 in sweep_one.sh. Set MACHINE=fm77av
+# for FM77AV titles -- they will not boot as an FM-7 and sweeping them without
+# it reports a uniform "nothing boots".
+#
+# **fm77av, not av.** This said `MACHINE=av` and that is not a value the
+# simulator accepts: sweep_one.sh passes it straight to `--machine`, and an
+# unrecognised one there is a printf and not an exit (trap 74), so the whole
+# sweep runs on the DEFAULT machine and reports a uniform "nothing boots" --
+# which is precisely the failure the paragraph above is warning about. av-sweep.sh
+# has always exported `fm77av`; only this comment was wrong.
+# `ref-shots-at-frame.sh` is the odd one out and really does take `av`, because
+# it selects a 77AVEMU flag rather than a --machine value.
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)

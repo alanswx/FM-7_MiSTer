@@ -174,10 +174,11 @@ and `sweep/cohort.py` for the tooling.
     python3 cohort.py next --size 40    # draw the next cohort
     python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
 
-**Coverage: 240/395 (60.8%).** Cohorts 01-06 retired.
+**Coverage: 280/395 (70.9%).** Cohorts 01-07 retired. 115 disks remain.
 
 | cohort | result |
 |---|---|
+| 07 | **1 real bug**: Xanadu Scenario II (Disk D - Program) blank at all four samples against the reference's 19.7-20.2% in 8 colours on all four. 18 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. **7 of 40 AV**, and only two of those are identifiable by filename |
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
 | 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
 | 06 | **0 core bugs in 40 disks.** Its one finding was LUXSOR_1 blank against the reference's 27.1%, reproducing the disk-1 fault on an INDEPENDENT dump while LUXSOR_2 matched — **since fixed** by `2ea9fc0`; both dumps now match. 19 MATCH, 14 BOTH-BLANK/TEXT-ONLY, 2 REF-WORSE. 9 of 40 AV |
@@ -595,9 +596,16 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-0. **Draw cohort 07** (`python3 sweep/cohort.py next --size 40`). 155 FM-7
+0. **Xanadu Scenario II (Disk D - Program)** — cohort 07's one finding, and the
+   only CORE-BLANK row anywhere in the collection right now. Blank at all four
+   sampled frames (0.00-0.04 %) where the reference draws 19.7-20.2 % in 8
+   colours at every one, so it has the *persistent* signature the method says to
+   trust. A sibling disk of the same game was fixed by the Force Interrupt fix
+   (`0db06c8`) in cohort 02, which is the first place to look.
+
+   Then **draw cohort 08** (`python3 sweep/cohort.py next --size 40`). 115 FM-7
    disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
-   set is AV software** — screen before sweeping (`docs/TESTING.md`).
+   set is AV software** — screen before sweeping, with `sweep/probe.sh`.
 1. ~~Little Box disk A / In the Dream disk A.~~ **Both fixed by `6f2817e`** —
    one guard, because the MMR was translating the address without deciding ROM
    against RAM. The AV set has **no CORE-BLANK rows left**, verified by a full
