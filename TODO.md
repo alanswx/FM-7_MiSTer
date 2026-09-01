@@ -286,13 +286,12 @@ AV-only and silently wrote no file for FM-7 titles; note also that
    `S) ゲームをはじめる` line of the bottom box is missing, where 77AVEMU draws
    both cleanly. That is visible in the *previous* blessed shot too, so it is
    long-standing, not new — see `vsim/shots-ref-77avemu/av-wizardry4.png`.
-3. **Two AV titles still render nothing**: Little Box disk A (main starved at
-   816 instructions/frame) and In the Dream disk A (pre-existing sub deadlock,
-   diagnosed in `233c2aa`). Both re-checked 2026-09-01, both still blank at all
-   four sampled frames. *(Luxsor disk 1 was the third — fixed by `2ea9fc0`, the
-   NMI-recognition mask; it now matches 77AVEMU at 100.00% and is a gate row.)*
-   The other three of the original six were the TWR, encoder-RTC, CRT-latch and
-   shared-window faults, now fixed.
+3. ~~AV titles that render nothing.~~ **None left.** All six of the original
+   set are fixed: the TWR, encoder-RTC, CRT-latch and shared-window faults
+   earlier; Luxsor disk 1 by `2ea9fc0` (NMI recognition); Little Box disk A and
+   In the Dream disk A by `6f2817e` (the MMR deciding ROM against RAM). A full
+   68-title sweep before and after that last commit moved exactly those two
+   rows and regressed nothing — **30 MATCH, 0 CORE-BLANK, 0 CORE-WORSE**.
 4. **The FM half of the YM2203 has never been compared to anything**, and its
    timers/`$FD17` IRQ path is only as good as one title's use of it.
 

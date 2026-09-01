@@ -81,21 +81,31 @@ trap 67.)*
 
 Both columns re-scored on the frame-matched basis, so they are comparable:
 
-| verdict | `sweep/renders/` | 08-30 | **re-measured 2026-09-01** |
-|---|---|---|---|
-| CORE-BLANK — reference draws, this core does not | 12 | 3 | **2** |
-| CORE-WORSE | 2 | 0 | **0** |
-| TEXT-ONLY | 8 | 8 | **9** |
-| BOTH-BLANK — neither draws; mostly data/scenario disks | 27 | 29 | **29** |
-| MATCH | 18 | 27 | **28** |
-| REF-WORSE — this core draws and the reference does not | 1 | 1 | **0** |
+| verdict | `sweep/renders/` | 08-30 | 09-01 | **09-01 after `6f2817e`** |
+|---|---|---|---|---|
+| CORE-BLANK — reference draws, this core does not | 12 | 3 | 2 | **0** |
+| CORE-WORSE | 2 | 0 | 0 | **0** |
+| TEXT-ONLY | 8 | 8 | 9 | **9** |
+| BOTH-BLANK — neither draws; mostly data/scenario disks | 27 | 29 | 29 | **29** |
+| MATCH | 18 | 27 | 28 | **30** |
+| REF-WORSE — this core draws and the reference does not | 1 | 1 | 0 | **0** |
 
-The 09-01 column is a full 68-title sweep on HEAD at 2000 frames with four-frame
+**No AV title in the 68-image set now renders blank where 77AVEMU draws.** Both
+right-hand columns are full sweeps on HEAD at 2000 frames with four-frame
 sampling, joined against `ref-shots-at-frame.sh` references at the matched
-instant; data in `sweep/results-av-f2000-2026-09-01.tsv`. The one move is Luxsor
-disk 1, CORE-BLANK -> MATCH. The REF-WORSE row did not regress — it is now
-counted as TEXT-ONLY (Urusei Yatsura disks 2/3 and Yami no Iyo Densetsu disk 2
-draw 1.9 % here against the reference's 0.1 %).
+instant; data in `sweep/results-av-f2000-2026-09-01.tsv` and
+`…-mmrfix.tsv`. Swept before and after `6f2817e` in the same session on the same
+tree (trap 57), and compared row by row: **exactly two rows moved, both
+CORE-BLANK -> MATCH, and nothing regressed.**
+
+| title | before | after |
+|---|---|---|
+| Little Box disk A | 0.1 % against 9.6 | **9.6 against 9.6**, 99.39 % agreement |
+| In the Dream disk A | 0.0 % against 9.6 | **9.5 against 9.6**, 99.40 % agreement |
+
+The earlier 09-01 column's one move was Luxsor disk 1. The REF-WORSE row did not
+regress — it is now counted as TEXT-ONLY (Urusei Yatsura disks 2/3 and Yami no
+Iyo Densetsu disk 2 draw 1.9 % here against the reference's 0.1 %).
 
 **A NEARLY-HALTED SUB CPU IS NORMAL ON THE AV, NOT A SYMPTOM.** Thirteen titles
 run the sub under 1000 instructions/frame and **eleven of them MATCH the
@@ -129,18 +139,18 @@ matching 77AVEMU on **all 98,304 VRAM bytes**.
 
 Actionable list, frame-matched, worst first:
 
-**TWO titles.** Every row was checked against its own four sampled frames
-before being believed, and re-checked on 2026-09-01:
+**NONE. The actionable list is empty.** All three rows that were on it are
+fixed, and each carried a diagnosis that turned out to be wrong:
 
-| ours | ref | title |
+| title | the diagnosis on this list | what it actually was |
 |---|---|---|
-| 0.1 | 9.6 | Little Box disk A — blank at all four. Main CPU at 816 instr/frame against a healthy ~7400. |
-| 0.0 | 9.6 | In the Dream disk A — blank at all four. Sub 65% halted, BUSY stuck at 1. |
+| Luxsor disk 1 | "blank at all four samples. Runaway into `$fdxx`, IRQ asserted never taken" | already fixed by `2ea9fc0` when the list was written; nothing had re-rendered |
+| Little Box disk A | "Main CPU at 816 instr/frame against a healthy ~7400" | not starved — 8414/frame and then **stopped dead at frame 68**, `6f2817e` |
+| In the Dream disk A | "Sub 65% halted, BUSY stuck at 1" | not a sub fault at all; both its counters are inside the normal band, `6f2817e` |
 
-*(This table had a third row, `0.0 | 27.1 | Luxsor disk 1 — blank at all four
-samples`. It is **fixed**: 100.00 % agreement at frame 600 and 26.6 against 27.2
-at 1980. The row was already stale when it was written — see the Luxsor section
-below.)*
+Worth keeping as a pattern: **all three descriptions pointed at the wrong
+subsystem**, and in each case the correction came from an instrument rather than
+from re-reading the code. Traps 82-85.
 
 **Cleared as trap 49 — do NOT re-open without checking the other sampled frames
 first.** Four of the seven rows the sweep called actionable were the attract
@@ -588,25 +598,21 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 0. **Draw cohort 07** (`python3 sweep/cohort.py next --size 40`). 155 FM-7
    disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
    set is AV software** — screen before sweeping (`docs/TESTING.md`).
-1. **Little Box disk A** — the sharpest signal left in the AV set, and the only
-   one of the two remaining CORE-BLANK rows that has one: its **main CPU runs
-   286 instructions/frame** against 6000-11000 everywhere else, with a healthy
-   sub at 8781. That is a stall, not a video bug, and stalls of this class have
-   each freed several titles at once before (the TWR fault, the sub-I/O decode,
-   the shared-window gate). Trace what the main CPU is spinning on.
+1. ~~Little Box disk A / In the Dream disk A.~~ **Both fixed by `6f2817e`** —
+   one guard, because the MMR was translating the address without deciding ROM
+   against RAM. The AV set has **no CORE-BLANK rows left**, verified by a full
+   before/after sweep in the same session.
 
-   **In the Dream disk A is NOT the companion bug.** Its main is 7286/frame and
-   its sub 976, both inside the normal band — eleven titles that MATCH run their
-   sub slower than that. It has no counter-level signature at all, so it is a
-   from-scratch trace with no lead; do it after item 0, not before.
-   *(Luxsor disk 1 was the third of these; fixed, and it was already fixed when
-   this list was first written — see below.)*
-2. ~~A fresh 68-title AV sweep.~~ **Done 2026-09-01** — the table at the top of
-   this file is that measurement. Net effect of the whole run of fixes on this
-   set: **one title**, Luxsor disk 1, CORE-BLANK -> MATCH. The AV half is
-   squeezed: 28 MATCH, 0 CORE-WORSE, 2 CORE-BLANK, and the 29 BOTH-BLANK rows
-   are blank on the reference too. **The unknowns are on the FM-7 half now**,
-   which is why item 0 outranks the AV singletons.
+   The remaining AV work is soft, not blank-screen: **The Return of Ishtar**
+   scores MATCH at 33.4 % against the reference's 44.8 %, the largest coverage
+   gap inside MATCH and consistent across both dumps of the title — exactly the
+   shape the classifier's thresholds hide. Worth one look before believing it.
+2. ~~A fresh 68-title AV sweep.~~ **Done twice on 2026-09-01**, before and after
+   `6f2817e`; the table at the top of this file is those measurements. The AV
+   half is finished as a source of blank-screen bugs: **30 MATCH, 0 CORE-BLANK,
+   0 CORE-WORSE**, and the 29 BOTH-BLANK rows are blank on the reference too.
+   **The unknowns are on the FM-7 half now**, which is why item 0 is the top of
+   this list.
 3. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
    the logo reads grey/olive here and green on the reference.
 4. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
