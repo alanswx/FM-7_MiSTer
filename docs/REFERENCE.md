@@ -1427,6 +1427,46 @@ confident wrong answer at least once:
     claim — the same instinct as **byte-identical output means suspect the build
     first**.
 
+82. **A black screen with byte-perfect VRAM is a PALETTE bug, and a palette
+    write count cannot see it.** Luxsor disk 1 rendered 0.00% coverage while its
+    VRAM was **identical to 77AVEMU on all 98,304 bytes** — verified by dumping
+    `FM7_VRAM_DUMP` with the NMI-recognition fix reverted and diffing against
+    the reference; it is the same file the fixed build produces. The raster was
+    reading it correctly too: `make DEBUG_PLANES=1` counts the whole 320-mode
+    chain, and between the black state and the fixed one **every counter down to
+    the 12-bit code is identical** — `anynonzero` 1,815,008, `code_nz`
+    14,138,553, `code_or` `$fff`, all twelve per-plane counts equal to the digit.
+    The only thing that moves in the entire video path is what the palette RAM
+    answers: `q_nz` **234,780 against 13,787,206** for the same codes.
+
+    So "VRAM holds the picture, the analog palette took 84,630 writes with full
+    `$00-$0f` range on all three guns, and `$FD12` b6 is set" does **not**
+    localise the fault to the raster — and that reasoning published a whole next
+    step, "probe `analog_code_next` and the twelve `*SHIFT` registers in
+    `PAL.v`", pointing at the one stretch that was provably fine. **A write count
+    is not a content check.** All 84,630 of those writes are consistent with a
+    table that is black at the codes the picture indexes; Luxsor's `$E541`
+    read-modify-write fade is exactly the code the runaway derailed. Dump
+    `FM7_PAL_DUMP` and look at the entries the codes actually hit, or count the
+    RAM's non-zero returns. Same shape as trap 6, **instrument the decision, not
+    its inputs**.
+
+    The corollary that generalises past this bug: when the screen is wrong,
+    **diff VRAM against the reference before theorising about the video path.**
+    It is one run and it splits the problem in half — identical VRAM means every
+    hypothesis about drawing, page select and plane order is already dead.
+
+    And the reason it survived: **a checked-in "what we render" artifact is a
+    claim with a timestamp on it.** `vsim/sweep/luxsor-ref/ours_frame_0700_black.png`
+    was archived at 22:13 and the two commits that fix the title landed at 22:16
+    and 22:17. Nothing re-rendered, so the black PNG and the section built on it
+    outlived the bug by a whole session. Re-run the artifact in the same commit
+    that changes the behaviour, or it becomes the `shots-ref/` rot in `CLAUDE.md`
+    all over again. **The durable form of such a pair is a gate row, not a
+    directory of PNGs** — a gate row is re-rendered and compared on every run,
+    which is exactly what a loose reference is not. Luxsor is now `av-luxsor1`
+    and that directory is deleted.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

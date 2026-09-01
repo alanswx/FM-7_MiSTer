@@ -10,7 +10,7 @@ Reference material: `docs/REFERENCE.md` (read first), `docs/IO_MAP.md`,
 
 ## Start here
 
-**Where it stands.** The **eleven-row** gate is green — `./run_tests.sh` in
+**Where it stands.** The **twelve-row** gate is green — `./run_tests.sh` in
 `vsim/` compares screenshots *and* counters against `shots-ref/`. FM-7 boots,
 Thexder runs, OS-9 reaches its shell. On the FM77AV side **Deep Forest now
 matches 77AVEMU on 100.0% of pixels and the 2019 demo on 99.9%**, measured
@@ -286,11 +286,13 @@ AV-only and silently wrote no file for FM-7 titles; note also that
    `S) ゲームをはじめる` line of the bottom box is missing, where 77AVEMU draws
    both cleanly. That is visible in the *previous* blessed shot too, so it is
    long-standing, not new — see `vsim/shots-ref-77avemu/av-wizardry4.png`.
-3. **Three AV titles still render nothing**: Luxsor disk 1 (runaway into
-   `$fdxx`, IRQ never taken), Little Box disk A (main starved at 816
-   instructions/frame), In the Dream disk A (pre-existing sub deadlock,
-   diagnosed in `233c2aa`). The other three of the original six were the TWR,
-   encoder-RTC, CRT-latch and shared-window faults, now fixed.
+3. **Two AV titles still render nothing**: Little Box disk A (main starved at
+   816 instructions/frame) and In the Dream disk A (pre-existing sub deadlock,
+   diagnosed in `233c2aa`). Both re-checked 2026-09-01, both still blank at all
+   four sampled frames. *(Luxsor disk 1 was the third — fixed by `2ea9fc0`, the
+   NMI-recognition mask; it now matches 77AVEMU at 100.00% and is a gate row.)*
+   The other three of the original six were the TWR, encoder-RTC, CRT-latch and
+   shared-window faults, now fixed.
 4. **The FM half of the YM2203 has never been compared to anything**, and its
    timers/`$FD17` IRQ path is only as good as one title's use of it.
 

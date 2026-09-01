@@ -5,7 +5,9 @@ Orientation for picking this branch up cold. Detail lives in
 traps — read section 5 before trusting any number) and `HARDWARE-HANDOFF.md`
 (the FPGA side). `CLAUDE.md` has the documentation rules; follow them.
 
-Branch `fdc-d77-support`, pushed to `alanswx`. Working tree clean, gate 11/11.
+Branch `fdc-d77-support`, pushed to `alanswx`. Gate **12/12** — `av-luxsor1`
+added 2026-09-01, and `av-wizardry4`'s counter re-blessed; both explained under
+**Validating a change**.
 
 **The single most useful thing to know before you start:** most of what looks
 like a core bug in this campaign has turned out to be a MEASUREMENT defect —
@@ -106,14 +108,18 @@ matching 77AVEMU on **all 98,304 VRAM bytes**.
 
 Actionable list, frame-matched, worst first:
 
-**THREE titles, not five.** Every row was checked against its own four sampled
-frames before being believed:
+**TWO titles.** Every row was checked against its own four sampled frames
+before being believed, and re-checked on 2026-09-01:
 
 | ours | ref | title |
 |---|---|---|
-| 0.0 | 27.1 | Luxsor disk 1 — blank at all four samples. Runaway into `$fdxx`, IRQ asserted never taken. |
 | 0.1 | 9.6 | Little Box disk A — blank at all four. Main CPU at 816 instr/frame against a healthy ~7400. |
 | 0.0 | 9.6 | In the Dream disk A — blank at all four. Sub 65% halted, BUSY stuck at 1. |
+
+*(This table had a third row, `0.0 | 27.1 | Luxsor disk 1 — blank at all four
+samples`. It is **fixed**: 100.00 % agreement at frame 600 and 26.6 against 27.2
+at 1980. The row was already stale when it was written — see the Luxsor section
+below.)*
 
 **Cleared as trap 49 — do NOT re-open without checking the other sampled frames
 first.** Four of the seven rows the sweep called actionable were the attract
@@ -143,7 +149,7 @@ and `sweep/cohort.py` for the tooling.
 |---|---|
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
 | 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
-| 06 | **1 real bug, known**: LUXSOR_1 blank against the reference's 27.1%, reproducing the Luxsor disk-1 fault on an INDEPENDENT dump while LUXSOR_2 matches exactly. 19 MATCH, 14 BOTH-BLANK/TEXT-ONLY, 2 REF-WORSE. 9 of 40 AV |
+| 06 | **0 core bugs in 40 disks.** Its one finding was LUXSOR_1 blank against the reference's 27.1%, reproducing the disk-1 fault on an INDEPENDENT dump while LUXSOR_2 matched — **since fixed** by `2ea9fc0`; both dumps now match. 19 MATCH, 14 BOTH-BLANK/TEXT-ONLY, 2 REF-WORSE. 9 of 40 AV |
 | 05 | **0 core bugs in 40 disks.** 19 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. 9 of 40 screened AV. Nothing flagged actionable on either half |
 | 04 | **0 core bugs in 40 disks**, and the first cohort run with machine screening AND four-frame sampling. 23 MATCH, 9 BOTH-BLANK, 7 TEXT-ONLY. Both flagged rows were caught by the new steps, not by hindsight — see below |
 | 03 | **1 real bug, fixed** — Ys Omen `[a]`, visible only on the AV, root-caused to the D77 scan bound (`9b9af08`) and now byte-identical to 77AVEMU on all 98,304 VRAM bytes. 12 MATCH, 15 BOTH-BLANK, 11 TEXT-ONLY. Both rows the scorer called actionable meant something other than their verdict — see below |
@@ -561,12 +567,11 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 0. **Draw cohort 07** (`python3 sweep/cohort.py next --size 40`). 155 FM-7
    disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
    set is AV software** — screen before sweeping (`docs/TESTING.md`).
-1. **Luxsor disk 1** — see below. The CPU runaway is **fixed** (NMI recognition,
-   and the sim's dead kanji window). It still renders black, and the fault is now
-   isolated to the 320-mode plane path: VRAM holds the image (42% non-zero), the
-   analog palette is richly programmed (84,630 writes), the mode bit and page
-   select are right. Probe `analog_code_next` and the twelve `*SHIFT` registers
-   in `PAL.v` next. Ground truth is checked in at `vsim/sweep/luxsor-ref/`.
+1. **Re-measure the two AV titles that still render nothing** — Little Box
+   disk A and In the Dream disk A, both re-checked 2026-09-01 and both still
+   blank at all four sampled frames. *(Luxsor disk 1 was the third; it is fixed
+   and now matches the reference exactly — see below. It was already fixed when
+   this list was written, which is the argument for item 2.)*
 2. **A fresh 68-title AV sweep.** The fixes above are systemic — a memory
    translation, a sub-system handshake, a display latch and a shared-window
    gate — and the set has not been re-measured since. Build the "before" from the same tree in the same
@@ -579,101 +584,57 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 6. **Cassettes** — separate section in `CONTINUATION.md`, five of six images work
    on hardware.
 
-## Luxsor disk 1 — the CPU runaway is FIXED; it still renders black
+## Luxsor disk 1 — FIXED, and how a fixed title kept reading as broken
 
-`software/D77/LUXSOR_1.D77`, md5 `62c6c90f8843bdad05fec7d906ecdea4`.
-Ground truth is checked in at `vsim/sweep/luxsor-ref/` — `ref_700.png` is the
-title screen, `ours_frame_0700_black.png` is what we draw. Regenerate with the
-command in that directory's README.
+`software/D77/LUXSOR_1.D77`, md5 `62c6c90f8843bdad05fec7d906ecdea4`. Measured
+2026-09-01 on a `make clean` build of HEAD:
 
-**What was wrong, and is now fixed.** Both faults below were real and are
-committed; the chain that produced the "CPU runaway" is closed.
+| vsim frame | ours | reference | agreement |
+|---|---|---|---|
+| 600 / 700 | 98.30 % in 378 colours | 98.30 % in 378 colours | **100.00 %** |
+| 1980 | 26.6 % in 22 | 27.2 % in 22 | 88.3 % |
 
-1. **A pending NMI survived the `$FD13` sub-system reset and fired on an
-   uninitialised stack.** `rtl/mc6809i.v` computed `NMIMask` correctly but never
-   consulted it where the interrupt is *recognised* — the instruction fetch and
-   CWAI tested `NMILatched` alone. `NMILatched` is set by an async block with no
-   reset, so an NMI latched *before* the reset stayed pending across it. The
-   main CPU writes `$FD13` at `$E539` (frame 235), the sub restarts at `$E000`
-   (its type-C reset vector, TK p.88), and after **one** instruction it vectored
-   to `$FEBF` (the type-C NMI vector) with `S=$FFFD` — the value
-   `CPUSTATE_RESET` loads. The 12-byte push went to `$FFF1`, inside sub-monitor
-   ROM, so pushes were discarded and `PULS Y,PC` at `$FF69` returned ROM bytes
-   as a PC. The sub then walked a `NEG <$00` sled from `$8DE0`. The MC6809
-   inhibits NMI after RESET until S is loaded precisely to prevent this; the fix
-   gates both recognition points on `NMIMask`. `SYNC` is deliberately left
-   alone — it exits on any pending line whether or not the interrupt is masked.
+Frames 600 and 700 are byte-identical to each other and the independent dump
+`Luxsor (FM77AV) (Disk 1).d77` produces the same PNG, so it is now the gate row
+**`av-luxsor1`** (on the conventionally-named file, because `av_add` looks for a
+lower-case `.d77`). Past 700 it is an animated demo and the later samples are
+the usual runs-ahead phase difference, not a defect — coverage and colour counts
+track and the lead changes sign.
 
-   The earlier fix in that comment (excluding `CPUSTATE_RESET` from the
-   `s != s_nxt` test) was necessary but **not sufficient**, and the comment
-   claiming it closed the disk-2 case has been corrected in place.
+**What fixed it: `2ea9fc0`, masking NMI where the interrupt is RECOGNISED.**
+Established by reverting that one file on the same tree in the same session —
+with `rtl/mc6809i.v` back at `2ea9fc0^` the frame-700 render is 0.00 % coverage
+in 1 colour, and with it restored, 98.30 % in 378. **It is RTL, so hardware
+gains this too**; the companion kanji-window fix (`f94da08`) is sim-only.
 
-   Verified: sled gone (0 `NEG <$00`), stack now `LDS #$D000` then `$CFxx`
-   exactly as TK p.85 specifies, main-CPU runaway at `$3B1A` gone, and disk
-   reads went from stalling to **tracks 0-62, 1356 DMA reads**. The sub now sits
-   in a healthy mailbox wait at `$C07A` (`LDA $d380 / BEQ`).
+**Why this file said "it still renders black" for a whole session.** The claim
+and the artifact behind it, `vsim/sweep/luxsor-ref/ours_frame_0700_black.png`
+(now deleted, along with that whole directory — the gate row supersedes it),
+were produced at 22:13 and the two fixes were committed at 22:16 and 22:17.
+Nothing re-rendered afterwards. The section then reasoned from that stale black
+frame to a next step — "probe `analog_code_next` and the twelve `*SHIFT`
+registers in `PAL.v`" — which was wrong twice over: the title was not black any
+more, and the planes had never been the fault even when it was.
 
-2. **The kanji ROM window was dead in simulation only.** `FM-7_MiSTer.sv`
-   connects `.KANJI_ADDR/RD/GNT/READY/DATA` on **both** its core instance and
-   `SDRAM_MUX`; `vsim/sim.v` connected them only on `SDRAM_MUX`. So `kanji_rd`
-   never reached the arbiter, `KANJI_GNT` never asserted, and all 3104 reads of
-   `$fd22/$fd23` returned `$00`. Luxsor is the first title in the set that reads
-   kanji at all. Fixed in `vsim/sim.v`; reads now return real glyph data.
-   **Hardware was never affected** — do not go looking for this on the DE10.
+**In the black state the VRAM was already perfect.** Dumped with the NMI fix
+reverted, `FM7_VRAM_DUMP` is **byte-identical to 77AVEMU on all 98,304 bytes** —
+the same file the fixed build produces. So were the raster's reads: with
+`make DEBUG_PLANES=1` (added with this correction) every counter down to the
+12-bit code is identical in the two states — `anynonzero` 1,815,008, `code_nz`
+14,138,553, `code_or` `$fff`, all twelve per-plane counts equal to the digit.
+The **only** thing that moves in the whole video path is what the palette RAM
+answers: `q_nz` **234,780 against 13,787,206** for the same codes.
 
-**`--kanji-check` is a FALSE instrument — do not trust it.** Its comment claims
-it reads "back through the `$fd20-$fd23` window" and is "the only thing that
-proves the download, the base address, the arbiter and the prefetch all line
-up". It does none of that: it reads `u_sdram.mem[]` directly out of the Verilog
-hierarchy and compares against the file. It passed 16/16 while the window was
-returning `$00` for every read. It proves the download landed at the right base
-and nothing else. Use `make DEBUG_KANJI=1` (added this session) to watch the
-real request/grant/ready handshake in `rtl/KANJI.v` and `rtl/SDRAM_MUX.v`.
+That is the finding worth carrying forward. The picture was in VRAM, the raster
+fetched it correctly and built the right 12-bit code for every pixel, and the
+screen was still black — because the palette entries those codes index were
+black, which "84,630 writes with full `$00-$0f` range on all three guns" cannot
+see. **A write count is not a content check.** See REFERENCE.md trap 82.
 
-**Where it stands now: the bytes are stored and the raster shows none of them.**
-Everything upstream of the 320-mode plane path is measured good:
-
-| checked | result |
-|---|---|
-| VRAM contents | **42.26% non-zero, 41,543 bytes over 9 planes** (`FM7_VRAM_DUMP=<path>` — note the name, `FM77AV_VRAM_DUMP` silently writes nothing). Bank 1 fully populated; bank 0 non-zero only in the second 8 KB half of each gun |
-| `$FD12` mode bit | 320 mode **on** at render time — last write `$40` at frame 878. `av_mode_320 <= DIN[6]` is right |
-| analog palette | **84,630 writes**, full `$00-$0f` level range on all three guns. Not black |
-| `$D430` page select | 1222 writes alternating `$84`/`$e4` (display+active page 0 then 1). Page flipping works |
-| `$FD37` multipage | game **never writes it**; `m46` resets to `8'h0` = all six G/R/B display bits enabled (TK p.479: `1 = disable`, and TK p.322 `CLR $FD37` = "DISPLAY PAGE ENABLE") |
-| the 12 plane wires | `SVDATAB3..B0/R3..R0/G3..G0` are wired CRTRAM -> core -> PAL, and the shift registers load them on `sftlod` |
-
-**So the next thing to chase is inside `CRTRAM.v` -> `PAL.v`:** whether the
-twelve planes carry real data at `sftlod` time in 320 mode, and whether
-`analog_code_next` is therefore non-zero. If the code is stuck at 0 the palette
-returns entry 0, which the reset identity ramp makes black — that is exactly the
-symptom. Probe `analog_code_reg` and the twelve `*SHIFT` registers on `SFTCLK`
-before touching anything.
-
-**Constraints that are still live, and cheap:**
-
-1. **It reproduces on an INDEPENDENT dump.** `LUXSOR_1.D77` is a different file
-   from `Luxsor (FM77AV) (Disk 1).d77` (`5da20f511fdbd946fa8c26643d78c9e8`) and
-   fails identically. **It is not a bad image.**
-2. **Disk 2 of the same game is PERFECT** — 81.7% against 81.7%. Same core, same
-   machine: whatever disk 1 does differently is the fault, and that is a much
-   smaller search than the whole video path.
-3. **It is NOT a regression.** The build that rendered is the one that *loses*
-   the `$FD05` sub-BUSY race; HEAD matches the reference there and goes blank.
-   The old picture was an artifact of being wrong. **Do not revert the
-   cycle-steal change to "fix" it** — it is more correct (77AVEMU's
-   `CRTCHaltsSubCPU` defaults false, XM7's `cycle_steal` true) and gained six
-   titles.
-
-**Hypotheses already dead — do not re-run these:**
-
-| checked | result |
-|---|---|
-| the all-zero digital palette | **NOT the cause.** Disk 2 has the identical all-zero digital palette and renders 81.7%. Both disks write `$fd38-$fd3f` to zero themselves, and so does the reference |
-| the halted sub CPU | **NOT the difference.** Ours is 96.0% halted with `SHALTn=0`, but the reference writes `$FD05` identically and still draws |
-| the FIRQ vector `$3B1A` | **not corruption.** Software installs it at frame 234 from `pc=$E09B` and it reads back byte-exact; only 4 accesses in the whole run. Downstream of fault 1 above, now gone |
-| the `$FFE0-$FFFD` decode gap | real but **not this bug.** `bootram_sel` stops at `$FFE0`, so the vector table falls through to main RAM at `phys=$3FFF6` where CSP gives it a dedicated 30-byte array. It round-trips correctly, so it did not cause this. Worth fixing on its own account |
-| our MMR-off physical map | **correct.** Logical `$XXXX` -> physical `$3XXXX` matches CSP's `main_begin = 0x30000` exactly |
-| render size | 320x200 reference against our 640x200 proves **nothing**: this sim always emits 640x200. Check `$FD12` bit 6 instead |
+*(The old section's "VRAM 42.26% non-zero, bank 0 non-zero only in the second
+8 KB half of each gun" is therefore not a measurement of this fault at all — it
+came from some earlier build and was carried forward. It is 58.89% and complete,
+and was before the fix too.)*
 
 
 ## How to not waste the first hour
@@ -712,10 +673,24 @@ versions; these are the ones that bit hardest.
 
 ## Validating a change
 
-`cd vsim && ./run_tests.sh` — eleven rows, screenshots *and* counters, exits
-non-zero on any difference. Both this session's RTL fixes passed it unchanged.
-Bless with `BLESS=1 ./run_tests.sh` and say why in the same commit; a blessed
-reference with no explanation is indistinguishable from an unnoticed regression
-later. For breadth, `sweep/av-sweep.sh <outdir> 6 2000` then
+`cd vsim && ./run_tests.sh` — **twelve** rows, screenshots *and* counters, exits
+non-zero on any difference. Bless with `BLESS=1 ./run_tests.sh` and say why in
+the same commit; a blessed reference with no explanation is indistinguishable
+from an unnoticed regression later.
+
+**Two rows moved on 2026-09-01 and both blesses are explained here.**
+
+* `av-luxsor1` is **new** — see the Luxsor section. It is the only row that
+  takes an NMI across the `$FD13` sub-system reset, which is the fault nothing
+  in the gate could previously catch.
+* `av-wizardry4`'s I/O counter went **887023 -> 887135**, screenshot unchanged.
+  Not an RTL change: it is `f94da08`, the commit that connected the core's
+  `KANJI_*` ports in `vsim/sim.v`. Confirmed by reverting that commit's five
+  files on the same tree — the counter goes back to 887023 and the row is `ok`.
+  The blessed reference simply predated the commit, so **the "gate 11/11" this
+  file used to claim was measured with a pre-`f94da08` binary.** A clean build
+  of HEAD is 3,532,680 bytes; the binary sitting in `vsim/obj_dir/` was
+  3,532,968. If the gate disagrees with you on one counter, `make clean` and
+  re-run before believing either number. For breadth, `sweep/av-sweep.sh <outdir> 6 2000` then
 `sweep/compare-ref.py <outdir>` — move the per-frame `_frame_NNNN.png` samples
 aside first or they are counted as titles.
