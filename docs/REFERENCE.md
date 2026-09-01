@@ -1467,6 +1467,55 @@ confident wrong answer at least once:
     which is exactly what a loose reference is not. Luxsor is now `av-luxsor1`
     and that directory is deleted.
 
+83. **"N instructions per frame" is an average, and a DEAD CPU has one too.**
+    Little Box disk A was on the actionable list for a session as "main CPU at
+    816 instr/frame against a healthy ~7400", which reads as starvation and
+    points at cycle-stealing, wait states or bus contention. It is none of
+    those. The main CPU runs at **8414 instructions/frame — faster than the
+    reference's 6985 — and then STOPS at frame 68**; the low average is a
+    healthy CPU divided by a run it was dead for 96 % of.
+
+    Two ways to see it, both free. **Bucket an existing `--trace-io` log by its
+    frame column** (`awk '{print $1}' io.log | uniq -c`): the last access is at
+    frame 68 and the remaining 1900 frames are empty. And **an empty
+    `--trace-cpu` window is evidence, not a broken flag** — asking for frames
+    300-303 produced a zero-byte file, and that *was* the answer. Before
+    theorising about why a CPU is slow, establish that it is still running.
+
+84. **An address translation that never reaches the CHIP SELECT is a map that
+    lies, and `--trace-mem` shows both halves — read them together.** For
+    logical `$f004` under MMR the trace printed `phys=$0e004`, which is
+    correct, alongside `-> $bd rom=$bd`, which is the ROM byte. `AVMEM`
+    translated the address; `RAM1HB2n` in `ROMS.v` is built from the LOGICAL
+    address alone (`~(MADDRBUS[15] & FCXXn & ff_q)`), so `core.v`'s read mux
+    took the ROM arm however the MMR had been programmed. **The address being
+    right proves nothing about which memory answered.**
+
+    Cost: Little Box disk A and In the Dream disk A, the last two CORE-BLANK
+    rows in the 68-title AV set, both fixed by the one guard. In the Dream had
+    carried a *wrong* diagnosis since `233c2aa` — "pre-existing sub deadlock" —
+    and the sweep had already hinted at it (trap 82's companion: its main was
+    7286/frame and its sub 976, both inside the normal band, so it had no
+    counter-level signature at all).
+
+85. **Comparing the two machines' I/O SEQUENCES localises a divergence to one
+    access, but only after two corrections.** Little Box's fault came down to
+    write **20,862** of 20,862 identical ones. What breaks the comparison:
+
+    * **The reference's `--trace-io` logs the sub CPU too.** 77AVEMU emits
+      `IO:D408` lines that this core's `$fdxx`-only trace never has, and the
+      first "divergence" is that. Filter to `by Main CPU` and `IO:FD..`.
+    * **The two machines are not at the same point at the same frame number.**
+      This core runs the AV main CPU ~20 % faster (8414 instr/frame against
+      6985), so at a matched frame it is thousands of writes AHEAD, and the
+      naive diff reports our extra writes as the divergence. Run the reference
+      **further in frames** until the sequences overlap, then diff.
+
+    Both are the same instinct as trap 63, **never compare two instruments or
+    two window lengths** — and note that this one is a sequence comparison
+    precisely because a state-at-an-instant comparison is confounded when the
+    speeds differ (trap 79).
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

@@ -382,6 +382,35 @@ assign buzzer = SOUND;
 assign rgb = AV_MODE_320 ? AV_ANALOG_RGB :
              { {8{grb[1]}}, {8{grb[2]}}, {8{grb[0]}} };
 
+// With MMR enabled the AV's PHYSICAL map decides ROM against RAM, and the FM-7
+// $fd0f ROM/RAM window does not get a vote.
+//
+// RAM1HB2n is "F-BASIC ROM selected" and ROMS.v builds it from the LOGICAL
+// address alone (`~(MADDRBUS[15] & FCXXn & ff_q)`), so an MMR-translated access
+// to $8000-$fbff took the ROM arm below however the translation had been
+// programmed. The address was right -- AVMEM computed phys=$0e004 for logical
+// $f004 and the trace's `phys=` column says so -- and the DATA came from ROM
+// anyway, which is a memory map that translates the bus and then ignores it.
+//
+// Little Box disk A is the case. It saves $fd8f/$fd93, points logical $f000 at
+// physical $0e000, enables MMR and calls its own disk loader with `JSR $f000`.
+// Here that ran the BIOS at $f000 instead, and the BIOS path it landed in pops
+// its own return address into X at $f026 -- so the `RTS` at $f03d consumed the
+// two saved register bytes as a PC and the main CPU left for $3f3e, a page of
+// zeroes, at frame 68. It then walked a `NEG <$00` sled through the $fdxx page
+// with DP=$fd until an illegal opcode stopped it dead, which is why the run
+// averages 288 instructions/frame against the reference's 6985 and the screen
+// stays black. Both machines' main-CPU I/O writes are IDENTICAL for 20,861
+// writes and diverge on the one after the `$fd93 <- $80` that turns MMR on.
+//
+// blk_d_sel ($3xxxx) is the FM-7 page, so a translation that lands back there
+// SHOULD still see the FM-7 decode -- that is what AV_FM7PAGE_SEL carries, and
+// why the guard is "translated and not on the FM-7 page" rather than "MMR on".
+// $fc00-$ffff is never translated (AVMEM's own condition), so the boot ROM and
+// vectors are untouched by this.
+wire AV_MMR_OFFPAGE = machine_av && AV_MMR_ENABLED &&
+                      (MADDRBUS < 16'hfc00) && ~AV_FM7PAGE_SEL;
+
 assign MDATABUS_in =
   ~(RFD00n & RFD01n) ? MKDATA :
   ~(IOSn | RFD02n) ? PERIPH_out :
@@ -416,7 +445,7 @@ assign MDATABUS_in =
   //
   // SHALTn is active low, so SHALTn=1 is "sub running" and the window is shut.
   ~(SUBSELn | RDQEn) ? (SHALTn ? 8'hff : SRDATA_out) :
-  ~(BTROMn | BTRDYn) | ~RAM1HB2n ? ROMDATA :
+  ~(BTROMn | BTRDYn) | (~RAM1HB2n & ~AV_MMR_OFFPAGE) ? ROMDATA :
   // `(MADDRBUS[15] & FCXXn)` is $8000-$fbff with the $fd0f window switched to
   // RAM, and without it that whole 31 KB READ AS ZERO.
   //
