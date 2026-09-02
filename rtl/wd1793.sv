@@ -939,32 +939,56 @@ always @(posedge clk_sys) begin
 									if(state != STATE_IDLE) state <= STATE_ABORT;
 									else begin
 										{s_wrfault,s_seekerr,s_crcerr,s_lostdata, s_drq_busy} <= 0;
-										// I3 (bit 3) is "interrupt immediately". On an
-										// IDLE controller this used to clear the error
-										// bits and stop, so INTRQ was never raised --
-										// the command write above has already done
+										// ANY of I0-I3 raises INTRQ, not just I3.
+										// On an IDLE controller this used to clear the
+										// error bits and stop, so INTRQ was never raised
+										// -- the command write above has already done
 										// `s_intrq <= 0` and nothing set it again,
 										// because only STATE_ENDCOMMAND does.
 										//
-										// Both references raise it. 77AVEMU's base
-										// DiskDrive schedules a callback when the
-										// controller is not busy and (cmd & 8)
-										// (diskdrive.cpp:1169-1172), and the callback
-										// lands in FM77AVFDC::MakeReady(), which sets
-										// state.IRQ = true (fm77avfdc.cpp:42).
+										// CSP is explicit and is the primary authority
+										// here: `// force interrupt if bit0-bit3 is high
+										// / if(cmdreg & 0x0f) { set_irq(true); }`
+										// (mb8877.cpp:1191 cmd_forceint). 77AVEMU agrees
+										// and goes further -- FM77AVFDC::IOWrite raises
+										// it for ANY $Dx, bits or no bits, and routes it
+										// to MAIN_IRQ_SOURCE_FDC as well
+										// (fdc/fm77avfdc.cpp:626-630).
 										//
-										// Xanadu (Disk A) is the title that found this:
-										// it writes $D8 to $FD18 at pc=$035D with the
-										// FDC idle, then polls $FD1F at $035F for b6.
-										// This core answered $3F 2159554 times and never
-										// drew a pixel; the reference answers $7F and
-										// goes on to draw the title screen.
+										// WHERE THEY DISAGREE, and which we follow: on a
+										// bare $D0 (no I bits) CSP does NOT interrupt and
+										// 77AVEMU does. We follow CSP, which is also what
+										// the WD1793 datasheet specifies -- $D0 is
+										// "terminate with no interrupt".
+										//
+										// Two titles found this, one bit apart. Xanadu
+										// (Disk A) writes $D8 -- I3, interrupt
+										// immediately -- at pc=$035D with the FDC idle
+										// and polls $FD1F at $035F for b6; this core
+										// answered $3F 2159554 times and never drew a
+										// pixel. Xanadu Scenario II (Disk D) writes $D4
+										// -- I2, interrupt on the next INDEX PULSE -- and
+										// waits on an IRQ handler to set bit 6 of $001F,
+										// spinning at $01b7 forever. `din[3]` fixed the
+										// first and left the second: both machines' main
+										// CPU I/O writes are identical for 37 writes,
+										// ours stops dead on the $D4 and the reference
+										// goes on to issue 3566 Read Address commands.
+										//
+										// The conditional sources are not modelled as
+										// conditions -- I0 (not-ready to ready), I1
+										// (ready to not-ready) and I2 (index pulse) all
+										// interrupt at once here, as they do in both
+										// references. The index pulse in particular is
+										// only ever 200 ms away (s_index above), so the
+										// difference is a latency no title has been
+										// observed to depend on.
 										//
 										// Route through ENDCOMMAND rather than setting
 										// s_intrq here, so the raise happens on the
 										// following cycle and shares the one path that
 										// ends a command.
-										if(din[3]) state <= STATE_ENDCOMMAND;
+										if(|din[3:0]) state <= STATE_ENDCOMMAND;
 									end
 								end
 							'hF:  // WRITE TRACK
