@@ -174,10 +174,11 @@ and `sweep/cohort.py` for the tooling.
     python3 cohort.py next --size 40    # draw the next cohort
     python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
 
-**Coverage: 320/395 (81.0%).** Cohorts 01-08 retired. 75 disks remain.
+**Coverage: 360/395 (91.1%).** Cohorts 01-09 retired. 35 disks remain.
 
 | cohort | result |
 |---|---|
+| 09 | **0 core bugs in 40 disks.** 21 MATCH, 8 TEXT-ONLY, 10 BOTH-BLANK, 1 REF-WORSE, **0 CORE-BLANK, 0 CORE-WORSE**. 9 of 40 AV. Its two largest coverage gaps inside MATCH are both known classes, checked across four frames: Yellow Lemon 93.5 against 66.8 is this core running AHEAD of a progressive draw, and Space Bee 16.3 against 8.1 is an animation sampled at a different phase |
 | 08 | **0 core bugs in 40 disks.** 17 MATCH, 11 TEXT-ONLY, 12 BOTH-BLANK, **0 CORE-BLANK, 0 CORE-WORSE**. 7 of 40 AV. It also retired the Death Force item below |
 | 07 | **1 real bug**: Xanadu Scenario II (Disk D - Program), blank at all four samples against the reference's 19.7-20.2% in 8 colours on all four. Two of its three faults fixed (`338e936`, `40728f1`); still blank. 18 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. **7 of 40 AV**, and only two of those are identifiable by filename |
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
@@ -632,9 +633,11 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
    the transfer window sits — or to find a title that discriminates without
    depending on it.
 
-   Then **draw cohort 08** (`python3 sweep/cohort.py next --size 40`). 115 FM-7
-   disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
-   set is AV software** — screen before sweeping, with `sweep/probe.sh`.
+   Then **draw cohort 10** (`python3 sweep/cohort.py next --size 40`) — **35
+   FM-7 disks remain**, so it is the last one and `cohort.py all <outdir>` is
+   the validation pass after it. Screen before sweeping, with `sweep/probe.sh`;
+   the whole pipeline runs unattended as one chain now (screen, split, sweep
+   both halves on their own machines, references at the matched instant).
 1. ~~Little Box disk A / In the Dream disk A.~~ **Both fixed by `6f2817e`** —
    one guard, because the MMR was translating the address without deciding ROM
    against RAM. The AV set has **no CORE-BLANK rows left**, verified by a full
