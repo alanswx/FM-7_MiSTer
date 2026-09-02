@@ -178,7 +178,7 @@ and `sweep/cohort.py` for the tooling.
 
 | cohort | result |
 |---|---|
-| 07 | **1 real bug**: Xanadu Scenario II (Disk D - Program) blank at all four samples against the reference's 19.7-20.2% in 8 colours on all four. 18 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. **7 of 40 AV**, and only two of those are identifiable by filename |
+| 07 | **1 real bug**: Xanadu Scenario II (Disk D - Program), blank at all four samples against the reference's 19.7-20.2% in 8 colours on all four. Two of its three faults fixed (`338e936`, `40728f1`); still blank. 18 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. **7 of 40 AV**, and only two of those are identifiable by filename |
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
 | 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
 | 06 | **0 core bugs in 40 disks.** Its one finding was LUXSOR_1 blank against the reference's 27.1%, reproducing the disk-1 fault on an INDEPENDENT dump while LUXSOR_2 matched — **since fixed** by `2ea9fc0`; both dumps now match. 19 MATCH, 14 BOTH-BLANK/TEXT-ONLY, 2 REF-WORSE. 9 of 40 AV |
@@ -596,12 +596,25 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
 
 ## Open work, highest value first
 
-0. **Xanadu Scenario II (Disk D - Program)** — cohort 07's one finding, and the
-   only CORE-BLANK row anywhere in the collection right now. Blank at all four
-   sampled frames (0.00-0.04 %) where the reference draws 19.7-20.2 % in 8
-   colours at every one, so it has the *persistent* signature the method says to
-   trust. A sibling disk of the same game was fixed by the Force Interrupt fix
-   (`0db06c8`) in cohort 02, which is the first place to look.
+0. **Xanadu Scenario II (Disk D - Program)** — cohort 07's one finding and the
+   only CORE-BLANK row in the collection. **Three faults in series, two fixed**,
+   and it still renders blank:
+
+   | | fault | |
+   |---|---|---|
+   | 1 | Force Interrupt ignored I0-I2, so its `$D4` never raised INTRQ and the loader spun at `$01b7` forever | fixed, `338e936` |
+   | 2 | READ ADDRESS returned CRC bytes `00 00`, and the protection checks them | fixed, `40728f1` |
+   | 3 | one extra leading `$FE` in the reference's `$FD1B` read stream that ours lacks | **open** |
+
+   Main-CPU write agreement went 37 -> 54 -> 57 across the two fixes, and the
+   READ ADDRESS records are now byte-identical to the reference's. Fault 3 is
+   the live one: the one-byte offset is why the loader asks for sector 2 where
+   the reference asks for sector 1. It is **not** ReadAddress adding an address
+   mark — `DiskDrive::DiskImage::ReadAddress` returns exactly six bytes, C H R N
+   CRC CRC — so it is whatever the data register holds when the loader first
+   reads it. **Decide it from the reference's data-register model, not from more
+   tracing of ours**; the same leading `$FE` shows up in the boot ROM's sector
+   read at `$ff98`, so it is systematic rather than particular to this title.
 
    Then **draw cohort 08** (`python3 sweep/cohort.py next --size 40`). 115 FM-7
    disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
