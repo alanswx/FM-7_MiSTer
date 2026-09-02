@@ -361,6 +361,47 @@ always @(posedge clk_sys) begin
 	end
 end
 
+// The ID field's CRC, as READ ADDRESS reports it.
+//
+// A .d77 does not store the two CRC bytes -- it stores a per-sector STATUS byte
+// ($a0 = ID CRC error, $b0 = data CRC error), which is a different thing -- so
+// they have to be computed, and both references do compute them. This used to
+// return `read_addr[4] <= 0; read_addr[5] <= 0;` and that is invisible until a
+// title CHECKS them, because the C/H/R/N in front of them were already right.
+//
+// Xanadu Scenario II (Disk D - Program) checks them. Its loader issues
+// READ ADDRESS seventeen times around the track and reads the six-byte record
+// each time; the CHRN matched the reference exactly and the CRC did not:
+//
+//   reference   00 01 01 03 ED 7E    00 01 02 03 B8 2D    00 01 03 03 8B 1C
+//   this core   00 01 01 03 00 00    00 01 02 03 00 00    00 01 03 03 00 00
+//
+// A CRC is exactly the field a copy-protection routine wants, because it cannot
+// be forged from an idealised layout. The title then fed a byte derived from it
+// back to $FD1B and asked for a different sector than the reference did.
+//
+// Standard floppy ID CRC: CRC-16-CCITT, polynomial $1021, seeded $FFFF, taken
+// over the three $A1 sync bytes and the $FE address mark and then the four CHRN
+// bytes. The preamble is constant, so its result is folded in as ID_CRC_SEED
+// rather than recomputed -- verified against the reference's own output above,
+// all four records, before being written here.
+localparam [15:0] ID_CRC_SEED = 16'hB230;   // CRC-16-CCITT of $A1 $A1 $A1 $FE
+
+function [15:0] crc16_ccitt;
+	input [15:0] crc;
+	input  [7:0] data;
+	integer i;
+	begin
+		crc16_ccitt = crc ^ {data, 8'd0};
+		for (i = 0; i < 8; i = i + 1)
+			crc16_ccitt = crc16_ccitt[15] ? ((crc16_ccitt << 1) ^ 16'h1021)
+			                              :  (crc16_ccitt << 1);
+	end
+endfunction
+
+wire [15:0] id_crc = crc16_ccitt(crc16_ccitt(crc16_ccitt(crc16_ccitt(
+	                     ID_CRC_SEED, edsk_trackf), edsk_sidef), edsk_sector), edsk_sizecode);
+
 wire        rde = rd & io_en;
 wire        wre = wr & io_en;
 always @(posedge clk_sys) begin
@@ -549,6 +590,8 @@ always @(posedge clk_sys) begin
 						read_addr[1] <= edsk_sidef;
 						read_addr[2] <= edsk_sector;
 						read_addr[3] <= edsk_sizecode;
+						read_addr[4] <= id_crc[15:8];
+						read_addr[5] <= id_crc[7:0];
 						state        <= STATE_READ;
 					end
 					else
