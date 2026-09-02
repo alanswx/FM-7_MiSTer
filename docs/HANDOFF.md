@@ -174,10 +174,11 @@ and `sweep/cohort.py` for the tooling.
     python3 cohort.py next --size 40    # draw the next cohort
     python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
 
-**Coverage: 280/395 (70.9%).** Cohorts 01-07 retired. 115 disks remain.
+**Coverage: 320/395 (81.0%).** Cohorts 01-08 retired. 75 disks remain.
 
 | cohort | result |
 |---|---|
+| 08 | **0 core bugs in 40 disks.** 17 MATCH, 11 TEXT-ONLY, 12 BOTH-BLANK, **0 CORE-BLANK, 0 CORE-WORSE**. 7 of 40 AV. It also retired the Death Force item below |
 | 07 | **1 real bug**: Xanadu Scenario II (Disk D - Program), blank at all four samples against the reference's 19.7-20.2% in 8 colours on all four. Two of its three faults fixed (`338e936`, `40728f1`); still blank. 18 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. **7 of 40 AV**, and only two of those are identifiable by filename |
 | 01 | **0 core bugs in 40 disks.** All 12 blanks were blank on the reference too |
 | 02 | **4 real bugs**, 3 fixed. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
@@ -316,18 +317,25 @@ both flagged rows caught by the new steps rather than by later archaeology.
   did. Run from the SAME frame they agree; the snapshot was simply from a
   different moment.)*
 
-- **Death Force is blank on the FM-7: sub BUSY is stuck at 1.** Diagnosed, not
-  fixed. `BUSY=1`, `$fd05` reads `$fe`, and the main CPU polls `$FD05`
-  **1,094,760 times against the reference's 131,773** — from frame 0 straight
-  through, not a transient. The sub CPU runs (19.2M instructions, pc `$c090` in
-  sub RAM) but touches `$D40A` only **8 times** against Ys II's 869, so it never
-  reaches its idle loop to clear BUSY. Downstream everything starves: reads stop
-  after **track 0**, the PSG is never touched (`$FD0D`/`$FD0E`/`$FD15`/`$FD16`
-  all zero against 2,088/696/4,530/1,510), not one analog-palette entry is
-  written where the reference writes 4,096, and VRAM ends at 147 non-zero bytes
-  against 14,349. Same shape as the FM Sound Editor fault: the sub is waiting on
-  something this core never answers. Trace the sub side at `$c090` and find what
-  it polls.
+- ~~Death Force is blank on the FM-7: sub BUSY is stuck at 1.~~ **NOT
+  ACTIONABLE — retired 2026-09-02.** The collection holds two distinct Death
+  Force images and they behave differently:
+
+  | image | this core | reference |
+  |---|---|---|
+  | `Death Force (1987)(River Hill)(JP)` | **healthy on BOTH machines** — main ~8500/f, sub ~7100/f, BUSY=0, `$D40A` 2322 reads / 2320 writes | MATCH, ours 2.6 % against 2.5 % |
+  | `Death Force (FM77AV) (Disk A)` | the recorded pathology, on both machines: `BUSY=1`, `SHALTn=0`, `$fd05` reads `$fe`, `$D40A` touched 2/1 | **blank at all four frames, 0.00 %** |
+
+  So the state described is real, but it is on the disk **the reference cannot
+  boot either** — BOTH-BLANK, checked at 600/1000/1400/1980 on both sides — while
+  the other image runs and matches. Nothing here is worse than the reference.
+
+  The claim that made it look actionable was "the main CPU polls `$FD05`
+  1,094,760 times **against the reference's 131,773**". If the reference draws
+  nothing on that disk at any frame, its 131,773 polls are its own stall and not
+  a healthy baseline, so the two numbers were never comparable. **Two files with
+  the same title are two titles** — `cohort.py` deduplicates by content for
+  exactly this reason, and prose does not.
 - **Audit the AV table's 27 BOTH-BLANK rows for machine.** Two of the three bugs
   found in this round were hiding in exactly that verdict, on the wrong machine.
   BOTH-BLANK is the bucket nobody re-examines, which is what makes it worth
