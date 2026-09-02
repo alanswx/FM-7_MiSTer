@@ -1516,6 +1516,39 @@ confident wrong answer at least once:
     precisely because a state-at-an-instant comparison is confounded when the
     speeds differ (trap 79).
 
+86. **77AVEMU's FDC data stream is OFF BY ONE BYTE, so it is not a byte-level
+    oracle for disk data — and the DISK IMAGE is.** On the first sector read of
+    Xanadu Scenario II disk D, both machines deliver exactly 256 bytes and the
+    values disagree:
+
+        image / this core   1A 50 86 FD 1F 8B 34 10 ... FF FA 08 FE
+        77AVEMU             FF 1A 50 86 FD 1F 8B 34 ... 00 FF FA 08
+
+    Parsed straight out of the `.d77` (track offset table at `$20`, 16-byte
+    sector header, data length at `+$0e`), **our 256 bytes equal the image's 256
+    exactly**, and the reference's equal the image shifted right by one with a
+    stale `$FF` prepended and the image's last byte dropped. Its data register
+    lags a byte, so the byte it drops at the end of one transfer surfaces at the
+    head of the next — which is why its READ ADDRESS burst opens with the `$FE`
+    that was the sector's final byte.
+
+    **The cost of not knowing this is chasing the reference's bug as your own.**
+    That leading `$FE` was written up here as a fault of ours -- "one extra
+    leading `$FE` in the reference's stream that ours lacks" -- and the next step
+    would have been to make this core produce it. Byte COUNTS are still
+    comparable and were identical throughout (256 for `$80`, 6 for `$C0`); it is
+    the alignment that is not.
+
+    **So for FDC data, diff against the image, not against 77AVEMU.** It costs
+    twenty lines of Python and it is ground truth rather than a second opinion.
+    The reference stays the right oracle for everything that is not a byte
+    stream -- command sequences, register values, timing, coverage -- and the
+    sequence comparison in trap 85 is unaffected, because that compares WRITES.
+
+    Undetermined, and worth settling before anyone "fixes" this core to match:
+    whether real hardware frames the transfer as we do or as 77AVEMU does. The
+    image proves what the DATA is, not where the transfer window sits.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

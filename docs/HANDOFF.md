@@ -604,17 +604,25 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
    |---|---|---|
    | 1 | Force Interrupt ignored I0-I2, so its `$D4` never raised INTRQ and the loader spun at `$01b7` forever | fixed, `338e936` |
    | 2 | READ ADDRESS returned CRC bytes `00 00`, and the protection checks them | fixed, `40728f1` |
-   | 3 | one extra leading `$FE` in the reference's `$FD1B` read stream that ours lacks | **open** |
+   | 3 | the loader asks for sector 2 where the reference asks for sector 1 | **open** |
 
    Main-CPU write agreement went 37 -> 54 -> 57 across the two fixes, and the
-   READ ADDRESS records are now byte-identical to the reference's. Fault 3 is
-   the live one: the one-byte offset is why the loader asks for sector 2 where
-   the reference asks for sector 1. It is **not** ReadAddress adding an address
-   mark — `DiskDrive::DiskImage::ReadAddress` returns exactly six bytes, C H R N
-   CRC CRC — so it is whatever the data register holds when the loader first
-   reads it. **Decide it from the reference's data-register model, not from more
-   tracing of ours**; the same leading `$FE` shows up in the boot ROM's sector
-   read at `$ff98`, so it is systematic rather than particular to this title.
+   READ ADDRESS records are now byte-identical to the reference's.
+
+   **Fault 3 cannot be triaged by comparing byte streams with 77AVEMU, because
+   the reference's stream is the one that is wrong.** Its FDC data register lags
+   a byte (trap 86): on the boot sector this core delivers exactly the image's
+   256 bytes and the reference delivers them shifted, a stale `$FF` prepended
+   and the image's last byte dropped. The loader fills a buffer from that stream
+   and picks its sector from the buffer, so the two machines pick differently —
+   and matching the reference here would mean reproducing its defect.
+
+   What is left is a real difference with no oracle yet: **the title renders on
+   the reference and not here**, so something is still wrong, but the byte-level
+   comparison cannot say what. Next step is to establish what REAL hardware
+   does with the transfer framing — the image proves what the data is, not where
+   the transfer window sits — or to find a title that discriminates without
+   depending on it.
 
    Then **draw cohort 08** (`python3 sweep/cohort.py next --size 40`). 115 FM-7
    disks remain. The rate is roughly 5 real bugs per 200, and **a quarter of the
