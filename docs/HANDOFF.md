@@ -174,10 +174,13 @@ and `sweep/cohort.py` for the tooling.
     python3 cohort.py next --size 40    # draw the next cohort
     python3 cohort.py retire NN <dir>   # only if OUR side rendered all 40
 
-**Coverage: 360/395 (91.1%).** Cohorts 01-09 retired. 35 disks remain.
+**Coverage: 395/395 (100.0%). THE COHORT CAMPAIGN IS COMPLETE** — cohorts
+01-10 retired, every distinct disk in the collection swept on its own machine
+and scored against a reference rendered at the matched instant.
 
 | cohort | result |
 |---|---|
+| 10 | **0 core bugs in 35 disks** by the standard scoring. 16 MATCH, 12 TEXT-ONLY, 7 BOTH-BLANK, **0 CORE-BLANK, 0 CORE-WORSE**. 8 of 35 AV. One candidate hiding under a TEXT-ONLY label — see the `[b]`-dump item below |
 | 09 | **0 core bugs in 40 disks.** 21 MATCH, 8 TEXT-ONLY, 10 BOTH-BLANK, 1 REF-WORSE, **0 CORE-BLANK, 0 CORE-WORSE**. 9 of 40 AV. Its two largest coverage gaps inside MATCH are both known classes, checked across four frames: Yellow Lemon 93.5 against 66.8 is this core running AHEAD of a progressive draw, and Space Bee 16.3 against 8.1 is an animation sampled at a different phase |
 | 08 | **0 core bugs in 40 disks.** 17 MATCH, 11 TEXT-ONLY, 12 BOTH-BLANK, **0 CORE-BLANK, 0 CORE-WORSE**. 7 of 40 AV. It also retired the Death Force item below |
 | 07 | **1 real bug**: Xanadu Scenario II (Disk D - Program), blank at all four samples against the reference's 19.7-20.2% in 8 colours on all four. Two of its three faults fixed (`338e936`, `40728f1`); still blank. 18 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY. **7 of 40 AV**, and only two of those are identifiable by filename |
@@ -633,11 +636,16 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
    the transfer window sits — or to find a title that discriminates without
    depending on it.
 
-   Then **draw cohort 10** (`python3 sweep/cohort.py next --size 40`) — **35
-   FM-7 disks remain**, so it is the last one and `cohort.py all <outdir>` is
-   the validation pass after it. Screen before sweeping, with `sweep/probe.sh`;
-   the whole pipeline runs unattended as one chain now (screen, split, sweep
-   both halves on their own machines, references at the matched instant).
+   **The cohort campaign is finished** — 395/395. What is left of it is
+   `cohort.py all <outdir>`, the validation pass that confirms nothing regressed
+   across the ten cohorts; it is not where bugs are expected, because every disk
+   has already been through one.
+
+   The pipeline runs unattended as one chain now (screen with `sweep/probe.sh`,
+   split, sweep both halves on their own machines, references at the matched
+   instant). Neither of those two steps worked at the start of 2026-09-01:
+   `probe.sh` was documented but absent, and `sweep-list.sh` told you to set a
+   `MACHINE` value the simulator rejects without erroring (trap 74).
 1. ~~Little Box disk A / In the Dream disk A.~~ **Both fixed by `6f2817e`** —
    one guard, because the MMR was translating the address without deciding ROM
    against RAM. The AV set has **no CORE-BLANK rows left**, verified by a full
@@ -653,7 +661,29 @@ photographs at `FRAMES - 20` (600), so the reference renders at **604**.
    0 CORE-WORSE**, and the 29 BOTH-BLANK rows are blank on the reference too.
    **The unknowns are on the FM-7 half now**, which is why item 0 is the top of
    this list.
-3. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
+3. **Three `[b]` dumps fall back to F-BASIC on the reference and RUN AWAY
+   here.** `[Compilation] Ura DOS 01 [b]` and both dumps of `[Compilation]
+   Juegos 5 [b]`, in cohorts 07, 09 and 10. The reference draws the F-BASIC 3.0
+   banner — what an FM-7 shows when a disk will not boot — and this core is
+   blank at all four sampled frames with the main CPU in a `NEG <$00` sled
+   (`$2ab4` on Ura DOS 01). The verdict reads TEXT-ONLY rather than CORE-BLANK
+   only because the reference's fallback banner is 1.8 % coverage.
+
+   **Not necessarily a core bug, and the reason matters.** Both machines agree
+   for 14 writes — restore, track 0, side 0, sector 1, Read Sector — and then
+   the reference does MORE disk work while this core jumps into what it loaded.
+   That is consistent with the reference's own off-by-one (trap 86) making its
+   boot check fail where our correct data passes, in which case a runaway on a
+   knowingly-bad dump is what real hardware would do too.
+
+   One concrete lead, **not yet verified**: the 256 bytes this core returned for
+   that read do not equal the image's track 0 / side 0 / sector R=1, which
+   begins `20 2B 54 68 …` = `" +This is IPL pr…"`. That check was made at the
+   end of a long session and two earlier parses of the same data were wrong, so
+   **redo it before building on it** — in particular confirm which track and
+   side the controller actually served, since the boot ROM issues four `$0A`
+   restores first.
+4. **Shounen Mike** at 85.79 % — close, and the remaining difference is colour:
    the logo reads grey/olive here and green on the reference.
 4. **Per-row gate shot frames.** `av-kohakuiro` and `av-wizardry4` are attract
    animations photographed at one global `SHOT_AT`, so they catch whatever
