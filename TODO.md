@@ -42,92 +42,67 @@ and the FM77AV's YM2203, so `$FD15`/`$FD16` are decoded and the joysticks sit on
 the chip's real I/O ports. **The combined work ships as GPLv3** — see
 `Readme.md`. That is a one-way door and it is already through.
 
+**The FM-7 disk collection is fully swept.** 395 of 395 distinct disks, ten
+cohorts, each screened for machine and scored against a frame-matched 77AVEMU
+render. Seven core bugs in the whole collection, six fixed. **The FM77AV set has
+no blank-screen bugs left** — 30 of 68 MATCH, 0 CORE-BLANK, 0 CORE-WORSE, the
+rest blank on the reference too.
+
+**The gating risk is now hardware, not software.** Synthesis is current and the
+design fits with timing closed, but **none of the last 151+ commits has been RUN
+on a DE10-Nano**. Sim proves "behaviour unchanged"; only hardware proves the
+glitch-domain classes, and this project has one live example already — the
+joystick works in simulation and is dead on the board.
+
 **Open, in priority order:**
 
-0. **Cassette loading does not work, for any tape, and there is no reference to
-   diff against.** Every layer below the CPU is provably fine -- on a commercial
-   dump (Fighter) our core mounts the image, runs the motor 87.8% of the run,
-   emits 162019 cassette-bit edges at the right average rate, and consumes 37%
-   of the image -- and F-BASIC still sits on `Searching`. The bit-level sync
-   between the decoded waveform and the FM-7's tape routine is where it fails.
+0. **Cassettes: finish the long run and record the answer.** *(This item used to
+   read "Cassette loading does not work, for any tape, and there is no reference
+   to diff against." Both halves were wrong — see `docs/CONTINUATION.md`.)*
 
-   **Ruled out, with measurements:**
-   * *The images.* Commercial dumps (Fighter, Hydlide, Sokoban) fail exactly like
-     the generated magazine tapes.
-   * *The tape generator.* `tools/make_fm7_basic_t77.cpp` already calls 77AVEMU's
-     own `T77Encoder::EncodeFromFMFile` via `FM7Lib::TextTo0A0`, so the tapes are
-     built by the reference implementation.
-   * *Pulse decode.* `DEBUG_TAPE=1` shows clean alternating entries at exactly the
-     `0x1A`/`0x30` widths 77AVEMU's decoder defines for off/on bits.
-   * *The port interface.* `PERIPHERAL.v` matches MAME's `fm7.cpp` structurally:
-     motor from the `$FD00` write latch bit 1 (`m10[1]`), tape out on `CN3[4]`,
-     `$FD02` read bit 7 = cassette in with bits 6:1 high.
-   * *Playback rate.* Forcing the tick from 9.125 us to 8.458 us -- the value that
-     hits the manual's documented 1600 baud -- moves edges 162019 -> 174939 and
-     consumption 37% -> 40% and changes nothing else.
+   The reference **can** drive tapes; `tools/77avemu_headless.cpp` never bound
+   the data recorder's `Outside_World`, so every reference tape run died of
+   SIGSEGV the moment the motor turned. One line. With it fixed the reference
+   reaches `Found: Fighter` at 60,000,000 steps.
 
-   **No reference.** `tools/77avemu_headless.cpp` never gets the tape moving at all
-   (`tape_ptr=0`, motor off, and a device I/O error on Hydlide), so `seqdiff.py` --
-   the technique carrying every other investigation here -- does not apply. Fixing
-   the harness's tape path is the prerequisite for working on this efficiently, and
-   it is our code, not the emulator's.
+   And the loads were never failing here so much as never finishing: **a tape
+   load is minutes of machine time, not the ~20 s a disk title needs**, and
+   every tape default in this harness is sized for disks. At 8M steps the
+   reference shows exactly the `Searching` state that every previous
+   investigation recorded as failure. On this core a 3700-frame run is nowhere
+   near: motor on 87.8% of it, 162,019 cassette-bit edges, 37% of the image
+   consumed — all healthy, just unfinished.
 
-   See section 1b of REFERENCE.md for the format as the Fujitsu manual states it,
-   including an unresolved 1.846-vs-2.0 discrepancy in the t77 bit widths that
-   should be settled before anyone derives a tape clock from microseconds.
+   **What is actually open is one measurement**: run this core long enough on
+   Fighter to reach `Found:` or to prove it cannot. Budget many thousands of
+   frames. Until that lands, "do tapes work" is unanswered rather than answered
+   no.
 
-0. **The FM-7 half has never been compared to a reference.** The AV sweep has
-   been scored against 77AVEMU twice; the FM-7 sweep never has, not once. Its
-   last data is `results-P4-19-f1500.tsv` from 2026-08-08: 488 disk images, 350
-   swept, **153 blank** -- a blank count with no reference behind it, which on
-   the AV side turned out to be 27 titles that were blank on the reference too.
-   Treat 153 as an upper bound, not a bug count.
+   Separately and still open: **Crash Ball reports `Device I/O Error` after
+   `Found: CRB`** on hardware and in simulation, while the reference loads and
+   plays the same image (74.0% coverage). The header block is found, so it is a
+   data-block checksum or framing case, not sync. See `HARDWARE-HANDOFF.md`.
 
-   The pipeline works in FM-7 mode; this is measured, not assumed. 77AVEMU
-   takes `--fm7` and `sweep_one.sh:30` already parameterises the machine
-   (`MACHINE:-fm7`), `ref-sweep.sh` takes `--fm7` as arg 4. Two titles
-   rendered at the matched frame:
+0. ~~The FM-7 half has never been compared to a reference.~~ **DONE — the
+   cohort campaign is complete, 395/395 distinct disks (100%), 2026-09-03.**
 
-   | title | reference PNG |
-   |---|---|
-   | Thexder `[b]` (known-good control) | 351,646 B |
-   | Albatross Disk 1 (blank in our Aug-8 sweep) | **57,173 B** |
+   Every disk in the collection has been screened for machine, swept on the one
+   it belongs to, and scored against a 77AVEMU render at the matched instant.
+   Ten cohorts. `docs/HANDOFF.md` carries the per-cohort table and
+   `sweep/cohort-results/` the data.
 
-   Joined through `compare-ref.py`, **both score MATCH** -- Albatross 95.7%
-   coverage against the reference's 98.3%, Thexder 61.1% against 60.8% -- and
-   the repo's own `gallery.py` scores them differs 0 / close 2. Looked at, not
-   just measured: Thexder's title screen is the same logo, landscape and
-   copyright line on both, and Albatross draws the same sky, treeline and
-   flagstick with our render still showing the katakana title logo the
-   reference has already cleared, i.e. the two machines a moment apart in one
-   attract sequence.
+   **Seven core bugs in 395 disks, six fixed.** Cohorts 08, 09 and 10 found none
+   at all. The one still open is Xanadu Scenario II disk D, two of whose three
+   faults are fixed (`338e936`, `40728f1`).
 
-   **So Albatross renders on this core today and the Aug-8 record calling it
-   blank is stale.** That is the sharpest reason not to trust the 153: it is
-   151 commits old, and the one title pulled from it at random has since been
-   fixed by something. Re-sweep before triaging any of it.
+   The old "153 blank" figure it used to quote was an upper bound with no
+   reference behind it, and the campaign is what replaced it: most blanks are
+   blank on the reference too — data disks, save disks, `[b]` dumps and images
+   whose boot sector halts.
 
-   **Coverage is now tracked in cohorts** (`vsim/sweep/cohort.py status`), so
-   this stops being a number anybody has to remember. 395 distinct FM-7 disks
-   after deduplicating by content, plus 6 excluded for safe-name collisions
-   (`cohorts/excluded-name-collisions.txt` -- sweeping those needs
-   `sweep_one.sh` to disambiguate the name, trap 68). Method is in
-   `docs/TESTING.md`; the short version is draw 40, sweep both sides, join,
-   fix what it finds, retire, draw again. A cohort only retires when **our**
-   side rendered all 40 -- `cohort.py retire` refuses otherwise and names the
-   disks it would have buried.
-
-   | cohort | disks | result |
-   |---|---|---|
-   | 01 | 40 | retired. **0 CORE-BLANK.** 16 MATCH, 12 BOTH-BLANK, 9 TEXT-ONLY, 2 REF-WORSE, 1 CORE-MONO |
-   | 02 | 40 | swept, **4 real CORE-BLANK**: 3 fixed (`0db06c8`, `6f1512d`), Marchen Veil diagnosed below. 15 MATCH, 14 BOTH-BLANK, 5 TEXT-ONLY, 1 REF-WORSE |
-
-   Cohort 01 found **no core bug in 40 disks**. Twelve are blank on our side
-   and all twelve are blank on the reference too. Its one CORE-MONO row
-   (Ishtar) is noise on both machines, and the four rows that first read as
-   CORE-BLANK were all scoring artifacts -- see trap 70, which is the durable
-   part of that cohort. On this evidence the Aug-8 "153 blank of 350" says
-   almost nothing about how many core bugs remain on the FM-7 side.
+   What is left of the campaign is `cohort.py all <outdir>`, the validation pass
+   that confirms nothing regressed across the ten cohorts. It is not where bugs
+   are expected; every disk has already been through one.
 
 ### Marchen Veil [b]: an over-declared sector count breaks the D77 scan
 

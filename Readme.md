@@ -10,18 +10,32 @@ extensive main/sub and interrupt-path work.
 
 ## State
 
-Boots F-BASIC from ROM, cassette and disk; runs games from `.d77`; boots OS-9
-Level 1 to its shell.
+Boots F-BASIC from ROM and disk; runs games from `.d77`; boots OS-9 Level 1 to
+its shell. FM77AV mode boots and renders, including 320x200 4096-colour titles.
 
-**197 of the 350 FM-7 floppy images in the Neo Kobe collection render a real
-screen.** That raw figure includes secondary data disks, save disks, `[b]` bad
-dumps and images whose boot sector deliberately halts — see
-[docs/TESTING.md](docs/TESTING.md) for how to count honestly.
+**The whole FM-7 disk collection has been swept against a reference: 395 of 395
+distinct images (100%).** Each was screened for which machine it is really for,
+run on that machine, and scored against a 77AVEMU render taken at the same
+machine-time instant. That found **seven core bugs in 395 disks, six of them
+fixed**; the last three cohorts found none. Most images that render nothing here
+render nothing on the reference either — they are data disks, save disks, `[b]`
+bad dumps, or their boot sector deliberately halts. See
+[docs/TESTING.md](docs/TESTING.md) for the method and
+[docs/HANDOFF.md](docs/HANDOFF.md) for the per-cohort results.
+
+On the FM77AV side, **no title in the 68-image set renders blank where the
+reference draws**: 30 MATCH, 0 CORE-BLANK, 0 CORE-WORSE.
 
 Verified working against the reference emulators: the FDC, the main/sub
 handshake and its BUSY completion flag, the shared-RAM aperture, the full
 keyboard (both routings, shift/ctrl/graph/kana/break), the kanji ROM, the
-boot-ROM bank select, the PSG and joysticks, and the main-CPU interrupt path.
+boot-ROM bank select, the PSG and joysticks, the main-CPU interrupt path, and
+the AV memory-management unit, analog palette and drawing ALU.
+
+**Not yet proven on hardware.** The design fits the DE10-Nano and closes timing,
+but the last 151+ commits have only ever been run in simulation. Cassette
+loading is unresolved — see `TODO.md` item 0 — and 2DD media and multi-disk
+`.d88` are not supported.
 
 ## Quick start
 
