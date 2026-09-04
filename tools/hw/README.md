@@ -80,11 +80,25 @@ An MGL that mounts disks needs a `<reset delay="1" hold="1"/>` or they never boo
    completion message. Every `ssh` in these scripts uses `-n`, and loops should
    read their list on fd 3. A green run that tested almost nothing is the worst
    failure mode in this directory.
-8. **A low lit-% is not automatically a fault — look at the picture.** In one
+8. **The AV machine toggle DROPS KEYPRESSES, roughly 2 runs in 10, and a
+   dropped toggle looks exactly like a core regression.** The title boots as
+   FM-7, renders nothing, and you get a pure-black frame — the same signature
+   as a real blank-screen bug. On `4b447f3` this produced two false regressions
+   in one 10-title subset (Luxsor 1 and Psy-O-Blade); re-run three times each,
+   all six rendered, Psy-O-Blade byte-identically. **Never write down a black
+   AV capture until you have repeated it.** Raw down/up with holds is already
+   the reliable path (`osdkey.py` documents why the named `kbd:` actions are
+   worse) and it is still not perfect.
+9. **Never drive the MiSTer from two processes at once.** A second
+   `load_core` racing the first silently corrupts whichever result lands.
+   `docs/HANDOFF.md` warns of three gate runs invalidated this way; a fourth
+   was lost on `4b447f3` by starting a retry loop while a sweep was still on
+   its last title. Check `pgrep -f runtest.sh` before starting anything.
+10. **A low lit-% is not automatically a fault — look at the picture.** In one
    30-title sweep, five separate "suspiciously small" captures were all correct:
    a Japanese chapter menu, an aircraft data screen, a sparse vector demo frame,
    a title-plus-menu, and the `How many disk drives?` prompt.
-9. **`{boot DOS mode}` disks need Boot ROM bank 2**, which `runtest.sh` does not
+11. **`{boot DOS mode}` disks need Boot ROM bank 2**, which `runtest.sh` does not
    set. OS-9 captured through a plain MGL load is a black screen and means
    nothing; drive it with `osdkey.py 2` and it reaches its `Time ?` prompt.
 

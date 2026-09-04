@@ -6,6 +6,80 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Hardware: 4b447f3's multi-disk containers WORK on the FPGA, and the AV toggle is flaky
+
+Built and deployed `4b447f3` -- 0 errors, 8m59s, **24,251 / 41,910 ALMs (58%)**,
+**516 / 553 M10K, unchanged**, 4,097,480 memory bits, no negative slack in any
+corner (tightest +0.392 ns, the HDMI PLL). This was the **first Quartus compile
+of that commit**, which its own message flagged as unbuilt. Two things it
+confirms that no simulator could:
+
+- The **declared wire array** the author used instead of an inline `'{...}`
+  assignment pattern in the port map is the right call -- Quartus 17.0.2 Lite
+  takes it, and Verilator would never have reported the difference.
+- The container walk **costs no RAM**, exactly as claimed: 516/553 M10K and
+  4,097,480 memory bits, identical to `356f6d8` to the byte. The 37 free blocks
+  stay free, which matters because widening the address path to 24 bits (to
+  reach the 25 sub-disks still past 1 MB) is costed at ~1 M10K. +288 ALMs.
+
+## The feature works: one file, three different programs
+
+`XANADU.D77`, the 2.4 MB six-disk container, driven from the new OSD rows.
+Data in `tools/hw/results/hw-4b447f3.tsv`.
+
+| Disk 1 image | result |
+|---|---|
+| 1 (index 0) | **XANADU DISK A boots** -- 48.86% lit, 8 colours, and **byte-identical (35,594 b) to the standalone `Xanadu (Disk A - Program).d77`** captured on the previous core |
+| 2 (index 1) | **black, 0.04%** -- the user disk, correctly non-booting |
+| 3 (index 2) | **`XANADU COPY TOOL Ver 1.0`** -- a different program entirely |
+| 8 (index 7) | byte-identical to index 2 -- **clamps to the last reachable disk** |
+
+Index 0 matching the standalone dump byte-for-byte is the strongest single
+check here: it confirms "selecting disk 0 is bit-identical to the previous
+behaviour" on real silicon, not just in the gate. The clamp is the other one --
+an earlier draft of this commit wrapped 20-bit arithmetic and landed in the
+middle of disk 0, so an out-of-range index returning clean, repeatable content
+is what rules that class out. Three reachable sub-disks here, consistent with
+the documented 20-bit / 1 MB limit.
+
+## Regression subset: 11 titles, 0 regressions
+
+F-BASIC, disk BASIC, Ys, the AV demo, Woody Poco and Psy-O-Blade are
+**byte-identical** to `af63b45`; Archon, Thexder, Dragon Buster, Luxsor 1 and
+Luxsor 2 agree to within an animation phase. Byte-identical is trustworthy here
+rather than the "suspect the build" trap, because the rbf demonstrably differs
+(+288 ALMs, different size) and the animated titles did move.
+
+## **The AV machine toggle drops keypresses -- about 2 runs in 10**
+
+This is the finding to carry forward, because it manufactures a false
+regression that looks exactly like a real one.
+
+In the subset, **Luxsor 1 and Psy-O-Blade both came back pure black** -- the
+signature of a title that never got switched into FM77AV mode. Re-run **three
+times each, sequentially, with nothing else touching the board, all six
+rendered correctly**: Luxsor 1 at 23.00% / 16 colours every time, Psy-O-Blade
+byte-identical at 21,195 b every time. Neither is a regression; the toggle
+simply did not land.
+
+Two rules follow, and both were violated in getting here:
+
+1. **A black AV capture is not a result until it has been repeated.** The
+   `kbd:` path is documented as dropping presses; `osdkey.py` uses raw
+   down/up with holds precisely because of that, and it is still not perfect.
+   Re-run before writing anything down.
+2. **Never drive the board from two processes at once.** The Psy-O-Blade black
+   was recorded while a retry loop this side had started against the same
+   MiSTer -- two `load_core`s racing. That result was discarded rather than
+   reported. `docs/HANDOFF.md` already warns "do not run anything alongside the
+   gate" and cites three runs invalidated that way; this is the fourth.
+
+CONF_STR gained two rows in this commit (`Disk 1 image`, `Disk 2 image`),
+shifting Boot ROM 5 -> 7 and Machine 6 -> 8. Nothing in `tools/hw/` hardcodes
+those counts any more -- see trap 4 in `tools/hw/README.md`.
+
+---
+
 # Hardware: the 130-commit sim campaign is GOOD on the FPGA -- 30 titles, 0 regressions
 
 Built and deployed `af63b45` (0 errors, 9m11s; 23,926 / 41,910 ALMs 57%,

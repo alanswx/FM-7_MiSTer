@@ -20,7 +20,23 @@ render campaign survives synthesis: **the fixes are real RTL, not simulator
 artifacts.** Full report at the top of `HARDWARE-HANDOFF.md`, data in
 `tools/hw/results/hw-af63b45.tsv`.
 
-Anything landed *after* `af63b45` is again unproven on hardware. Sim shows
+**`4b447f3`'s multi-disk containers are confirmed on the board too.** First
+Quartus compile of that commit (0 errors, 58% ALMs, **M10K unchanged at 516/553
+— the container walk really does cost no RAM**), and on `XANADU.D77` the OSD
+selector gives three different programs from one 2.4 MB file: index 0 boots
+Disk A **byte-identically to the standalone dump**, index 1 is the
+correctly-non-booting user disk, index 2 is `XANADU COPY TOOL Ver 1.0`, and an
+out-of-range index clamps cleanly rather than wrapping into disk 0. The
+declared-wire-array workaround for Quartus 17.0.2 Lite was necessary and
+sufficient. 11-title regression subset, 0 regressions.
+
+**One warning for whoever reads a hardware blank next:** the AV machine toggle
+drops keypresses about 2 runs in 10, and a dropped toggle is indistinguishable
+from a blank-screen bug — it produced two false regressions on this very run,
+both of which rendered fine on repeat. A single black AV capture is not
+evidence. See `HARDWARE-HANDOFF.md`.
+
+Anything landed *after* `4b447f3` is again unproven on hardware. Sim shows
 "behaviour unchanged"; only the board shows the glitch-domain classes.
 
 **The single most useful thing to know before you start:** most of what looks
