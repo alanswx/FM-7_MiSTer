@@ -64,6 +64,10 @@ module emu
 	input  [15:0] img_mounted,
 	input         img_readonly,
 	input  [63:0] img_size,
+	// Sub-disk selection inside a multi-disk container, one per drive.
+	// Driven by --disk-index / --disk1-index; 0 for a plain image.
+	input   [2:0] disk_index0,
+	input   [2:0] disk_index1,
 	output [31:0] sd_lba [2],
 	output [15:0] sd_rd,
 	output [15:0] sd_wr,
@@ -253,6 +257,7 @@ core u_core(
   .img_mounted  ( img_mounted[1:0]  ),
   .img_readonly ( img_readonly    ),
   .img_size     ( img_size        ),
+  .disk_index   ( '{disk_index0, disk_index1} ),
   .sd_lba       ( sd_lba          ),
   .sd_rd        ( sd_rd_0         ),
   .sd_wr        ( sd_wr_0         ),

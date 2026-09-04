@@ -109,6 +109,9 @@ static std::set<int>    screenshots_taken;
 
 static int  opt_bootrom    = 0;      // status[11:10]: 0 Basic, 1..3 DOS
 static bool opt_machine_av = false;  // status[12]: FM77AV bring-up selector
+// Sub-disk selection inside a multi-disk .d77/.d88 container, per drive.
+// 0 selects the first disk and is what an ordinary single-disk image wants.
+static int  opt_disk_index [2] = {0, 0};
 static bool opt_tape_audio = false;  // status[9]
 
 static bool  trace_io  = false;
@@ -769,6 +772,9 @@ static void print_usage(const char* argv0) {
 	printf("                            the audio output (OSD \"Tape Audio\")\n");
 	printf("  --rewind-at-frame <n>     Pulse the tape rewind bit at frame n\n");
 	printf("  --bootrom <0-3>           0 = F-BASIC (default), 1-3 = DOS boot ROMs\n");
+	printf("  --disk-index <n>          Sub-disk of a multi-disk .d77/.d88 container\n");
+	printf("                            for drive 0, 0-based (default 0)\n");
+	printf("  --disk1-index <n>         Same for drive 1\n");
 	printf("  --machine <fm7|fm77av>   Select machine family\n");
 	printf("\nRun control:\n");
 	printf("  --headless, --no-gui      No SDL window. Implied by HEADLESS=1.\n");
@@ -860,6 +866,8 @@ static int parse_args(int argc, char** argv) {
 		else if (a == "--disk1")      { const char* v = next(); if (v) disk_path1 = v; }
 		else if (a == "--tape-audio") opt_tape_audio = true;
 		else if (a == "--bootrom")    { const char* v = next(); if (v) opt_bootrom = atoi(v) & 3; }
+		else if (a == "--disk-index")  { const char* v = next(); if (v) opt_disk_index[0] = atoi(v) & 7; }
+		else if (a == "--disk1-index") { const char* v = next(); if (v) opt_disk_index[1] = atoi(v) & 7; }
 		else if (a == "--machine") {
 			const char* v = next();
 			if (v && (!strcmp(v, "fm77av") || !strcmp(v, "FM77AV"))) opt_machine_av = true;
@@ -1224,6 +1232,8 @@ static void sim_cycle() {
 	input.BeforeEval();
 
 	top->bootrom_sel = opt_bootrom;
+	top->disk_index0 = opt_disk_index[0];
+	top->disk_index1 = opt_disk_index[1];
 	top->machine_av  = opt_machine_av;
 	top->tape_audio  = opt_tape_audio;
 	top->tape_rewind = (rewind_hold > 0) || tape_rewind_pulse;

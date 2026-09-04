@@ -80,6 +80,12 @@ localparam CONF_STR = {
   "F1,t77,Load Tape;",
   "S0,d77d88,Mount Disk 1;",
   "S1,d77d88,Mount Disk 2;",
+  // A .d77/.d88 may be a CONTAINER of several complete disks -- 51 of them in
+  // the Neo Kobe set, holding 2 to 6 each. These pick which one the drive
+  // presents; they do nothing on an ordinary single-disk image, where only
+  // "1" exists. Changing one re-scans that drive, so it is a disk swap.
+  "O[15:13],Disk 1 image,1,2,3,4,5,6,7,8;",
+  "O[18:16],Disk 2 image,1,2,3,4,5,6,7,8;",
   "T[8],Tape Rewind;",
   "O[9],Tape Audio,Off,On;",
   "O[11:10],Boot ROM,0 disk,1 alt,2 dos-a,3 empty;",
@@ -123,6 +129,18 @@ wire [31:0] joy1, joy2;
 wire [1:0]  img_mounted;
 wire        img_readonly;
 wire [63:0] img_size;
+// Which sub-disk of a multi-disk .d77/.d88 container each drive presents.
+//
+// A DECLARED ARRAY, not an inline `'{...}` assignment pattern in the port map.
+// Verilator accepts the pattern; Quartus 17.0.2 Lite is the build that has to
+// synthesize this, assignment patterns in a port connection are exactly the
+// kind of SystemVerilog it is shaky on, and a simulator will never report the
+// difference. Every other array port here (sd_lba, sd_buff_din) is wired the
+// same way, so this also matches the file's own convention.
+wire  [2:0] disk_index [2];
+assign disk_index[0] = status[15:13];
+assign disk_index[1] = status[18:16];
+
 wire [31:0] sd_lba [2];
 wire [1:0]  sd_rd, sd_wr, sd_ack;
 wire  [8:0] sd_buff_addr;
@@ -337,6 +355,7 @@ core u_core(
   .img_mounted  ( img_mounted  ),
   .img_readonly ( img_readonly ),
   .img_size     ( img_size     ),
+  .disk_index   ( disk_index   ),
   .sd_lba       ( sd_lba       ),
   .sd_rd        ( sd_rd        ),
   .sd_wr        ( sd_wr        ),

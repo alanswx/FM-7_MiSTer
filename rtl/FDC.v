@@ -59,6 +59,10 @@ module FDC(
   input  [1:0]  img_mounted,
   input         img_readonly,
   input  [63:0] img_size,
+  // Which sub-disk of a multi-disk .d77/.d88 container each drive presents.
+  // 0 for an ordinary single-disk image, and 0 is bit-identical to the
+  // behaviour before container selection existed.
+  input   [2:0] disk_index [2],
   output [31:0] sd_lba [2],
   output [1:0]  sd_rd,
   output [1:0]  sd_wr,
@@ -579,6 +583,7 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_0
   .img_mounted  ( img_mounted[0]    ),
   .img_size     ( img_size[19:0]    ),
   .img_size_id  ( img_size[23:0]    ),
+  .disk_index   ( disk_index[0]     ),
   .prepare      ( prepare0          ),
   .sd_lba       ( sd_lba0           ),
   .sd_rd        ( sd_rd0            ),
@@ -622,6 +627,7 @@ wd1793 #(.RWMODE(1), .EDSK(1)) u_wd1793_1
   .img_mounted  ( img_mounted[1]    ),
   .img_size     ( img_size[19:0]    ),
   .img_size_id  ( img_size[23:0]    ),
+  .disk_index   ( disk_index[1]     ),
   .prepare      ( prepare1          ),
   .sd_lba       ( sd_lba1           ),
   .sd_rd        ( sd_rd1            ),

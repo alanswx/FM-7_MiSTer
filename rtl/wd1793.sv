@@ -65,6 +65,18 @@ module wd1793 #(parameter RWMODE=0, EDSK=1)
 	// blanked Ys - Ancient Ys Vanished Omen [a]. Addressing is still 20-bit and
 	// still reaches only the first disk; the BOUND is what had to change.)
 	input [23:0] img_size_id,
+
+	// Which disk inside a multi-disk container to present, 0-based.
+	//
+	// A .d77/.d88 container is several complete images concatenated, each with
+	// its own header and its own track table whose offsets are relative to ITS
+	// OWN start. 51 distinct containers in the Neo Kobe set hold 132 sub-disks
+	// between them (2x, 3x, 4x, 5x and 6x), and until this existed only the
+	// first of each was reachable -- a six-disk game booted and could never be
+	// swapped. Selecting disk 0 is bit-identical to the previous behaviour,
+	// because d_base is then 0 and every relative address equals the absolute
+	// one.
+	input  [2:0] disk_index,
 	output       prepare,
 	output[31:0] sd_lba,
 	output reg   sd_rd,
@@ -423,10 +435,32 @@ always @(posedge clk_sys) begin
 	reg [3:0] scan_state;
 	reg [1:0] scan_cnt;
 	reg [1:0] blk_max;
+	reg [2:0] old_disk_index = 0;
+	reg       have_image     = 0;
 
 	if(RWMODE) begin
 		old_mounted <= img_mounted;
-		if(old_mounted && ~img_mounted) begin
+		// A re-scan is what makes selecting a different sub-disk take effect,
+		// and the mount edge is NOT enough on its own: changing the OSD option
+		// moves disk_index without re-mounting the file, so without this the
+		// drive would keep the sector table it built for the previous
+		// sub-disk and the option would appear to do nothing at all.
+		//
+		// Treated exactly like a mount, because that is what it is from the
+		// machine's point of view -- the medium in the drive has changed.
+		//
+		// Gated on have_image, and that is not belt-and-braces. old_disk_index
+		// resets to 0 while disk_index may already be non-zero, so an ungated
+		// compare fires on the very first clock -- before anything is mounted.
+		// That scan runs against a zero-length image, ends immediately, and
+		// leaves the drive with no sector table at all: selecting any sub-disk
+		// but the first reported fmt=0 / bytes=0 and the title fell back to the
+		// F-BASIC banner. The render alone could not tell that apart from "this
+		// sub-disk does not boot", which is what it looks like.
+		if(old_mounted && ~img_mounted) have_image <= 1;
+		old_disk_index <= disk_index;
+		if((old_mounted && ~img_mounted) ||
+		   (have_image && (old_disk_index != disk_index))) begin
 			if(EDSK) begin
 				scan_active<= 1;
 				scan_addr  <= 0;
@@ -1268,6 +1302,18 @@ generate
 			reg        d_side;                 // physical side,  from the table
 			reg  [7:0] clr_cnt;
 			reg        clr_run;
+			reg [19:0] d_base;                 // file offset of the selected disk
+			reg  [2:0] skip_left;              // sub-disks still to step over
+
+			// Every .d77 field below is an offset from the SELECTED disk's start,
+			// not from the start of the file: the header, the track table and the
+			// table's own entries are all disk-relative. The one exception is the
+			// sector data address written into edsk[], which is what the runtime
+			// hands to the SD reader and must stay absolute.
+			reg [19:0] rel;
+			reg [20:0] next_base;
+			rel       = scan_addr - d_base;
+			next_base = {1'b0, d_base} + {1'b0, d_tot[19:0]};
 
 			old_active <= scan_active;
 			edsk_wren <= 0;
@@ -1292,6 +1338,8 @@ generate
 				d_st     <= 0;
 				clr_cnt  <= 0;
 				clr_run  <= 1;
+				d_base    <= 0;
+				skip_left <= disk_index;
 			end
 			else if(clr_run) begin
 				// Blank the sectors-per-track table so an absent track reads
@@ -1338,16 +1386,40 @@ generate
 				if(scan_addr < 16) begin
 					if(sig_pos[7:0] != scan_data) edsk_bad <= 1;
 				end
-				if(scan_addr == 20'h1a) d_wpb      <= |scan_data;
-				if(scan_addr == 20'h1c) d_tot[7:0] <= scan_data;
-				if(scan_addr == 20'h1d) d_tot[15:8]<= scan_data;
-				if(scan_addr == 20'h1e) d_tot[23:16]<=scan_data;
-				if(scan_addr == 20'h1f) begin
+				if(rel == 20'h1a) d_wpb      <= |scan_data;
+				if(rel == 20'h1c) d_tot[7:0] <= scan_data;
+				if(rel == 20'h1d) d_tot[15:8]<= scan_data;
+				if(rel == 20'h1e) d_tot[23:16]<=scan_data;
+				if(rel == 20'h1f) begin
 					if(!edsk_bad) fmt <= FMT_EDSK;
 					else if(~|scan_data && ~|d_tot[23:20] &&
 					        (d_tot[23:0] <= img_size_id) && (d_tot[19:0] >= 20'h2b0)) begin
-						fmt    <= FMT_D77;
-						d77_wp <= d_wpb;
+						// This header is sound. If sub-disks remain to be
+						// stepped over, move the base to the next one and keep
+						// scanning WITHOUT committing -- the body below stays
+						// gated on FMT_D77, so nothing is parsed meanwhile.
+						//
+						// The skip stops early rather than running off the end:
+						// asking for disk 5 of a two-disk image leaves you on
+						// the last one that exists instead of on no disk at
+						// all, and a drive that never becomes ready is a much
+						// worse answer than the wrong disk.
+						// 21 bits on purpose. d_base and d_tot are both 20, and
+						// their sum is not: XANADU.D77's disk 3 would start at
+						// 831,680 + 415,840 = 1,247,520, which wraps to 198,944
+						// in 20-bit arithmetic, sails through a "< 1 MB" test
+						// and lands the parser in the middle of disk 0. The
+						// clamp then reports fmt=0 and a drive that never
+						// becomes ready, which reads as a container the scanner
+						// cannot parse rather than as an out-of-range request.
+						if(|skip_left && (next_base < {1'b0, scan_limit})) begin
+							d_base    <= next_base[19:0];
+							skip_left <= skip_left - 1'd1;
+						end
+						else begin
+							fmt    <= FMT_D77;
+							d77_wp <= d_wpb;
+						end
 					end
 					else begin
 						// Neither: stop the scan (the driver samples var_size
@@ -1359,21 +1431,21 @@ generate
 				end
 
 				if(fmt == FMT_D77) begin
-					if(scan_addr < 20'h2b0) begin
+					if(rel < 20'h2b0) begin
 						//-----------------------------------------------
 						// $20..$2af -- 164 x 4-byte LE track offsets.
 						// Present ones are appended to d77_pres in table
 						// order, which is also the order they appear in
 						// the file; absent ones (offset 0) are dropped.
 						//-----------------------------------------------
-						case(scan_addr[1:0])
+						case(rel[1:0])
 							0: d_acc[7:0]    <= scan_data;
 							1: d_acc[15:8]   <= scan_data;
 							2: d_acc[19:16]  <= scan_data[3:0];
 							3: if(|d_acc && ~|scan_data && (d77_cnt < 8'd164)) begin
-									d77_pres[d77_cnt] <= {scan_addr[9:2] - 8'd8, d_acc};
+									d77_pres[d77_cnt] <= {rel[9:2] - 8'd8, d_acc};
 									d77_cnt <= d77_cnt + 1'd1;
-									d_max   <= scan_addr[9:2] - 8'd8;
+									d_max   <= rel[9:2] - 8'd8;
 								end
 						endcase
 					end
@@ -1388,7 +1460,7 @@ generate
 						// present index = track*2+side, so tracks is
 						// (d_max>>1)+1 and spt_size is twice that. Settled
 						// here, five bytes before the first spt[] write.
-						if(scan_addr == 20'h2b0) spt_size <= {d_max[7:1], 1'b0} + 8'd2;
+						if(rel == 20'h2b0) spt_size <= {d_max[7:1], 1'b0} + 8'd2;
 
 						//-----------------------------------------------
 						// A track ENDS where the next present track begins,
@@ -1410,7 +1482,7 @@ generate
 						// Bounding by extent is also the general answer: no
 						// lying count can now walk off its own track.
 						//-----------------------------------------------
-						if((d77_rd < d77_cnt) && (scan_addr == d77_off)) begin
+						if((d77_rd < d77_cnt) && (rel == d77_off)) begin
 							// this byte is header +0 of the track's first sector
 							d_track <= d77_idx[7:1];
 							d_side  <= d77_idx[0];
