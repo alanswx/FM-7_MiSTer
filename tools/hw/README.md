@@ -16,6 +16,9 @@ output for OSD capture and audio measurement.
 |---|---|
 | `mkey.py osd down confirm` | named mrext key actions (`kbd:`), plus `sleep=N` and raw `kbdRaw:<code>` forms |
 | `osdkey.py <bank>` | OSD navigation with raw down/up and real holds — sets Boot ROM bank and resets. Named `kbd:` actions drop presses; this is the reliable way |
+| `avtoggle.py` | flips the Machine row to FM77AV and resets — what every AV title needs |
+| `runtest.sh <label> <mgl> [av] [settle]` | one test: load MGL, optionally switch to FM77AV, settle, screenshot |
+| `score.py <png>...` | size, **lit-pixel %** and distinct-colour count per shot — the pass/fail signal that byte size is not |
 | `type.py '<text>' [--enter]` | types ASCII into the FM-7 with raw scancodes on the **JIS** layout |
 | `shoot.sh <label>` | MiSTer-side screenshot into `shots/<label>.png` — **core video only, no OSD** |
 | `osdcap.sh <label>` | HDMI capture-card frame into `shots/<label>.png` — **the only way to see the OSD** |
@@ -44,14 +47,31 @@ An MGL that mounts disks needs a `<reset delay="1" hold="1"/>` or they never boo
    `select=gte(n,40)` frame-skip is required, not decoration.
 4. **Menu positions shift when `CONF_STR` changes.** `Mount Disk 2` added a
    row: pre-two-drive builds need 4 downs to Boot ROM, current head needs 5.
-   A hardcoded count silently lands on Aspect ratio.
+   A hardcoded count silently lands on Aspect ratio. **This bit twice** —
+   `osdkey.py` still carried the 4-down count as late as `af63b45`. The row map
+   at HEAD is in `osdkey.py`'s docstring; update it there when `CONF_STR`
+   changes. Current: Boot ROM = 5 downs, Machine = 6, and "Reset and close OSD"
+   is 4 further from Boot ROM / 3 from Machine.
 5. **Do not verify and measure in the same run.** An OSD capture between
    setting an option and resetting inserts 10–60 s and broke OS-9 booting —
    false failures only, and a wrongly reported "OS-9 does not boot at all".
 6. **Screenshot byte size is not a pass/fail signal.** A garbage frame
    measured 7444 bytes against a 5.3 KB banner. Compare against a reference
-   image and score *lit* pixels separately; re-bless when output resolution
-   changes.
+   image and score *lit* pixels separately (`score.py`); re-bless when output
+   resolution changes. A fully black 640x200 frame is **1771 bytes, 0.00% lit,
+   1 colour** — that exact triple is the blank signature.
+7. **`ssh` without `-n` eats the caller's stdin.** A `while read ... done < list`
+   loop driving `runtest.sh` ran **one** of 30 titles and then exited 0 with a
+   completion message. Every `ssh` in these scripts uses `-n`, and loops should
+   read their list on fd 3. A green run that tested almost nothing is the worst
+   failure mode in this directory.
+8. **A low lit-% is not automatically a fault — look at the picture.** In one
+   30-title sweep, five separate "suspiciously small" captures were all correct:
+   a Japanese chapter menu, an aircraft data screen, a sparse vector demo frame,
+   a title-plus-menu, and the `How many disk drives?` prompt.
+9. **`{boot DOS mode}` disks need Boot ROM bank 2**, which `runtest.sh` does not
+   set. OS-9 captured through a plain MGL load is a black screen and means
+   nothing; drive it with `osdkey.py 2` and it reaches its `Time ?` prompt.
 
 ## The game-independent joystick probe
 

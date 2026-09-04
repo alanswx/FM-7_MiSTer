@@ -5,6 +5,14 @@ The named `kbd:` actions drop presses often enough that a 4-down / 2-confirm
 sequence lands correctly only about a third of the time. Sending raw Linux
 keycodes as separate Down/Up messages with a real hold is far more reliable.
 
+Row map at HEAD's CONF_STR -- trap 4: a hardcoded count silently lands on the
+wrong row when CONF_STR gains an entry, and this file carried the pre-two-drive
+counts (4 then 3) long after "Mount Disk 2" shifted everything down one:
+
+    0 Load Tape   1 Mount Disk 1   2 Mount Disk 2   3 Tape Rewind
+    4 Tape Audio  5 Boot ROM       6 Machine        7 Aspect ratio
+    8 Reset       9 Reset and close OSD
+
 usage: osdkey.py <bank>     # opens OSD, selects Boot ROM, sets bank, resets
 """
 import os, sys, time
@@ -22,9 +30,9 @@ def main(bank):
             ws.send(f"kbdRawUp:{code}");   time.sleep(GAP)
     try:
         ws.send("kbd:osd"); time.sleep(2.5)
-        key(DOWN, 4)          # -> Boot ROM
+        key(DOWN, 5)          # -> Boot ROM  (see the row map above)
         key(ENTER, bank)      # cycle 0 -> bank
-        key(DOWN, 3)          # -> Reset and close OSD
+        key(DOWN, 4)          # -> Reset and close OSD
         key(ENTER, 1)
     finally:
         ws.close()

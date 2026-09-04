@@ -48,11 +48,21 @@ render. Seven core bugs in the whole collection, six fixed. **The FM77AV set has
 no blank-screen bugs left** — 30 of 68 MATCH, 0 CORE-BLANK, 0 CORE-WORSE, the
 rest blank on the reference too.
 
-**The gating risk is now hardware, not software.** Synthesis is current and the
-design fits with timing closed, but **none of the last 151+ commits has been RUN
-on a DE10-Nano**. Sim proves "behaviour unchanged"; only hardware proves the
-glitch-domain classes, and this project has one live example already — the
-joystick works in simulation and is dead on the board.
+**The hardware gate is GREEN as of `af63b45`.** *(This item used to read "none
+of the last 151+ commits has been RUN on a DE10-Nano" — that is no longer
+true.)* `af63b45` was built, deployed and swept over 30 titles on the real
+board: 57% ALMs, 516/553 M10K, no negative slack in any corner, **zero
+regressions**, and the three AV titles that were pure black on the previous rbf
+— Luxsor disks 1 and 2, Psy-O-Blade — now draw real game art. Druaga and Dragon
+Buster, the last two open hardware items, are also closed. Every title was
+captured on the *old* core first, so these are measured before/after deltas.
+See `HARDWARE-HANDOFF.md` (top section) and
+`tools/hw/results/hw-af63b45.tsv`.
+
+The standing caution still applies to anything landed *since* that commit: sim
+proves "behaviour unchanged", only hardware proves the glitch-domain classes,
+and this project has one live example — the joystick worked in simulation and
+was dead on the board.
 
 **Open, in priority order:**
 
@@ -134,6 +144,17 @@ A fix has to bound the per-track scan by the track's actual extent rather than
 trusting the header count, and widen or saturate `sectors_per_track`. Check it
 against Daisenryaku, whose page-zero path is sensitive to the same search
 (FDC.v's ID-cylinder note), and against the two titles above.
+
+### The Xanadu family draws nothing in SIM -- but Disk A draws on HARDWARE
+
+**Read this first.** On the DE10-Nano at `af63b45`, **Xanadu (Disk A -
+Program) renders its full title screen** -- 48.86% lit, 8 colours, logo and
+figures intact (`tools/hw/results/hw-af63b45.tsv`). The section below, written
+from simulation, says this title draws nothing and never has. Both cannot be
+current. **Re-run Disk A in sim at HEAD before spending a day on the sub-CPU
+handoff theory** -- if sim now draws it too, everything below is stale and
+should be deleted; if it still does not, the divergence itself is the bug and
+is far more informative than the blank screen was.
 
 ### The Xanadu family draws nothing, and never has
 

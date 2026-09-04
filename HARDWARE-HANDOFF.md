@@ -6,6 +6,94 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# Hardware: the 130-commit sim campaign is GOOD on the FPGA -- 30 titles, 0 regressions
+
+Built and deployed `af63b45` (0 errors, 9m11s; 23,926 / 41,910 ALMs 57%,
+516 / 553 M10K 93%, 4,097,480 memory bits 72%, **no negative slack in any
+corner**). The rbf it replaced dated to Aug 24 ~17:39 -- after `f03d333`'s
+CE_PIXEL fix but *before* the whole AV render campaign -- so this run covers
+roughly **130 commits and ~2,700 lines of RTL** that had never executed on a
+DE10-Nano. `sys/` is unchanged and the only `SDRAM_MUX.v` edit is inside
+`ifdef DEBUG_KANJI`, so the framework wiring that produced the past
+hardware-only failures was not in play.
+
+**Method: every title was captured on the OLD core first.** A bare pass/fail
+cannot tell a fix from something that already worked, and the three headline
+results below are only meaningful because the before-state is measured rather
+than assumed. Data: `tools/hw/results/hw-af63b45.tsv`. All 30 captured at
+**640x200**, so the CE_PIXEL geometry is stable across the batch.
+
+## The three titles that were black are black no longer
+
+Scored as *lit* pixels (non-modal-colour) and distinct colours, never bytes --
+trap 6.
+
+| title | old core | new core |
+|---|---|---|
+| Luxsor (FM77AV) Disk 1 | **0.00% lit, 1 colour** | **23.00%, 16** -- full painted cutscene, scholar at a desk |
+| Luxsor (FM77AV) Disk 2 | **0.00% lit, 1 colour** | **75.67%, 35** -- in-game playfield, radar, HUD panel, sprites |
+| Psy-O-Blade (FM77AV) Disk 1 | **0.00% lit, 1 colour** | **18.16%, 8** -- cockpit/character art |
+
+Three pure-black screens to real game art. `c726bf1` and the MMR/shared-window
+work reach the FPGA intact.
+
+## Two items on this file's open list are now closed
+
+- **Druaga and Dragon Buster** ("rendered badly at `4fcecb8`, near-black /
+  heavy artifacts, never re-tested"). Both are clean: Druaga draws its full
+  title (`HIT 8 KEY TO START`, 7 colours) and **Dragon Buster draws a complete
+  in-game attract scene** -- HUD, vitality bar, sprites, level geometry, 16
+  colours, 57.89% lit.
+- **OS-9 was never broken; the harness was.** `11-OS9.mgl` is the
+  `{boot DOS mode}` image and needs **Boot ROM bank 2 (dos-a)**, which
+  `runtest.sh` does not set. With `osdkey.py 2` it reaches
+  `**** Welcome to OS-9 Level 1 System ****` and the `Time ?` prompt. A
+  no-bank capture reads as a black screen and is not evidence of anything.
+
+## Xanadu Disk A DRAWS on hardware
+
+`TODO.md` states "the Xanadu family draws nothing, and never has", measured as
+33,108 non-zero VRAM bytes on the reference against **zero** here. On the FPGA
+at `af63b45`, **Xanadu (Disk A - Program) renders its full title screen** --
+48.86% lit, 8 colours, logo and figures intact. Either a later fix cured it and
+the TODO entry is stale, or sim and hardware disagree on this title. **Worth
+one sim run at HEAD before anyone spends a day on the sub-CPU handoff theory.**
+
+## Everything else, and what stayed the same
+
+All 30 render plausibly; no regression anywhere in the set. Thexder 60.41%,
+Deep Forest 284 colours, Ys, Hydlide II, Archon, Tritorn, Xevious, Knight,
+Dezeni, Mugen, Topple Zip, Wibarm all fine. Pro Yakyuu Fan (49.90%, 16),
+FM Sound Editor (40.99%, 8) and Wizardry IV (9.13%, 8) confirm `b523abe` and
+`c184ba3`. Titles whose low lit-% is *correct*, checked by eye rather than by
+number: Hokuto (0.92%) is its Japanese chapter menu, Daisenryaku (3.33%) its
+Harrier-II data screen, the AV demo (2.48%) a sparse vector frame, Marchen Veil
+(2.53%) its title and menu, and `31-drv1` (0.82%) the "How many disk drives?"
+prompt. **Woody Poco's title is byte-identical old to new** (18,884 b, 44
+colours) -- expected, since that work targeted the in-game playfield.
+
+**Death Force: check which dump you mean.** The FM-7 image cohort 08 retired,
+`Death Force (1987)(River Hill)(JP).d77`, runs and draws (49.10%, 6 colours) --
+`b64f1f7` holds. The *FM77AV Disk A* image is a different dump and stays blank
+here even at a 120 s settle; the sim's own f2000 row for it is likewise blank
+(PNG 3790, `SUB_PF=40`), so both sides agree and this is not a hardware fault.
+
+## Two harness bugs, both of the kind that fake a result
+
+- **`osdkey.py` carried the pre-two-drive menu counts** (4 downs to Boot ROM,
+  then 3) long after `Mount Disk 2` shifted every row down one. At HEAD's
+  `CONF_STR` Boot ROM is **5** downs and "Reset and close OSD" is **4** more;
+  the old counts land on Tape Audio and then Aspect ratio, silently. Fixed, and
+  the row map is now written into the file. This is exactly trap 4, paid twice.
+  `avtoggle.py` is new and encodes the Machine row (6 downs, then 3) that the
+  AV titles need; the AV demo rendering proves the sequence lands.
+- **`ssh` without `-n` eats the caller's stdin.** The first sweep ran *one* of
+  30 titles and then exited 0 with a completion message -- a green run that
+  tested almost nothing. `ssh -n` throughout, and the driving loop reads its
+  list on fd 3.
+
+---
+
 # Reply: Crash Ball's dump is GOOD -- the fault is ours
 
 Ran `software/Crash Ball.t77` on the reference emulator as asked. **It loads and
