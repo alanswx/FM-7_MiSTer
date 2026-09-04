@@ -17,6 +17,7 @@ output for OSD capture and audio measurement.
 | `mkey.py osd down confirm` | named mrext key actions (`kbd:`), plus `sleep=N` and raw `kbdRaw:<code>` forms |
 | `osdkey.py <bank>` | OSD navigation with raw down/up and real holds — sets Boot ROM bank and resets. Named `kbd:` actions drop presses; this is the reliable way |
 | `avtoggle.py` | flips the Machine row to FM77AV and resets — what every AV title needs |
+| `osdrows.py [label]` | the OSD row map, parsed from `CONF_STR` — the fix for trap 4; `FM7_TOP` points it at another commit's top file |
 | `runtest.sh <label> <mgl> [av] [settle]` | one test: load MGL, optionally switch to FM77AV, settle, screenshot |
 | `score.py <png>...` | size, **lit-pixel %** and distinct-colour count per shot — the pass/fail signal that byte size is not |
 | `type.py '<text>' [--enter]` | types ASCII into the FM-7 with raw scancodes on the **JIS** layout |
@@ -45,13 +46,27 @@ An MGL that mounts disks needs a `<reset delay="1" hold="1"/>` or they never boo
    the overlay. Use `osdcap.sh`.
 3. **The capture card emits black until it syncs.** `osdcap.sh`'s
    `select=gte(n,40)` frame-skip is required, not decoration.
-4. **Menu positions shift when `CONF_STR` changes.** `Mount Disk 2` added a
-   row: pre-two-drive builds need 4 downs to Boot ROM, current head needs 5.
-   A hardcoded count silently lands on Aspect ratio. **This bit twice** —
-   `osdkey.py` still carried the 4-down count as late as `af63b45`. The row map
-   at HEAD is in `osdkey.py`'s docstring; update it there when `CONF_STR`
-   changes. Current: Boot ROM = 5 downs, Machine = 6, and "Reset and close OSD"
-   is 4 further from Boot ROM / 3 from Machine.
+4. **Menu positions shift when `CONF_STR` changes — this has now bitten THREE
+   times.** `Mount Disk 2` shifted every row down one (4 downs to Boot ROM
+   became 5); `4b447f3`'s `Disk 1 image` / `Disk 2 image` shifted them two more
+   (5 became 7). A stale count does not error — it selects a different item, so
+   the run "succeeds" having set the wrong option.
+
+   **Fixed structurally: nothing hardcodes a count any more.** `osdrows.py`
+   parses `CONF_STR` out of `FM-7_MiSTer.sv` and `osdkey.py` / `avtoggle.py`
+   ask it for the row they want, printing what they resolved. Run
+   `./osdrows.py` to see the current map, or `./osdrows.py "Boot ROM"` for one
+   index.
+
+   **The catch that remains: the OSD is drawn by the core ON THE BOARD, not by
+   your working tree.** If the deployed rbf came from a different commit, point
+   the scripts at that commit's top file, or they will confidently resolve the
+   wrong row:
+
+   ```sh
+   git show <deployed-commit>:FM-7_MiSTer.sv > /tmp/top.sv
+   FM7_TOP=/tmp/top.sv ./avtoggle.py
+   ```
 5. **Do not verify and measure in the same run.** An OSD capture between
    setting an option and resetting inserts 10–60 s and broke OS-9 booting —
    false failures only, and a wrongly reported "OS-9 does not boot at all".
