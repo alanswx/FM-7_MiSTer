@@ -9,6 +9,20 @@ Branch `fdc-d77-support`, pushed to `alanswx`. Gate **12/12** — `av-luxsor1`
 added 2026-09-01, and `av-wizardry4`'s counter re-blessed; both explained under
 **Validating a change**.
 
+**The hardware gate is green too, as of `af63b45` (2026-09-03).** 30 titles run
+on a real DE10-Nano, **0 regressions**, and the three AV titles that were pure
+black on the previously deployed rbf — Luxsor disks 1 and 2, Psy-O-Blade — now
+draw real game art (0.00% lit / 1 colour → 23.00%/16, 75.67%/35, 18.16%/8).
+Druaga and Dragon Buster are also fixed. Every title was captured on the *old*
+core first, so those are measured before/after deltas rather than pass/fail.
+This matters to the sim side because it is the first evidence that the whole AV
+render campaign survives synthesis: **the fixes are real RTL, not simulator
+artifacts.** Full report at the top of `HARDWARE-HANDOFF.md`, data in
+`tools/hw/results/hw-af63b45.tsv`.
+
+Anything landed *after* `af63b45` is again unproven on hardware. Sim shows
+"behaviour unchanged"; only the board shows the glitch-domain classes.
+
 **The single most useful thing to know before you start:** most of what looks
 like a core bug in this campaign has turned out to be a MEASUREMENT defect —
 the wrong machine, the wrong frame, or the wrong reference constant. Of the

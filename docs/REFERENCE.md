@@ -1549,6 +1549,22 @@ confident wrong answer at least once:
     whether real hardware frames the transfer as we do or as 77AVEMU does. The
     image proves what the DATA is, not where the transfer window sits.
 
+87. **A TITLE is not a disk image. Two dumps of one game can give opposite
+    verdicts, so quote the filename, never the title.** Cohort 08 retired
+    "Death Force" on `Death Force (1987)(River Hill)(JP).d77`, which runs and
+    draws (49.10% lit in 6 colours on hardware at `af63b45`, so `b64f1f7`
+    holds). The FM77AV dump of the *same game* --
+    `Death Force (FM77AV) (Disk A).d77` -- is a different image and is blank on
+    both sides: 0.00% lit at a 120 s settle on hardware, and `PNG 3790` with
+    `SUB_PF=40` at f2000 in `results-av-f2000-2026-09-01-mmrfix.tsv`.
+
+    The hardware side initially read that blank as a regression in `b64f1f7`,
+    which would have been a wasted hunt through a working fix. The collection
+    holds several such pairs -- Deep Forest, Luxsor, Psy-O-Blade and Wizardry IV
+    all have both an FM-7 and an FM77AV dump under one name, and Psy-O-Blade has
+    two AV sets. **`cohort.py` identifies a disk by content hash for exactly
+    this reason; prose should quote the same thing it does.**
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

@@ -145,45 +145,33 @@ trusting the header count, and widen or saturate `sectors_per_track`. Check it
 against Daisenryaku, whose page-zero path is sensitive to the same search
 (FDC.v's ID-cylinder note), and against the two titles above.
 
-### The Xanadu family draws nothing in SIM -- but Disk A draws on HARDWARE
+### Xanadu: Disk A and XANADU.D77 are FIXED; Scenario II disk D is not
 
-**Read this first.** On the DE10-Nano at `af63b45`, **Xanadu (Disk A -
-Program) renders its full title screen** -- 48.86% lit, 8 colours, logo and
-figures intact (`tools/hw/results/hw-af63b45.tsv`). The section below, written
-from simulation, says this title draws nothing and never has. Both cannot be
-current. **Re-run Disk A in sim at HEAD before spending a day on the sub-CPU
-handoff theory** -- if sim now draws it too, everything below is stale and
-should be deleted; if it still does not, the divergence itself is the bug and
-is far more informative than the blank screen was.
+*(Superseded claim: "the Xanadu family draws nothing, and never has", with a
+sub-CPU shared-RAM handoff at `$d39d-$d3a5` as the lead. Disproven -- cohort
+02's FDC fixes cured two of the three, and the handoff theory was never the
+fault. The rest of that section is deleted rather than kept alongside this
+one.)*
 
-### The Xanadu family draws nothing, and never has
+**Fixed, and confirmed on both sides.** `0db06c8` (Force Interrupt on an idle
+controller never raised INTRQ -- Xanadu writes `$D8` to an idle FDC and polls
+`$FD1F` b6, which this core answered `$3F` 2,159,554 times) fixed **Xanadu
+Disk A**; `6f1512d` (multi-disk `.d77` containers were never parsed) fixed
+**XANADU.D77**. Both are recorded in `docs/HANDOFF.md`. Hardware agrees: on the
+DE10-Nano at `af63b45` **Xanadu (Disk A - Program) renders its full title
+screen**, 48.86% lit in 8 colours (`tools/hw/results/hw-af63b45.tsv`), so the
+fix reaches the FPGA and not just the simulator.
 
-Cohort 02's four real findings, each confirmed by looking at the picture:
-**Xanadu (Disk A)**, **XANADU.D77**, **Xanadu Scenario II (Disk D)** and
-**Marchen Veil [b]**. All four render a full title screen on 77AVEMU and a
-black screen here. (The cohort's fifth CORE-BLANK row, Return of Ishtar, is
-the same noise screen as cohort 01's Ishtar -- not a bug.)
+**Still open: Xanadu Scenario II (Disk D - Program).** Cohort 07's one real
+finding -- blank at all four samples against the reference's 19.7-20.2% in 8
+colours at every one. Two of its three faults are fixed (`338e936`,
+`40728f1`); it is still blank. See `docs/HANDOFF.md`'s cohort 07 row.
 
-**Not a regression.** All four were blank in the Aug-8 sweep too
-(`results-P4-19-f1500.tsv`, `png=3790`). The main-CPU rate has changed since
-(6698 -> 11017 per frame on Disk A) but the screen was always black.
+**Marchen Veil [b] is a different fault** and has its own section above: an
+over-declared `nsec=256` breaks the D77 scan. It reaches its title and menu on
+hardware (2.53% lit, 5 colours), so whatever remains is past the boot.
 
-**Not a wedge, and not the display path.** On Xanadu Disk A both CPUs run at
-healthy rates (11102 main / 8810 sub per frame) with 15.2M `$fdxx` cycles
-across 4200 frames, and every sampled frame from 400 to 4000 is the blank
-3790-byte PNG while the reference has the title up by frame 400. At the
-matched frame the reference holds **33108 non-zero VRAM bytes and this core
-holds ZERO** -- so nothing is ever drawn, and the palette, display enable and
-raster are all eliminated. The fault is upstream of VRAM.
-
-The lead worth following: on all three Xanadu disks the reference's **sub CPU
-executes at `$d39d-$d3a5`**, inside the shared RAM window `$d380-$d3ff`. The
-main CPU downloads a routine into shared RAM and the sub runs it from there,
-so this is a main/sub handoff, not a drawing bug. Marchen Veil's sub instead
-runs at `$c023-$c02d`, so it may be a different fault that happens to end in
-the same black screen.
-
-Measuring this needs `FM7_VRAM_DUMP`, which until `847df20` was gated
+Measuring any of this needs `FM7_VRAM_DUMP`, which until `847df20` was gated
 AV-only and silently wrote no file for FM-7 titles; note also that
 `--av-dump-frame` defaults to 870, so a shorter run writes nothing either.
 

@@ -50,14 +50,20 @@ work reach the FPGA intact.
   `**** Welcome to OS-9 Level 1 System ****` and the `Time ?` prompt. A
   no-bank capture reads as a black screen and is not evidence of anything.
 
-## Xanadu Disk A DRAWS on hardware
+## Xanadu Disk A draws on hardware -- confirming the sim fix, not contradicting it
 
-`TODO.md` states "the Xanadu family draws nothing, and never has", measured as
-33,108 non-zero VRAM bytes on the reference against **zero** here. On the FPGA
-at `af63b45`, **Xanadu (Disk A - Program) renders its full title screen** --
-48.86% lit, 8 colours, logo and figures intact. Either a later fix cured it and
-the TODO entry is stale, or sim and hardware disagree on this title. **Worth
-one sim run at HEAD before anyone spends a day on the sub-CPU handoff theory.**
+**Xanadu (Disk A - Program) renders its full title screen** on the FPGA at
+`af63b45` -- 48.86% lit, 8 colours, logo and figures intact. `TODO.md` had a
+standing section saying the Xanadu family "draws nothing, and never has", which
+made this look like a sim/hardware divergence; it is not. Cohort 02 already
+fixed this title in `0db06c8` (Force Interrupt on an idle controller never
+raised INTRQ) and fixed XANADU.D77 in `6f1512d`, both recorded in
+`docs/HANDOFF.md`. The TODO section was simply stale narrative that outlived
+its fix, and is now corrected there.
+
+So the useful hardware result is the ordinary one: **an FDC fix found in
+simulation reaches the FPGA intact.** Xanadu Scenario II disk D, the one member
+of the family still genuinely open, was not in this sweep.
 
 ## Everything else, and what stayed the same
 

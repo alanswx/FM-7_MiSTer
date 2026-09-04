@@ -32,10 +32,15 @@ keyboard (both routings, shift/ctrl/graph/kana/break), the kanji ROM, the
 boot-ROM bank select, the PSG and joysticks, the main-CPU interrupt path, and
 the AV memory-management unit, analog palette and drawing ALU.
 
-**Not yet proven on hardware.** The design fits the DE10-Nano and closes timing,
-but the last 151+ commits have only ever been run in simulation. Cassette
-loading is unresolved — see `TODO.md` item 0 — and 2DD media and multi-disk
-`.d88` are not supported.
+**Proven on hardware at `af63b45`.** The design fits the DE10-Nano (57% ALMs,
+516/553 M10K) and closes timing in every corner, and 30 titles were run on a
+real board with no regressions — including three FM77AV titles that had drawn a
+black screen on the previously deployed core. See `HARDWARE-HANDOFF.md` for the
+report and `tools/hw/` for the test harness. Anything landed since that commit
+is simulation-only again.
+
+Still unresolved: cassette loading — see `TODO.md` item 0 — and 2DD media and
+multi-disk `.d88` are not supported.
 
 ## Quick start
 
