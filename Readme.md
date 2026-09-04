@@ -39,8 +39,13 @@ black screen on the previously deployed core. See `HARDWARE-HANDOFF.md` for the
 report and `tools/hw/` for the test harness. Anything landed since that commit
 is simulation-only again.
 
-Still unresolved: cassette loading — see `TODO.md` item 0 — and 2DD media and
-multi-disk `.d88` are not supported.
+**Cassettes load.** `Fighter.t77` reaches `Found: Fighter` and runs to the
+game's own startup prompt, consuming 100% of the image — but budget for it: a
+tape load is around 370 s of machine time, against the ~20 s a disk title needs.
+One known exception, `Crash Ball`, reports `Device I/O Error` after finding its
+header.
+
+Not supported: 2DD media and multi-disk `.d88`.
 
 ## Quick start
 

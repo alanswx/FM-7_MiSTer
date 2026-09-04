@@ -66,32 +66,31 @@ was dead on the board.
 
 **Open, in priority order:**
 
-0. **Cassettes: finish the long run and record the answer.** *(This item used to
-   read "Cassette loading does not work, for any tape, and there is no reference
-   to diff against." Both halves were wrong — see `docs/CONTINUATION.md`.)*
+0. ~~Cassettes.~~ **THEY WORK. Measured 2026-09-03, and the answer was always a
+   run length.** *(This item read "Cassette loading does not work, for any tape,
+   and there is no reference to diff against." Every clause of that was wrong.)*
 
-   The reference **can** drive tapes; `tools/77avemu_headless.cpp` never bound
-   the data recorder's `Outside_World`, so every reference tape run died of
-   SIGSEGV the moment the motor turned. One line. With it fixed the reference
-   reaches `Found: Fighter` at 60,000,000 steps.
+   `Fighter.t77`, 22,001 frames, no flags beyond `--tape` and typing `run""`:
 
-   And the loads were never failing here so much as never finishing: **a tape
-   load is minutes of machine time, not the ~20 s a disk title needs**, and
-   every tape default in this harness is sized for disks. At 8M steps the
-   reference shows exactly the `Searching` state that every previous
-   investigation recorded as failure. On this core a 3700-frame run is nowhere
-   near: motor on 87.8% of it, 162,019 cassette-bit edges, 37% of the image
-   consumed — all healthy, just unfinished.
+       f9000    Ready / run"" / Searching / Found: Fighter
+       f13000   the game's own startup prompt, running:
+                カンジ ヒーカンジ ROM / press Y if fitted, N if not
+       final    100.0% of the image consumed ($0d5c3e of $0d5d1c),
+                437,756 cassette-bit edges, motor on 39.1%
 
-   **What is actually open is one measurement**: run this core long enough on
-   Fighter to reach `Found:` or to prove it cannot. Budget many thousands of
-   frames. Until that lands, "do tapes work" is unanswered rather than answered
-   no.
+   **A tape load is ~370 s of machine time.** Every previous investigation
+   stopped in the thousands of frames, saw `Searching`, and recorded it as
+   failure — including this repo's own `magazines/.../commercial-tape-test/`
+   control. The other half was the harness: `tools/77avemu_headless.cpp` never
+   bound the data recorder's `Outside_World`, so every REFERENCE tape run died
+   of SIGSEGV the moment the motor turned, which is where "there is no reference
+   to diff against" came from. One line.
 
-   Separately and still open: **Crash Ball reports `Device I/O Error` after
-   `Found: CRB`** on hardware and in simulation, while the reference loads and
-   plays the same image (74.0% coverage). The header block is found, so it is a
-   data-block checksum or framing case, not sync. See `HARDWARE-HANDOFF.md`.
+   **Still open, and now the whole of the cassette work:** Crash Ball reports
+   `Device I/O Error` after `Found: CRB`, on hardware and in simulation, while
+   the reference loads and plays the same image (74.0% coverage). The header
+   block is found, so it is a data-block checksum or framing case rather than
+   sync. See `HARDWARE-HANDOFF.md`.
 
 0. ~~The FM-7 half has never been compared to a reference.~~ **DONE — the
    cohort campaign is complete, 395/395 distinct disks (100%), 2026-09-03.**

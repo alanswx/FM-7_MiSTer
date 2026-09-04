@@ -656,13 +656,20 @@ triggers on sub-system command `$04` rather than at a fixed instruction count.
 
 On Fighter both machines behave the same way and neither is wrong: they boot
 F-BASIC, accept `RUN""`, start the motor and search. The reference, given enough
-steps, finds the file. This core has not yet been run long enough to say -- a
-16100-frame run was still in flight when this was written; **finish it and
-record the result here.**
+steps, finds the file.
 
-Numbers from this core on a 3700-frame run, for scale: motor on 87.8% of the
-run, 162019 cassette-bit edges, 37% of the image consumed. All healthy, just
-unfinished.
+**So does this core. Answered 2026-09-03 by finishing the run.** 22,001 frames,
+369 s of machine time:
+
+    f9000    Ready / run"" / Searching / Found: Fighter
+    f13000   the game's startup prompt, running -- カンジ ヒーカンジ ROM,
+             press Y if a kanji ROM is fitted, N if not
+    final    100.0% of the image consumed ($0d5c3e of $0d5d1c),
+             437,756 cassette-bit edges, motor on 39.1%
+
+Numbers from a 3700-frame run, for scale, and for why this took so long to
+settle: motor on 87.8%, 162019 edges, 37% of the image consumed. All healthy,
+all still `Searching`, and every investigation before this one stopped there.
 
 ### Ruled out, with measurements -- do not re-check
 
