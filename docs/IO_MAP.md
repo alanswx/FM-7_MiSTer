@@ -211,6 +211,61 @@ poke64782,15:poke64781,3:poke64781,0:poke64782,32:poke64781,2:poke64781,0:poke64
 `STICK()` never touches these ports and always returns 0 — it cannot be used
 to test them.
 
+### Which titles actually read the stick
+
+**A sound driver only ever WRITES `$fd0e`, so an extended READ of it is the
+joystick signature.** Scanning the raw bytes of every image for the two 6809
+extended loads —
+
+```sh
+# B6 FD 0E = LDA $FD0E,  F6 FD 0E = LDB $FD0E
+python3 - <<'EOF'
+import glob, hashlib, os
+READ = [b'\xb6\xfd\x0e', b'\xf6\xfd\x0e']
+seen = set()
+for f in sorted(glob.glob('software/**/*.[dD]77', recursive=True)):
+    d = open(f, 'rb').read()
+    h = hashlib.md5(d).hexdigest()
+    if h in seen: continue
+    seen.add(h)
+    n = sum(d.count(p) for p in READ)
+    if n: print(n, os.path.basename(f))
+EOF
+```
+
+— finds **42 of the 525 distinct FM-7 images**, and the count matters: almost
+all are single hits, which is one call site and may be a probe rather than a
+play loop. Two titles stand out and are the ones worth testing against:
+
+| reads | title |
+|---:|---|
+| 10 | **Death Force** (1987, River Hill) — by far the strongest, and the FM77AV dumps carry 2-4 each |
+| 2 | **Wibarm** (1986, Arsys), both dumps |
+| 1 | Archon · Front Line · Jelda · Space Bee · Space Harrier · Topple Zip · Amnork · Might and Magic |
+| 1 | the F-BASIC v3.3/v3.4 system disks, FM Sound Editor, FM Graphic Editor II, and several `[Compilation]` collections |
+
+**This is a screen, not a census.** It is a byte-pattern search over whole
+images, so it cannot see a title that computes the address, and it counts hits
+inside data and unused sectors. Treat a hit as "worth testing" and a miss as
+"probably not", never as proof either way.
+
+**The F-BASIC split is the useful surprise.** The **ROM** BASIC 3.0 contains no
+`$fd0e` read at all — matching the `STICK()` note above — while the **disk**
+F-BASIC v3.3/v3.4 system disks do. So a BASIC game's stick support depends on
+which BASIC it runs under, and a title that works on an AV under disk BASIC may
+do nothing on a ROM-booted FM-7.
+
+**Thexder cannot test the joystick.** It never touches PSG registers 14 or 15,
+so no stick can drive it on any machine — a fact worth keeping, because it is
+otherwise the obvious title to reach for.
+
+Per-title joystick support is also published as structured metadata at
+<https://fm-7.com/museum> (a ジョイスティック field on each product page). Where
+that and this scan disagree, the museum is the authority — it records what the
+publisher claimed, this records what the code does.
+
+`vsim/gameplay.py` carries Death Force and Wibarm as joystick tests.
+
 ## $fd0f
 
 ROM/RAM switch for `$8000-$fbff`: **read → F-BASIC ROM mapped, write → RAM

@@ -41,14 +41,12 @@ Two things follow that are worth stating plainly:
 
 JOYSTICK TITLES
 
-A sound driver only ever WRITES $fd0e; an extended READ of it is the joystick
-signature (`docs/IO_MAP.md`: select with PSG register 15, read register 14
-active-low). Scanning the 525 distinct FM-7 images for `B6 FD 0E` / `F6 FD 0E`
-finds 42, and almost all are single hits. The strongest by a wide margin are
-**Death Force** (10x) and **Wibarm** (2x); Topple Zip, Space Harrier and Space
-Bee have one each. Per-title joystick support is also recorded as structured
-metadata at https://fm-7.com/museum (a ジョイスティック field on each product
-page), which is the authority when this scan and a title disagree.
+The list, the scan that produced it and its limits live in `docs/IO_MAP.md`
+under "Which titles actually read the stick" -- kept there rather than here
+because it is a fact about the collection, not about this harness. The short
+version: an extended READ of $fd0e is the signature, 42 of 525 images have one,
+and **Death Force** (10 reads) and **Wibarm** (2) are the only ones with more
+than a single call site.
 
 **Thexder cannot test the joystick** -- it never touches PSG registers 14/15, so
 no stick can drive it on any machine. It is here as a KEYBOARD test.
