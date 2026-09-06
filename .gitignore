@@ -80,3 +80,7 @@ vsim/sweep/renders-*/
 # Magazine scans and type-in work (hundreds of MB, and one 212 MB PDF that
 # exceeds GitHub's 100 MB hard limit). Kept on disk, never committed.
 magazines/
+
+# gameplay.py's captures. Regenerate with `cd vsim && ./gameplay.py`; the
+# verdict table is the artifact, not the PNGs.
+vsim/gameplay-shots/
