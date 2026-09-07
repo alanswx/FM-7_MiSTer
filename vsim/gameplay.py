@@ -79,45 +79,85 @@ OUT  = os.path.join(HERE, 'gameplay-shots')
 DIVERGE_MIN = 0.05
 
 TESTS = [
+    # ------------------------------------------------------------------
+    # VERIFIED input-driven. Each was confirmed against its own silent
+    # control before being written down here; the divergence figure quoted
+    # is the measured one, not a target.
+    # ------------------------------------------------------------------
+    dict(
+        name='frontline-key',
+        disk='Front Line (1983)(Nidecom Carry Soft)(Taito)(Hiroshi Hasegawa)'
+             '(Tetsuya Sasaki).d77',
+        keys=[(1200, '@SPACE'), (1500, '@RETURN'), (1800, '1')],
+        joy=[(2000, 'fire', 40), (2200, 'right', 40), (2400, 'fire', 40)],
+        shots=[1100, 1900, 2600],
+        min_cov=50.0,
+        note='REAL GAMEPLAY: 90.58% against a silent run stuck at 3.49%, '
+             'divergence 89.98%. Score/HI-SCORE/LEFT=8 HUD on screen.',
+    ),
+    dict(
+        name='wibarm-2disk',
+        disk='Wibarm (1986)(Arsys)(JP).d77',
+        # THE POINT OF THIS TEST. Wibarm's .d77 is a two-disk CONTAINER --
+        # disk 0 "WiBArM", disk 1 "DATA DISK" -- and with only disk 0 the
+        # game stops dead on "SET DATA DISKETTE ON DRIVE 1 / HIT ANY KEY".
+        # Mounting the same file on both drives and selecting sub-disk 1 for
+        # drive 1 is what gets it into play, so this is the container feature
+        # exercised by a real title that cannot proceed without it.
+        disk1='Wibarm (1986)(Arsys)(JP).d77',
+        disk1_index=1,
+        keys=[(1200, '@SPACE'), (1500, '@RETURN'),
+              (2700, '@SPACE'), (3000, '@RETURN'), (3300, '1')],
+        joy=[(3600, 'fire', 40), (3800, 'right', 40)],
+        shots=[2500, 3500, 4200],
+        min_cov=30.0,
+        note='REAL GAMEPLAY: 57.57% against a silent 0.00%, divergence 57.57%. '
+             'ENERGY/MEDAL/ABILITY and MACHINE ABILITY panels on screen. '
+             'With one disk it reaches only 1.29% and sits on the prompt.',
+    ),
+    dict(
+        name='archon-key',
+        disk='Archon.d77',
+        keys=[(1200, '@SPACE'), (1500, '@RETURN'), (1800, '1')],
+        shots=[1100, 1900, 2600],
+        min_cov=30.0,
+        note='reaches its MENU (START GAME / LIGHT SIDE / DARK SIDE): 57.00% '
+             'against a silent 3.41%, divergence 57.40%. Menu, not play.',
+    ),
+    # ------------------------------------------------------------------
+    # Kept deliberately, because it fails in the interesting way.
+    # ------------------------------------------------------------------
     dict(
         name='thexder-key',
         disk='Thexder [b].d77',
-        # A SPREAD, not a guess. Thexder's start key is not documented anywhere
-        # I can find (the DOS port uses numpad 4/6/8/2 + Alt, which says nothing
-        # about the FM-7 release), and each attempt costs a ~40-minute run. The
-        # divergence test does not care WHICH key was consumed -- it only asks
-        # whether the keyboard reached the software at all -- so send several
-        # and let the control answer it.
-        #
-        # Placed late on purpose: the title sequence is still drawing its logo
-        # at f1450, and a key sent during that is ignored. Measured, not
-        # assumed -- a silent run changes ~9.4% per 500 frames from f650 to
-        # f2000 with coverage pinned at 60% / 7 colours, which is the logo
-        # scrolling in and is IDENTICAL in a run that pressed four keys.
+        # A SPREAD, not a guess: Thexder's FM-7 start key is not documented
+        # anywhere I could find, and each attempt costs a ~40-minute run.
+        # Placed late because the title is still drawing its logo at f1450.
         keys=[(1600, '@SPACE'), (1900, '@RETURN'), (2200, '1'),
               (2500, '@F1'), (2800, '8'), (3100, '@UP')],
         shots=[1500, 2500, 3500],
         min_cov=20.0,
-        note='keyboard; Thexder never reads PSG 14/15 so it cannot test a stick',
-    ),
-    dict(
-        name='deathforce-joy',
-        disk='Death Force (1987)(River Hill)(JP).d77',
-        machine='fm77av',          # screened as AV software -- cohort 08
-        joy=[(1500, 'fire', 30), (1700, 'right', 30), (1900, 'fire', 30)],
-        shots=[1400, 1800, 2100],
-        min_cov=1.0,
-        note='10 extended reads of $fd0e, the strongest joystick title in the set',
-    ),
-    dict(
-        name='wibarm-joy',
-        disk='Wibarm (1986)(Arsys)(JP).d77',
-        joy=[(1500, 'fire', 30), (1700, 'up', 30), (1900, 'fire', 30)],
-        shots=[1400, 1800, 2100],
-        min_cov=5.0,
-        note='2 extended reads of $fd0e',
+        note='6 strobes delivered, 0.000% divergence -- the keyboard reaches '
+             'the hardware and the attract loop consumes none of it. NOT a '
+             'core bug. Thexder also never touches PSG 14/15, so it can never '
+             'be a joystick test.',
     ),
 ]
+
+# NOT tests, and here so nobody adds them as ones:
+#
+#   Topple Zip  renders a full gameplay screen -- SCENE/MISSILE/MODE panels,
+#               player craft, radar -- BIT-IDENTICALLY WITH NO INPUT. It is an
+#               attract demo. It was written up here as a success on the
+#               strength of that screenshot and 66.3% frame-to-frame change,
+#               and the silent control is the only thing that disproved it.
+#               This is the exact false positive the harness exists to catch,
+#               and it caught its author twice (Thexder's 8.75% was the first).
+#   Death Force the strongest joystick title by static scan (10 reads of
+#               $fd0e), but it drew 0.00% through f2600 here. Cohort 08 scores
+#               it 2.58% at f1980 as fm77av, so the machine routing or the
+#               frame window is wrong -- diagnose before using it.
+#   Space Harrier  static 1.99% text screen through f2600.
 
 
 def run(t, with_input, reuse=True):
@@ -140,6 +180,13 @@ def run(t, with_input, reuse=True):
            '--screenshot', ','.join(str(f) for f in t['shots']),
            '--screenshot-prefix', os.path.join(OUT, tag),
            '--stop-at-frame', str(max(t['shots']) + 10)]
+    # The second drive is part of the MEDIA, not part of the input, so it is
+    # mounted for the control run too -- otherwise the comparison would be
+    # measuring the extra disk rather than the keys.
+    if t.get('disk1'):
+        cmd += ['--disk1', os.path.join(DISK, t['disk1'])]
+        if t.get('disk1_index'):
+            cmd += ['--disk1-index', str(t['disk1_index'])]
     if with_input:
         for fr, txt in t.get('keys', []):
             cmd += ['--key', '%d:%s' % (fr, txt)]
@@ -203,7 +250,10 @@ def main():
         if a is None or b is None or c is None:
             print('%-18s %8s %8s %10s  NO-SHOT (run did not complete)' %
                   (t['name'], '-', '-', '-')); bad += 1; continue
-        cov = stats(a[0], a[1], a[2])[0]
+        # Coverage of the LAST sample, not the first: "did it get somewhere"
+        # is a question about where the run ended up. Front Line is 3.5% at its
+        # first sample and 90.6% at its last.
+        cov = stats(b[0], b[1], b[2])[0]
         started = cov >= t['min_cov']
         d = diff_pct(b, c)
         responded = d is not None and d >= DIVERGE_MIN
