@@ -6,6 +6,68 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# REQUEST: run 1942 on the DE10-Nano -- a third-party board shows a broken HUD, sim does not
+
+A tester running their own build on a **Senor board** (not a DE10-Nano) reports
+`1942 (1987)(ASCII)(JP).d77` drawing **white noise in the top-right HUD area**.
+This is a request for the one measurement that can attribute it, because
+nothing available on the sim side can.
+
+**1942 has never been run on the DE10-Nano.** It is in neither
+`results/hw-af63b45.tsv` (30 titles) nor `results/hw-4b447f3.tsv` (18). That is
+the gap: without a DE10-Nano capture there is no way to tell a core bug that
+only appears on hardware from something particular to that board or that build.
+
+**In simulation the HUD is correct.** Measured against 77AVEMU `--fm7` at
+matched instants (reference frame = round(N x 1.00608)):
+
+| | f1600 | f1800 | f1980 | f2200 |
+|---|---|---|---|---|
+| our HUD lit pixels (x>=520) | 1724 | 1724 | 1724 | 1724 |
+| reference | 0 | 1853 | 1012 | 1853 |
+
+Rock steady here, and **91.8 % agreement over lit pixels** with the reference
+whenever both are in steady state. The text reads `1 UP / HI-SCORE / SCORE /
+STAGE / LAST 32` in green and red; the reference draws the same glyphs white.
+
+**Two things ruled out from this side:**
+
+* *The kanji ROM in SDRAM.* That is the one ROM moved off-chip to make the
+  design fit, so a marginal SDRAM on another board is a plausible mechanism for
+  garbled text -- but 1942 **never touches `$fd20-$fd23`**, so it cannot be
+  this.
+* *Trap 76 (77AVEMU's unfaithful `--fm7` video).* The reference renders are
+  640x400, so the reference is in genuine FM-7 mode and the trap does not apply.
+
+**Two measurement traps paid for on the way, both recorded so nobody repeats
+them.** Agreement over the HUD strip first read 93-99 %, which was meaningless:
+the strip is ~93 % black and black-matching-black dominated it -- trap 77, an
+agreement figure means nothing without the coverage beside it. Scoring only
+pixels lit in either image drops it to 91.8 %, and at f1980 to 8.7 %. That 8.7 %
+then looked like a real frame-specific divergence and is **not**: the table
+above shows the REFERENCE's HUD dipping to 1012 lit at that instant while ours
+holds 1724. It is the reference mid-redraw, not us.
+
+**What would settle it:** one DE10-Nano capture of 1942 at a comparable settle
+time. If the HUD is clean there, the fault is in that tester's board or build
+and not in the core. If it is broken there too, it is ours and the sim is
+hiding it -- which would be the first such case in this campaign and worth
+knowing on its own account.
+
+Regenerate the sim-side evidence with:
+
+```sh
+cd vsim && ./obj_dir/Vemu --headless --bootrom 0 --machine fm7 \
+    --disk "../software/D77/1942 (1987)(ASCII)(JP).d77" \
+    --screenshot 1600,1800,1980,2200 --screenshot-prefix /tmp/1942 \
+    --stop-at-frame 2210
+refs/local/fm77av_headless refs/local/fm77av-roms \
+    "software/D77/1942 (1987)(ASCII)(JP).d77" 800000000 /tmp/ref.png \
+    --fm7 --stop-at-frame 1992
+```
+
+---
+
 # Hardware: 4b447f3's multi-disk containers WORK on the FPGA, and the AV toggle is flaky
 
 Built and deployed `4b447f3` -- 0 errors, 8m59s, **24,251 / 41,910 ALMs (58%)**,
