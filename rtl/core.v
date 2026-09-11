@@ -41,7 +41,17 @@ module core(
   input   [8:0] sd_buff_addr,
   input   [7:0] sd_buff_dout,
   output  [7:0] sd_buff_din [2],
-  input         sd_buff_wr
+  input         sd_buff_wr,
+
+  // ROM-set load bus from ROMLOAD.v in the top level. Routed straight through
+  // to ROMS (m151/m152) and SMEM (m153/m154); nothing in core.v itself reads
+  // it. See rtl/ROMLOAD.v for why the sets are staged in SDRAM.
+  input         LD_M151_WR,
+  input         LD_M152_WR,
+  input         LD_M153_WR,
+  input         LD_M154_WR,
+  input  [14:0] LD_ADDR,
+  input   [7:0] LD_DATA
 );
 
 wire [15:0] MADDRBUS;
@@ -543,7 +553,11 @@ ROMS u_ROMS(
   .SW2      ( bootrom_sel ),
   .machine_av ( machine_av ),
   .twr_active ( AVTWR_sel ),
-  .av_initrom_en ( AVINITROM_en )
+  .av_initrom_en ( AVINITROM_en ),
+  .LD_M151_WR ( LD_M151_WR ),
+  .LD_M152_WR ( LD_M152_WR ),
+  .LD_ADDR    ( LD_ADDR    ),
+  .LD_DATA    ( LD_DATA    )
 );
 
 // MRAM is the FM-7 machine's 64 KB. In AV mode that same machine lives at
@@ -1061,7 +1075,11 @@ SMEM u_SMEM(
   .av_active_page  ( AV_ACTIVE_PAGE  ),
   .av_offset_fine  ( AV_OFFSET_FINE  ),
   .av_vram_bank    ( AV_VRAM_BANK    ),
-  .av_nmi_mask     ( AV_NMI_MASK     )
+  .av_nmi_mask     ( AV_NMI_MASK     ),
+  .LD_M153_WR   ( LD_M153_WR   ),
+  .LD_M154_WR   ( LD_M154_WR   ),
+  .LD_ADDR      ( LD_ADDR      ),
+  .LD_DATA      ( LD_DATA      )
 );
 
 // shared RAM

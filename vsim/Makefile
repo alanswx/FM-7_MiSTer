@@ -334,6 +334,8 @@ V_SRC = \
 	$(RTL)/PERIPHERAL.v \
 	$(RTL)/ram.v \
 	$(RTL)/rom.v \
+	$(RTL)/rom_loadable.v \
+	$(RTL)/ROMLOAD.v \
 	$(RTL)/ROMS.v \
 	$(RTL)/RS232.v \
 	$(RTL)/SCPU.v \
@@ -473,9 +475,9 @@ avkeyboard-test: avkeyboard_tb.sv ../rtl/AVKEYBOARD.v
 	/tmp/fm7-avkeyboard-obj/Vavkeyboard_tb
 
 # Directed check for the AV character-generator aperture and $D430 bank.
-smem-test: smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v
+smem-test: smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v ../rtl/rom_loadable.v
 	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-smem-obj \
-		--top-module smem_tb smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v
+		--top-module smem_tb smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v ../rtl/rom_loadable.v
 	/tmp/fm7-smem-obj/Vsmem_tb
 
 # Directed check for the AV mode-aware raster address and doubled 320-pixel

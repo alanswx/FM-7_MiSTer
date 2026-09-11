@@ -18,7 +18,14 @@ module ROMS (
   input [1:0] SW2,
   input machine_av,
   input twr_active,
-  input av_initrom_en
+  input av_initrom_en,
+
+  // ROM-set load bus from ROMLOAD.v. Idle unless a set is being paged in,
+  // and the machine is held in reset while it is -- see ROMLOAD.v.
+  input        LD_M151_WR,
+  input        LD_M152_WR,
+  input [14:0] LD_ADDR,
+  input  [7:0] LD_DATA
 );
 
 assign FCXXn = ~&MADDRBUS[15:10];
@@ -120,19 +127,25 @@ m139 m139_u1(
   .cs_n  ( FCXXn         )
 );
 
-rom #("./roms/fbasic300.rom.mem", 15, 8) m151(
-  .clk  ( CLKSYS         ),
-  .addr ( MADDRBUS[14:0] ),
-  .dout ( m151_q         ),
-  .ce_n ( RDQEn | m107_q )
+rom_loadable #("./roms/fbasic300.rom.mem", 15, 8) m151(
+  .clk     ( CLKSYS         ),
+  .addr    ( MADDRBUS[14:0] ),
+  .dout    ( m151_q         ),
+  .ce_n    ( RDQEn | m107_q ),
+  .ld_wr   ( LD_M151_WR     ),
+  .ld_addr ( LD_ADDR        ),
+  .ld_data ( LD_DATA        )
 );
 
 // The whole 2 KB chip, addressed as {bank, offset}.
-rom #("./roms/TL11_11_M152.rom.mem", 11, 8) m152(
-  .clk  ( CLKSYS               ),
-  .addr ( {SW2, MADDRBUS[8:0]} ),
-  .dout ( m152_bank_q          ),
-  .ce_n ( m131_q1 | m131_q2    )
+rom_loadable #("./roms/TL11_11_M152.rom.mem", 11, 8) m152(
+  .clk     ( CLKSYS               ),
+  .addr    ( {SW2, MADDRBUS[8:0]} ),
+  .dout    ( m152_bank_q          ),
+  .ce_n    ( m131_q1 | m131_q2    ),
+  .ld_wr   ( LD_M152_WR           ),
+  .ld_addr ( LD_ADDR[10:0]        ),
+  .ld_data ( LD_DATA              )
 );
 
 rom #("./roms/fm77av_initiate.rom.mem", 13, 8) av_initiate(

@@ -29,6 +29,8 @@ set_global_assignment -name VERILOG_FILE rtl/ram.v
 set_global_assignment -name VERILOG_FILE rtl/ram_quartus.v
 set_global_assignment -name VERILOG_FILE rtl/rom_quartus.v
 set_global_assignment -name VERILOG_FILE rtl/rom.v
+set_global_assignment -name VERILOG_FILE rtl/rom_loadable.v
+set_global_assignment -name VERILOG_FILE rtl/ROMLOAD.v
 set_global_assignment -name VERILOG_FILE rtl/ROMS.v
 set_global_assignment -name VERILOG_FILE rtl/RS232.v
 set_global_assignment -name VERILOG_FILE rtl/SCPU.v

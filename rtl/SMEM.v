@@ -27,7 +27,13 @@ module SMEM(
   output av_active_page,
   output av_vram_bank,
   output av_nmi_mask,
-  output av_offset_fine
+  output av_offset_fine,
+
+  // ROM-set load bus from ROMLOAD.v -- see ROMS.v for the same pair.
+  input        LD_M153_WR,
+  input        LD_M154_WR,
+  input [14:0] LD_ADDR,
+  input  [7:0] LD_DATA
 );
 
 wire [7:0] m153_q;
@@ -114,18 +120,24 @@ ram #(11,8) m123(
   .ce_n ( SRAM2CSn       )
 );
 
-rom #("./roms/subsys_m153.rom.mem", 11, 8) m153(
-  .clk  ( CLKSYS         ),
-  .addr ( SADDRBUS[10:0] ),
-  .dout ( m153_q         ),
-  .ce_n ( SROMDn         )
+rom_loadable #("./roms/subsys_m153.rom.mem", 11, 8) m153(
+  .clk     ( CLKSYS         ),
+  .addr    ( SADDRBUS[10:0] ),
+  .dout    ( m153_q         ),
+  .ce_n    ( SROMDn         ),
+  .ld_wr   ( LD_M153_WR     ),
+  .ld_addr ( LD_ADDR[10:0]  ),
+  .ld_data ( LD_DATA        )
 );
 
-rom #("./roms/subsys_m154.rom.mem", 13, 8) m154(
-  .clk  ( CLKSYS         ),
-  .addr ( SADDRBUS[12:0] ),
-  .dout ( m154_q         ),
-  .ce_n ( SROMSELn       )
+rom_loadable #("./roms/subsys_m154.rom.mem", 13, 8) m154(
+  .clk     ( CLKSYS         ),
+  .addr    ( SADDRBUS[12:0] ),
+  .dout    ( m154_q         ),
+  .ce_n    ( SROMSELn       ),
+  .ld_wr   ( LD_M154_WR     ),
+  .ld_addr ( LD_ADDR[12:0]  ),
+  .ld_data ( LD_DATA        )
 );
 
 rom #("./roms/fm77av_subsyscg.rom.mem", 13, 8) av_font(

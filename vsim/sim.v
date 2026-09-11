@@ -38,6 +38,7 @@ module emu
 	// core options, mirroring the OSD status bits in FM-7_MiSTer.sv
 	input   [1:0] bootrom_sel,      // status[11:10] "BootROM" Basic/1/2/3
 	input         machine_av,       // status[12]    "Machine" FM77AV bring-up
+	input         romset_sel,       // status[19]    "System ROM" set 0 / set 1
 	input         tape_rewind,      // status[8]     "Tape Rewind"
 	input         tape_audio,       // status[9]     "Tape Audio"
 
@@ -216,7 +217,27 @@ module emu
 // Wiring copied from FM-7_MiSTer.sv, minus the OSD status[] indirection.
 //////////////////////////////////////////////////////////////////
 
-wire        RESETn = ~reset;
+// Declared ahead of `core u_core` below, which uses them -- see the same note
+// in FM-7_MiSTer.sv.
+wire [24:0] romset_addr;
+wire        romset_rd, romset_gnt, romset_ready;
+wire        ld_m151_wr, ld_m152_wr, ld_m153_wr, ld_m154_wr;
+wire [14:0] ld_addr;
+wire  [7:0] ld_data;
+wire        romload_busy;
+
+// boot1.rom is ioctl index 64 -- see FM-7_MiSTer.sv.
+wire romset_download = ioctl_download && (ioctl_index[7:0] == 8'd64);
+
+// The CPUs stay down until ROMLOAD has finished paging a set in, exactly as
+// on the FPGA. ROMLOAD itself runs on `reset_all` rather than `romload_busy`.
+//
+// romset_download is folded in for the same reason FM-7_MiSTer.sv folds it
+// into reset_req: the 128 KB transfer takes far longer than sim_main's
+// reset_hold, so without it the machine would boot on the baked ROMs and then
+// reset again the moment the file finished arriving.
+wire        reset_all = reset | romset_download;
+wire        RESETn = ~reset_all & ~romload_busy;
 wire        CLKSYS = clk_sys;
 
 wire  [2:0] grb;
@@ -275,7 +296,13 @@ core u_core(
   .KANJI_RD    ( kanji_rd        ),
   .KANJI_GNT   ( kanji_gnt       ),
   .KANJI_READY ( kanji_ready     ),
-  .KANJI_DATA  ( sdram_data      )
+  .KANJI_DATA  ( sdram_data      ),
+  .LD_M151_WR  ( ld_m151_wr      ),
+  .LD_M152_WR  ( ld_m152_wr      ),
+  .LD_M153_WR  ( ld_m153_wr      ),
+  .LD_M154_WR  ( ld_m154_wr      ),
+  .LD_ADDR     ( ld_addr         ),
+  .LD_DATA     ( ld_data         )
 );
 
 wire [1:0] sd_rd_0, sd_wr_0;
@@ -371,7 +398,7 @@ wire tape_download = ioctl_download && (ioctl_index == 8'd1);
 // EDGE. Without back-pressure SimBus holds ioctl_wr high for the whole
 // transfer, the controller sees one write, and only the first byte lands.
 // Throttling on sdram_ready is what makes ioctl_wr re-strobe per byte.
-assign ioctl_wait = (tape_download | kanji_download) & ~sdram_ready;
+assign ioctl_wait = (tape_download | kanji_download | romset_download) & ~sdram_ready;
 
 reg old_ioctl_download;
 always @(posedge clk_sys)
@@ -394,6 +421,39 @@ localparam [24:0] KANJI_BASE = 25'h0400000;
 // index 1 and [15:6]==0 matches everything from 0 to 63, which would send
 // tape bytes to the kanji base as well.
 wire        kanji_download = ioctl_download && (ioctl_index[7:0] == 8'd0);
+
+// The system ROM sets. boot1.rom is ioctl index 64 on real hardware -- see
+// FM-7_MiSTer.sv -- and --romset queues it at the same index here, so the sim
+// exercises the identical decode. Mirrored from the FPGA top on purpose: a
+// divergence in this plumbing is exactly the class that makes a simulation
+// result meaningless (see this file's header, and the hps_io WIDE(1) bug).
+localparam [24:0] ROMSET_BASE = 25'h0420000;
+reg [24:0] romset_bytes = 25'd0;
+always @(posedge clk_sys) begin
+  if (romset_download && ioctl_wr) romset_bytes <= ioctl_addr + 25'd1;
+end
+wire romset_valid = (romset_bytes >= 25'd45056);
+wire romset_has_1 = (romset_bytes >= 25'd110592);
+
+ROMLOAD #(.BASE(ROMSET_BASE)) u_romload(
+  .CLKSYS       ( clk_sys      ),
+  .RESETn       ( ~reset_all   ),
+  .SET_VALID    ( romset_valid ),
+  .SET_HAS_1    ( romset_has_1 ),
+  .SET_SEL      ( romset_sel   ),
+  .ROMSET_ADDR  ( romset_addr  ),
+  .ROMSET_RD    ( romset_rd    ),
+  .ROMSET_GNT   ( romset_gnt   ),
+  .ROMSET_READY ( romset_ready ),
+  .ROMSET_DATA  ( sdram_data   ),
+  .LD_M151_WR   ( ld_m151_wr   ),
+  .LD_M152_WR   ( ld_m152_wr   ),
+  .LD_M153_WR   ( ld_m153_wr   ),
+  .LD_M154_WR   ( ld_m154_wr   ),
+  .LD_ADDR      ( ld_addr      ),
+  .LD_DATA      ( ld_data      ),
+  .BUSY         ( romload_busy )
+);
 wire [16:0] kanji_addr;
 wire        kanji_rd, kanji_gnt, kanji_ready;
 
@@ -403,8 +463,9 @@ wire        sdc_we, sdc_rd;
 
 SDRAM_MUX u_sdram_mux(
   .CLKSYS      ( CLKSYS ),
-  .DL_WR       ( ioctl_wr & (tape_download | kanji_download) ),
-  .DL_ADDR     ( kanji_download ? (KANJI_BASE + {8'd0, ioctl_addr[16:0]})
+  .DL_WR       ( ioctl_wr & (tape_download | kanji_download | romset_download) ),
+  .DL_ADDR     ( kanji_download  ? (KANJI_BASE  + {8'd0, ioctl_addr[16:0]}) :
+                 romset_download ? (ROMSET_BASE + {8'd0, ioctl_addr[16:0]})
                                  : ioctl_addr ),
   .DL_DATA     ( ioctl_dout ),
   .TAPE_ADDR   ( sdram_addr ),
@@ -414,6 +475,10 @@ SDRAM_MUX u_sdram_mux(
   .KANJI_RD    ( kanji_rd ),
   .KANJI_GNT   ( kanji_gnt ),
   .KANJI_READY ( kanji_ready ),
+  .ROMSET_ADDR ( romset_addr ),
+  .ROMSET_RD   ( romset_rd ),
+  .ROMSET_GNT  ( romset_gnt ),
+  .ROMSET_READY( romset_ready ),
   .SD_ADDR     ( sdc_addr ),
   .SD_DIN      ( sdc_din ),
   .SD_WE       ( sdc_we ),

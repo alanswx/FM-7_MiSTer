@@ -33,6 +33,16 @@ module SDRAM_MUX(
   output            KANJI_GNT,
   output            KANJI_READY,
 
+  // romset client (ROMLOAD): pages a system ROM set out of SDRAM into block
+  // RAM. It only runs while the machine is held in reset, so neither the tape
+  // nor the kanji window can be active at the same time -- but it is given
+  // priority over both anyway, because a stalled load would leave the machine
+  // with a half-written ROM, which is far worse than a delayed tape byte.
+  input      [24:0] ROMSET_ADDR,
+  input             ROMSET_RD,
+  output            ROMSET_GNT,
+  output            ROMSET_READY,
+
   // to the controller
   output     [24:0] SD_ADDR,
   output      [7:0] SD_DIN,
@@ -46,21 +56,26 @@ module SDRAM_MUX(
 // Kanji is granted only on a cycle the tape is not asking for and no download
 // is in flight, so the tape's own handshake is bit-for-bit what it was before
 // this block existed.
-assign KANJI_GNT = KANJI_RD & ~TAPE_RD & ~DL_WR;
+assign ROMSET_GNT = ROMSET_RD & ~DL_WR;
+assign KANJI_GNT  = KANJI_RD & ~TAPE_RD & ~DL_WR & ~ROMSET_GNT;
 
-assign SD_ADDR = DL_WR     ? DL_ADDR   :
-                 TAPE_RD   ? TAPE_ADDR : KANJI_ADDR;
+assign SD_ADDR = DL_WR      ? DL_ADDR     :
+                 ROMSET_GNT ? ROMSET_ADDR :
+                 TAPE_RD    ? TAPE_ADDR   : KANJI_ADDR;
 assign SD_DIN  = DL_DATA;
 assign SD_WE   = DL_WR;
-assign SD_RD   = TAPE_RD | KANJI_GNT;
+assign SD_RD   = ROMSET_GNT | TAPE_RD | KANJI_GNT;
 
 // Which client owns the outstanding read, so SD_READY is steered to it. The
 // controller reports ready both as "data valid" and as "idle", and the tape
 // decoder has always consumed it as a data strobe -- keep that untouched and
 // gate the kanji side on ownership instead.
-reg owner_kanji;
+// 0 = tape, 1 = kanji, 2 = romset.
+reg [1:0] owner;
+localparam OWN_TAPE = 2'd0, OWN_KANJI = 2'd1, OWN_ROMSET = 2'd2;
 always @(posedge CLKSYS) begin
-  if (SD_RD) owner_kanji <= KANJI_GNT & ~TAPE_RD;
+  if (SD_RD) owner <= ROMSET_GNT             ? OWN_ROMSET :
+                      (KANJI_GNT & ~TAPE_RD) ? OWN_KANJI  : OWN_TAPE;
 end
 
 `ifdef DEBUG_KANJI
@@ -78,8 +93,12 @@ always @(posedge CLKSYS) begin
 end
 `endif
 
-assign TAPE_READY  = SD_READY;
-assign KANJI_READY = SD_READY & owner_kanji;
+// TAPE_READY is deliberately left as the bare SD_READY it has always been --
+// the tape decoder consumes it as a data strobe and that path is not being
+// disturbed here. The tape cannot be running during a romset load anyway.
+assign TAPE_READY   = SD_READY;
+assign KANJI_READY  = SD_READY & (owner == OWN_KANJI);
+assign ROMSET_READY = SD_READY & (owner == OWN_ROMSET);
 assign SD_DOUT_OUT = SD_DOUT;
 
 endmodule

@@ -99,6 +99,45 @@ FM-7 DOS boot ROM (the file under `refs/local` is a 480-byte AV loader padded to
 512), so a render would picture the staging rather than the machine. That is a
 documented limit, not an oversight — see `SKIPPED` in `sweep/ref-gate.py`.
 
+### Why `disk-Thexder [b]`'s I/O counter was re-blessed, 862115 -> 862118
+
+The ROM-set work gates the simulator's `RESETn` with `romload_busy`, so the
+CPUs stay held while `ROMLOAD` pages a system ROM set into block RAM. With no
+ROM set present that term is always 0 and the expression is *logically*
+identical -- but `RESETn` fans out across the whole design, and this model has
+genuine combinational feedback (`UNOPTFLAT` on `mc6809i`, hence
+`--converge-limit 6000`). Changing its expression changes Verilator's settling
+order.
+
+What that perturbs is **when a transient is sampled**, not what the machine
+does. `$fd1f` bit 7 is DRQ, a pulse, and the boot ROM polls it in a loop at
+`pc=$ff94`. Six of those polls (frames 145, 148, 155, 170, 181, 188) land on
+the other side of an edge and read `$bf` instead of `$3f`; `$fd05`'s poll loop
+then runs one extra iteration. That is the entire 3-access difference.
+
+Everything else is untouched, which is what says this is phase and not
+behaviour: the screenshot is byte-identical, main CPU 8416 cycles/frame and sub
+CPU 7440 are both unchanged, and the other seven rows did not move.
+
+**Two wrong answers were reached by reasoning before measuring**, both worth
+keeping:
+
+- *"The write port on `rom_loadable` changed the memory model."* Disabling the
+  write port still gave 862118.
+- *"`romload_busy` is always 0 with no ROM set, so it cannot matter."* It IS
+  always 0, and it still matters -- the perturbation is in how the model
+  settles, not in the logic. Reverting only that one term restored 862115
+  exactly, which is what finally attributed it.
+
+The gating is not optional: without it the CPUs would run while `ROMLOAD`
+rewrites the BASIC ROM, the boot ROM, the character generator and the sub
+monitor underneath them. On the FPGA it is ordinary logic with no scheduling
+artifact, and the hardware regression subset showed nothing (Thexder 60.32%
+against 60.18% lit, inside its animation phase).
+
+Trace the I/O stream yourself with `--trace-io <file> --trace-max 3000000` and
+diff two builds; that is how the single differing bit was found.
+
 ## The breadth sweep
 
 ```sh

@@ -109,6 +109,11 @@ static std::set<int>    screenshots_taken;
 
 static int  opt_bootrom    = 0;      // status[11:10]: 0 Basic, 1..3 DOS
 static bool opt_machine_av = false;  // status[12]: FM77AV bring-up selector
+// status[19]: which system ROM set ROMLOAD pages in from the file given by
+// --romset. Ignored when no --romset is supplied, exactly as on hardware with
+// no boot1.rom on the card.
+static bool        opt_romset_sel = false;
+static std::string romset_path;
 // Sub-disk selection inside a multi-disk .d77/.d88 container, per drive.
 // 0 selects the first disk and is what an ordinary single-disk image wants.
 static int  opt_disk_index [2] = {0, 0};
@@ -859,6 +864,8 @@ static int parse_args(int argc, char** argv) {
 		else if (a == "--headless" || a == "--no-gui") headless = true;
 		else if (a == "--kanji-check") { const char* v = next(); if (v) kanji_check_frame = atoi(v); }
 		else if (a == "--boot-rom")   { const char* v = next(); if (v) boot_rom_path = v; }
+		else if (a == "--romset")     { const char* v = next(); if (v) romset_path = v; }
+		else if (a == "--romset-sel") { const char* v = next(); if (v) opt_romset_sel = (atoi(v) != 0); }
 		else if (a == "--tape")       { const char* v = next(); if (v) tape_path = v; }
 		else if (a == "--disk")       { const char* v = next(); if (v) disk_path = v; }
 		// Off by default: a sweep must never modify the user's disk images.
@@ -1235,6 +1242,7 @@ static void sim_cycle() {
 	top->disk_index0 = opt_disk_index[0];
 	top->disk_index1 = opt_disk_index[1];
 	top->machine_av  = opt_machine_av;
+	top->romset_sel  = opt_romset_sel;
 	top->tape_audio  = opt_tape_audio;
 	top->tape_rewind = (rewind_hold > 0) || tape_rewind_pulse;
 	if (rewind_hold > 0) rewind_hold--;
@@ -1712,6 +1720,21 @@ int main(int argc, char** argv, char** env) {
 			bus.QueueDownload(boot, 0, true);
 		} else if (!boot_rom_path.empty()) {
 			printf("Error: cannot open boot.rom %s\n", boot.c_str());
+		}
+	}
+
+	// The system ROM sets, on ioctl index 64. That is where Main_MiSTer sends
+	// boot1.rom (it uploads boot<N>.rom with index N<<6), so this is the same
+	// decode the FPGA sees rather than a simulation-only shortcut.
+	if (!romset_path.empty()) {
+		FILE* f = fopen(romset_path.c_str(), "rb");
+		if (f) {
+			fclose(f);
+			printf("Loading ROM set over ioctl index 64: %s (set %d)\n",
+			       romset_path.c_str(), opt_romset_sel ? 1 : 0);
+			bus.QueueDownload(romset_path, 64, true);
+		} else {
+			printf("Error: cannot open romset %s\n", romset_path.c_str());
 		}
 	}
 

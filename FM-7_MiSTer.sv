@@ -68,9 +68,11 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 //   9         Tape Audio                 cin_audio, relay_audio
 //   11:10     Boot ROM                   bootrom_sel -> ROMS.v M152 bank
 //   12        Machine family             machine_av -> AV memory/video/I/O
+//   18:13     Disk 1 / Disk 2 sub-image  disk_index[0] / disk_index[1]
+//   19        System ROM set             romset_sel -> ROMLOAD
 //   122:121   Aspect ratio               VIDEO_ARX / VIDEO_ARY
 //
-// Bits 1..7 and 13..120 are free. The hole at 1..7 is where the template's
+// Bits 1..7 and 20..120 are free. The hole at 1..7 is where the template's
 // "TV Mode" (O[2]) and "Noise" (O[4:3]) demo options used to sit; they drove
 // nothing in this core and are gone. The hole is left as-is deliberately --
 // renumbering would only invalidate saved .cfg files for no gain.
@@ -90,6 +92,11 @@ localparam CONF_STR = {
   "O[9],Tape Audio,Off,On;",
   "O[11:10],Boot ROM,0 disk,1 alt,2 dos-a,3 empty;",
   "O[12],Machine,FM-7,FM77AV (experimental);",
+  // Which system ROM set to page in from the uploaded boot1.rom. Does nothing
+  // unless that file is present -- with no file the machine runs the ROMs
+  // baked into the .rbf, which are set 0's. Changing this resets the machine:
+  // swapping the BASIC ROM under a running interpreter is not a thing.
+  "O[19],System ROM,Set 0,Set 1;",
   "-;",
   "O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
   "-;",
@@ -236,7 +243,27 @@ always @(posedge clk_sys)
 // clock-enable domain to observe it. core.v then releases the selected
 // machine's CPUs through their normal reset-vector path.
 wire machine_mode_changed = machine_av_d ^ machine_av;
-wire reset_req = RESET | status[0] | buttons[1] | machine_mode_changed;
+// boot1.rom, uploaded by the framework at core start. Main_MiSTer sends
+// boot<N>.rom with ioctl_index = (N << 6) -- see its user_io.cpp, "check for
+// multipart rom" -- so boot0.rom/boot.rom is index 0 (the kanji ROM, as
+// before) and boot1.rom is index 64. Nothing else in this core uses 64.
+wire romset_download = ioctl_download && (ioctl_index[7:0] == 8'd64);
+
+// A ROM-set change is a machine change in the same sense a family change is:
+// ROMLOAD rewrites the BASIC ROM, the boot ROM, the character generator and
+// the sub monitor. Reset first, page in second, release third.
+reg romset_sel_d = 1'b0;
+always @(posedge clk_sys) romset_sel_d <= status[19];
+wire romset_changed = romset_sel_d ^ status[19];
+
+// romset_download is a reset source, and that is not belt-and-braces. The
+// framework starts the boot1.rom upload at core start, and without this the
+// reset counter would expire part way through it: the machine would boot on
+// the baked ROMs, then romset_valid would go true mid-run, ROMLOAD would
+// assert BUSY and the user would watch it reboot. Holding reset for the whole
+// transfer makes it one boot.
+wire reset_req = RESET | status[0] | buttons[1] | machine_mode_changed
+               | romset_changed | romset_download;
 reg [19:0] reset_count = {20{1'b1}};
 
 always @(posedge clk_sys) begin
@@ -272,7 +299,22 @@ wire VSync;
 wire ce_pix;
 wire [7:0] video;
 
-wire RESETn = ~reset;
+// The core's reset, NOT ROMLOAD's: the loader runs on the raw `reset` so that
+// it is alive and copying during exactly the window the CPUs are held down.
+// Declared here rather than left implicit -- an undeclared identifier in a
+// continuous assignment becomes a 1-bit net silently, and this one is load
+// bearing enough to say out loud.
+wire romload_busy;
+wire RESETn = ~reset & ~romload_busy;
+
+// The ROM-set load bus. Declared up here because `core u_core` below is
+// instantiated before ROMLOAD is, and a net used ahead of its declaration is
+// either an error or a silent 1-bit implicit wire depending on the tool.
+wire [24:0] romset_addr;
+wire        romset_rd, romset_gnt, romset_ready;
+wire        ld_m151_wr, ld_m152_wr, ld_m153_wr, ld_m154_wr;
+wire [14:0] ld_addr;
+wire  [7:0] ld_data;
 wire CLKSYS = clk_sys;
 wire cin;
 wire motor;
@@ -283,7 +325,19 @@ wire sdram_ready;
 
 // Hold the HPS off while the SDRAM controller is busy, so every byte of the
 // t77 actually lands. Same expression vsim/sim.v uses.
-wire ioctl_wait = (tape_download | kanji_download) & ~sdram_ready;
+// How much of it actually arrived. A set is 45056 bytes at a 64 KB stride, so
+// a file shorter than one set is not a set at all and must not be paged in --
+// that would write whatever else is in SDRAM over the working ROMs. Same test
+// one stride up decides whether set 1 exists; ROMLOAD falls back to set 0 when
+// it does not.
+reg [24:0] romset_bytes = 25'd0;
+always @(posedge clk_sys) begin
+  if (romset_download && ioctl_wr) romset_bytes <= ioctl_addr + 25'd1;
+end
+wire romset_valid = (romset_bytes >= 25'd45056);
+wire romset_has_1 = (romset_bytes >= 25'd110592);   // 65536 + 45056
+
+wire ioctl_wait = (tape_download | kanji_download | romset_download) & ~sdram_ready;
 wire rewind = (old_ioctl_download & ~tape_download) | status[8];
 
 // Size of the mounted tape, latched from the ioctl download, so t77_decode
@@ -345,6 +399,12 @@ core u_core(
   .KANJI_GNT   ( kanji_gnt     ),
   .KANJI_READY ( kanji_ready   ),
   .KANJI_DATA  ( sdram_data    ),
+  .LD_M151_WR  ( ld_m151_wr    ),
+  .LD_M152_WR  ( ld_m152_wr    ),
+  .LD_M153_WR  ( ld_m153_wr    ),
+  .LD_M154_WR  ( ld_m154_wr    ),
+  .LD_ADDR     ( ld_addr       ),
+  .LD_DATA     ( ld_data       ),
   .buzzer      ( buzzer        ),
   // tape
   .cin         ( cin           ),
@@ -386,6 +446,12 @@ t77_decode u_t77_decode(
 // MiSTer framework uploads automatically at core start, so it just works.
 // Based well clear of any tape image.
 localparam [24:0] KANJI_BASE = 25'h0400000;
+
+// The uploaded ROM sets, immediately above the 128 KB kanji ROM. Two 64 KB
+// sets is 128 KB, so $420000-$43FFFF. The tape image lives below $400000 and
+// SDRAM is 32 MB, so there are ~30 MB spare above this -- room for more sets
+// if another FM-7 licensee's ROMs ever turn up.
+localparam [24:0] ROMSET_BASE = 25'h0420000;
 // boot.rom is ioctl index 0. Test the low byte, not [15:6]: the tape is
 // index 1 and [15:6]==0 matches everything from 0 to 63, which would send
 // tape bytes to the kanji base as well.
@@ -397,10 +463,31 @@ wire [24:0] sdc_addr;
 wire  [7:0] sdc_din;
 wire        sdc_we, sdc_rd;
 
+ROMLOAD #(.BASE(ROMSET_BASE)) u_romload(
+  .CLKSYS       ( CLKSYS       ),
+  .RESETn       ( ~reset       ),   // RAW reset: see the RESETn comment above
+  .SET_VALID    ( romset_valid ),
+  .SET_HAS_1    ( romset_has_1 ),
+  .SET_SEL      ( status[19]   ),
+  .ROMSET_ADDR  ( romset_addr  ),
+  .ROMSET_RD    ( romset_rd    ),
+  .ROMSET_GNT   ( romset_gnt   ),
+  .ROMSET_READY ( romset_ready ),
+  .ROMSET_DATA  ( sdram_data   ),
+  .LD_M151_WR   ( ld_m151_wr   ),
+  .LD_M152_WR   ( ld_m152_wr   ),
+  .LD_M153_WR   ( ld_m153_wr   ),
+  .LD_M154_WR   ( ld_m154_wr   ),
+  .LD_ADDR      ( ld_addr      ),
+  .LD_DATA      ( ld_data      ),
+  .BUSY         ( romload_busy )
+);
+
 SDRAM_MUX u_sdram_mux(
   .CLKSYS      ( CLKSYS ),
-  .DL_WR       ( ioctl_wr & (tape_download | kanji_download) ),
-  .DL_ADDR     ( kanji_download ? (KANJI_BASE + {8'd0, ioctl_addr[16:0]})
+  .DL_WR       ( ioctl_wr & (tape_download | kanji_download | romset_download) ),
+  .DL_ADDR     ( kanji_download  ? (KANJI_BASE  + {8'd0, ioctl_addr[16:0]}) :
+                 romset_download ? (ROMSET_BASE + {8'd0, ioctl_addr[16:0]})
                                  : ioctl_addr ),
   .DL_DATA     ( ioctl_dout ),
   .TAPE_ADDR   ( sdram_addr ),
@@ -410,6 +497,10 @@ SDRAM_MUX u_sdram_mux(
   .KANJI_RD    ( kanji_rd ),
   .KANJI_GNT   ( kanji_gnt ),
   .KANJI_READY ( kanji_ready ),
+  .ROMSET_ADDR ( romset_addr ),
+  .ROMSET_RD   ( romset_rd ),
+  .ROMSET_GNT  ( romset_gnt ),
+  .ROMSET_READY( romset_ready ),
   .SD_ADDR     ( sdc_addr ),
   .SD_DIN      ( sdc_din ),
   .SD_WE       ( sdc_we ),
