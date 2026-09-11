@@ -435,8 +435,14 @@ always @(posedge clk_sys) begin
 	reg [3:0] scan_state;
 	reg [1:0] scan_cnt;
 	reg [1:0] blk_max;
-	reg [2:0] old_disk_index = 0;
-	reg       have_image     = 0;
+	// No `= 0` initialisers here, and that is not style. Verilator treats a
+	// declaration initialiser on a block-scoped reg as a BLOCKING assignment,
+	// so pairing one with the `<=` updates below is BLKANDNBLK -- a hard error
+	// on Verilator 4.x, which `vsim/Makefile` deliberately still supports. Both
+	// toolchains power these up to 0 anyway (Cyclone V registers, and
+	// `--x-initial fast`), which is what the have_image gate below relies on.
+	reg [2:0] old_disk_index;
+	reg       have_image;
 
 	if(RWMODE) begin
 		old_mounted <= img_mounted;
