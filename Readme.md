@@ -27,17 +27,26 @@ and plays.
 
 ## Installing
 
+**Use the MiSTer updater and there is nothing to do** — it puts the core and
+both ROM files where they belong. Then drop your `.d77`, `.d88` and `.t77`
+files into `/media/fat/games/FM-7/`.
+
+Installing by hand instead:
+
 | copy this | to here |
 |---|---|
 | `releases/FM-7_<date>.rbf` | `/media/fat/_Computer/FM-7.rbf` |
 | `releases/boot.rom` | `/media/fat/games/FM-7/boot.rom` |
 | `releases/boot1.rom` | `/media/fat/games/FM-7/boot1.rom` *(optional)* |
 
-Put your `.d77`, `.d88` and `.t77` files under `/media/fat/games/FM-7/` too.
+> **If you place the files yourself, the ROMs go in `games/FM-7/`, not beside
+> the `.rbf`.** MiSTer only looks in the core's games folder. A `boot.rom`
+> sitting next to the core is silently ignored — no error, and anything that
+> draws kanji shows garbage. If you have an older hand-made install, this is
+> worth checking.
 
-> **The ROM files go in `games/FM-7/`, not next to the `.rbf`.** MiSTer looks
-> for them in the core's games folder. A `boot.rom` sitting beside the core is
-> silently ignored — and without it, anything that draws kanji shows garbage.
+`boot.rom` is the 128 KB kanji ROM. `boot1.rom` holds the system ROM sets and
+is only needed for the Spanish machine — see [System ROM sets](#spanish-secoinsa-fm-7).
 
 ## Getting started
 
