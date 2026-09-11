@@ -1,150 +1,149 @@
-# FM-7 for MiSTer
+# Fujitsu FM-7 for MiSTer
 
-A core for the **Fujitsu FM-7** (1982), a Japanese home computer with two
-MC6809 CPUs — a main CPU running F-BASIC or a disk OS, and a sub CPU that owns
-the display and keyboard. The two talk through a shared RAM aperture and a
-halt/BUSY handshake.
+The **FM-7** (1982) was Fujitsu's big seller in Japan — a two-CPU machine with
+an MC6809 running F-BASIC and a *second* MC6809 that does nothing but drive the
+display and the keyboard. It ran one of the strongest Japanese games libraries
+of the early 80s, and almost none of it ever left Japan.
 
-Based on pcornier's original core, with FDC (`.d77` floppy) support and
-extensive main/sub and interrupt-path work.
+This core also runs the **FM77AV**, the 1985 successor with 4096 colours, a
+hardware drawing engine and a YM2203 — still marked experimental, but it boots
+and plays.
 
-## State
+![FM-7 keyboard map](docs/keyboard.svg)
 
-Boots F-BASIC from ROM and disk; runs games from `.d77`; boots OS-9 Level 1 to
-its shell. FM77AV mode boots and renders, including 320x200 4096-colour titles.
+## What works
 
-**The whole FM-7 disk collection has been swept against a reference: 395 of 395
-distinct images (100%).** Each was screened for which machine it is really for,
-run on that machine, and scored against a 77AVEMU render taken at the same
-machine-time instant. That found **seven core bugs in 395 disks, six of them
-fixed**; the last three cohorts found none. Most images that render nothing here
-render nothing on the reference either — they are data disks, save disks, `[b]`
-bad dumps, or their boot sector deliberately halts. See
-[docs/TESTING.md](docs/TESTING.md) for the method and
-[docs/HANDOFF.md](docs/HANDOFF.md) for the per-cohort results.
+* **F-BASIC** from ROM, and disk BASIC from a `.d77` / `.d88` floppy
+* **Games** — the whole FM-7 disk collection has been checked against a
+  reference emulator, 395 of 395 images
+* **OS-9 Level 1** boots to its shell (Boot ROM bank 2)
+* **Cassettes** — `.t77` tape images load and run
+* **Two floppy drives**, and multi-disk container images
+* **FM77AV mode** — 320×200 in 4096 colours, the drawing ALU, the analog palette
+* **Sound** — PSG on the FM-7, YM2203 FM on the AV
+* **Joysticks**, two ports, two buttons each
+* **Kanji ROM**, the full 128 KB JIS set
+* **Spanish Secoinsa FM-7**, selectable at run time
 
-On the FM77AV side, **no title in the 68-image set renders blank where the
-reference draws**: 30 MATCH, 0 CORE-BLANK, 0 CORE-WORSE.
+## Installing
 
-Verified working against the reference emulators: the FDC, the main/sub
-handshake and its BUSY completion flag, the shared-RAM aperture, the full
-keyboard (both routings, shift/ctrl/graph/kana/break), the kanji ROM, the
-boot-ROM bank select, the PSG and joysticks, the main-CPU interrupt path, and
-the AV memory-management unit, analog palette and drawing ALU.
-
-**Proven on hardware at `af63b45`.** The design fits the DE10-Nano (57% ALMs,
-516/553 M10K) and closes timing in every corner, and 30 titles were run on a
-real board with no regressions — including three FM77AV titles that had drawn a
-black screen on the previously deployed core. See `HARDWARE-HANDOFF.md` for the
-report and `tools/hw/` for the test harness. Anything landed since that commit
-is simulation-only again.
-
-**Cassettes load.** `Fighter.t77` reaches `Found: Fighter` and runs to the
-game's own startup prompt, consuming 100% of the image — but budget for it: a
-tape load is around 370 s of machine time, against the ~20 s a disk title needs.
-One known exception, `Crash Ball`, reports `Device I/O Error` after finding its
-header.
-
-Not supported: 2DD media and multi-disk `.d88`.
-
-## Quick start
-
-### Simulation (fast, this is where most work happens)
-
-```sh
-cd vsim
-make                     # verilator build
-./run_tests.sh           # 8-row regression suite, compares against shots-ref/
-./obj_dir/Vemu --headless --bootrom 0 --disk game.d77 \
-    --screenshot 680 --stop-at-frame 700
-./obj_dir/Vemu --headless --disk game-a.d77 --disk1 game-b.d77 \
-    --stop-at-frame 700
-./obj_dir/Vemu --help    # full flag list
-```
-
-**`vsim` must be run from `vsim/`** — the ROM loaders use relative paths and
-Verilator treats a failed `$readmem` as a warning, so running it from elsewhere
-silently gives you a machine with no ROMs. See [docs/REFERENCE.md](docs/REFERENCE.md).
-
-`vsim/README.md` documents the harness in detail.
-
-### Hardware
-
-Quartus project in the repo root. **`files.qip` is the canonical file list**,
-not the `.qsf` — the IDE re-injects a duplicate list whenever the project is
-opened in the GUI.
-
-Some bugs only appear on hardware: several flip-flops are clocked by 74138
-address-decode outputs, which are clean in Verilator and glitchy ripple clocks
-in Quartus. Simulation cannot see that class at all.
-
-Builds run on `alans@cottageubuntu`, which has a working Quartus Prime 17.0.2
-Lite at `~/intelFPGA_lite/quartus/bin` and a clone at `~/mister/FM-7_MiSTer`.
-`quartus_sh --flow compile FM-7_MiSTer` works there directly:
-
-```sh
-ssh alans@cottageubuntu 'cd ~/mister/FM-7_MiSTer && git pull && \
-  PATH=$HOME/intelFPGA_lite/quartus/bin:$PATH \
-  quartus_sh --flow compile FM-7_MiSTer'
-```
-
-A full compile takes roughly an hour. Two Critical Warnings (127005) are
-expected and benign: the AV boot loader really is 480 bytes in a 512-deep
-memory, and `AVMEM.v:435` already guards `boot_offset < 480`, so the zeroed
-tail is never read.
-
-## Repository layout
-
-| path | what |
+| copy this | to here |
 |---|---|
-| `rtl/` | the core |
-| `vsim/` | Verilator simulation harness, regression suite, sweep tooling |
-| `vsim/sweep/` | breadth-sweep scripts and recorded results (`.tsv`) |
-| `tools/hw/` | hardware test harness — drive a real MiSTer headlessly (see its README) |
-| `docs/` | reference documentation — see below |
-| `refs/` | reference emulator sources, vendored for citation |
-| `software/` | disk and tape images (not distributed) |
+| `releases/FM-7_<date>.rbf` | `/media/fat/_Computer/FM-7.rbf` |
+| `releases/boot.rom` | `/media/fat/games/FM-7/boot.rom` |
+| `releases/boot1.rom` | `/media/fat/games/FM-7/boot1.rom` *(optional)* |
 
-## Documentation
+Put your `.d77`, `.d88` and `.t77` files under `/media/fat/games/FM-7/` too.
 
-| file | what |
+> **The ROM files go in `games/FM-7/`, not next to the `.rbf`.** MiSTer looks
+> for them in the core's games folder. A `boot.rom` sitting beside the core is
+> silently ignored — and without it, anything that draws kanji shows garbage.
+
+## Getting started
+
+Load the core with no disk and you get F-BASIC. Type `print 1+1`, press Enter.
+
+To run a game, open the OSD (**F12**), pick **Mount Disk 1**, choose a `.d77`,
+then **Reset**. Most disks boot on their own from there.
+
+A few things that catch people out:
+
+* **Mounting a disk does not reboot the machine.** That is deliberate — games
+  that ask you to swap disks mid-play would restart otherwise. Hit **Reset**
+  after mounting if you want to boot from it.
+* **Some disks need a different Boot ROM.** If a disk sits there doing nothing,
+  try **Boot ROM → 2 dos-a**. OS-9 disks need this one.
+* **Tapes are slow, because tapes were slow.** A `.t77` takes around six
+  minutes of machine time to load. Mount it, type `run""`, and wait. Turn on
+  **Tape Audio** if you want to hear it working.
+
+## The OSD
+
+| option | what it does |
 |---|---|
-| [docs/HANDOFF.md](docs/HANDOFF.md) | **start here** — current state, the tools, and how not to waste the first hour |
-| [TODO.md](TODO.md) | open work, current |
-| [docs/CONTINUATION.md](docs/CONTINUATION.md) | per-title detail behind the handoff |
-| [docs/REFERENCE.md](docs/REFERENCE.md) | how to work on this core without repeating known mistakes |
-| [docs/IO_MAP.md](docs/IO_MAP.md) | `$fdxx` register facts, with citations |
-| [docs/TESTING.md](docs/TESTING.md) | the regression suite and the breadth sweep |
-| [tools/hw/README.md](tools/hw/README.md) | hardware harness: keys/screenshots/joystick against the real MiSTer |
-| `vsim/README.md` | simulation harness detail |
+| **Load Tape** | mount a `.t77` cassette image |
+| **Mount Disk 1 / 2** | mount a floppy in drive 0 / drive 1 |
+| **Disk 1 / 2 image** | pick which disk inside a multi-disk container file |
+| **Tape Rewind** | rewind the cassette to the start |
+| **Tape Audio** | hear the tape while it loads |
+| **Boot ROM** | `0 disk` boots floppies, `2 dos-a` boots OS-9 |
+| **Machine** | FM-7, or FM77AV (experimental) |
+| **System ROM** | Japanese or Spanish system ROMs — see below |
+| **Aspect ratio** | original 4:3, or fill the screen |
 
-**Read `docs/REFERENCE.md` before starting.** Its measurement-traps section is a
-list of mistakes that each produced a confident wrong answer at least once in
-this project. More bugs here were mis-diagnosed than were hard to fix.
+## Keyboard
 
-## Reference emulators
+The FM-7's keyboard is **JIS**, and this core keeps the real machine's key
+*positions*. That means some keys type a different character than your PC key
+cap says — most of the shifted punctuation, and the brackets.
 
-Three, and they do not agree. In order of authority for the FM-7:
+The [keyboard map](docs/keyboard.svg) above shows all of it. The ones people
+hit first:
 
-1. **CSP** — `refs/common-src-project/src/vm/fm7/`. Takeda Toshiya's common
-   source project. The most complete FM-7. **Primary authority.**
-2. **77AVEMU** — `refs/77AVEMU/`. Tiebreaker.
-3. **MAME** — `refs/mame/src/mame/fujitsu/fm7.cpp`. The most readable I/O map,
-   but an **unreliable** FM-7 driver. Never trust it alone.
+| you press | you get |
+|---|---|
+| `Shift`+`2` | `"` (not `@`) |
+| `Shift`+`7` `8` `9` | `'` `(` `)` |
+| `[` | `@` |
+| `]` | `[` |
+| `'` | `:` |
+| `Shift`+`;` | `+` |
 
-Where they disagree, `docs/IO_MAP.md` records which one this core follows and
-why.
+And the special keys:
 
-**`releases/boot.rom` ships with the core.** It is the 128 KB kanji ROM,
-which lives in SDRAM rather than block RAM and is uploaded by the MiSTer
-framework on ioctl index 0 at core start. Without it the `$fd20-$fd23`
-kanji window reads garbage; everything else still boots.
+| PC key | FM-7 key |
+|---|---|
+| **Left Alt** | **GRAPH** — the semigraphics character set |
+| **Right Alt** | **KANA** — locking toggle for katakana |
+| **Right Ctrl** | **BREAK** — stops a running BASIC program |
+| Page Up / Page Down | EL (erase line) / CLS |
+| F1–F10 | PF1–PF10 |
+
+Caps Lock does nothing, and the numeric keypad is not mapped.
+
+## Joysticks
+
+Two ports, mapped to MiSTer players 1 and 2, with **Button A** and **Button B**.
+Plenty of FM-7 games are keyboard-only — of 301 disk images, only 25 ever read
+the joystick ports at all, so if a game ignores your pad it is probably the game.
+
+## Spanish Secoinsa FM-7
+
+Secoinsa built and sold the FM-7 in Spain under licence, with a Latin character
+set in place of katakana and a slightly different F-BASIC. Install `boot1.rom`
+and set **System ROM** to **Set 1** to run it — `Ñ`, `Ç` and `¿` appear where
+katakana would be.
+
+You can build your own ROM sets for other variants; the file format is in
+[docs/ROMSETS.md](docs/ROMSETS.md).
+
+## Known limitations
+
+* **2DD floppies are not supported** — 2D only
+* Multi-disk containers can only reach disks in the **first 1 MB** of the file;
+  beyond that the selector clamps to the last reachable disk
+* **FM77AV mode is experimental.** It boots and plays, but it is newer than the
+  FM-7 side and less tested
+* The **AV keyboard** is not wired up — AV-native titles that expect the AV's
+  own key encoder will not see keypresses
+* One tape, **Crash Ball**, reports `Device I/O Error` after finding its header
+* **Xanadu Scenario II disk D** does not load
+* PSG pitch is about **0.4 of a semitone flat**, from an integer clock divider
+* The FM77AV's FM sound clock has not been verified against a reference
+
+## Thanks
+
+Based on [pcornier](https://github.com/pcornier)'s original FM-7 core.
+Sound uses [jotego](https://github.com/jotego)'s jt12/jt49. Verified against
+Takeda Toshiya's common source project, CaptainYS's 77AVEMU, and MAME.
 
 ## Licence
 
-GPL. The core's own files carry the MiSTer framework's "version 2 ... or (at
-your option) any later version" grant, and `rtl/jt12/` is jotego's jt12/jt49
-under GPL**v3**-or-later. The combination is permitted by that grant, and the
-**combined work therefore ships as GPLv3** — see `rtl/jt12/LICENSE-jt12`.
-`jt03` is the FM77AV's YM2203 and also supplies the FM-7's PSG, so removing it
-is not an option that leaves a working core.
+GPLv3 — see [LICENSE](LICENSE) and [LICENSE-NOTICE.md](LICENSE-NOTICE.md).
+ROM images are not GPL and belong to their respective owners.
+
+---
+
+*Working on the core itself? [DEVELOPING.md](DEVELOPING.md) is the developer
+reference — build, simulate, test and verify. Read
+[docs/REFERENCE.md](docs/REFERENCE.md) before changing anything.*

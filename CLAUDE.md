@@ -46,8 +46,16 @@ the way it is. Docs must not duplicate either.**
 
 - **One `TODO.md`, open work only.** If it's fixed, it leaves. No status tags as
   section headings.
-- **One `Readme.md`** that orients a newcomer: what this is, current state, how
-  to build and run, repo layout, where the docs are.
+- **Two top-level readmes, and they have different audiences.** `Readme.md` is
+  for someone *installing* the core: what the machine is, what works, where the
+  files go on the SD card, the OSD, the keyboard, known limitations. It must
+  not accumulate build instructions or measurement traps. `DEVELOPING.md` is
+  for someone *working on* the core: build, simulate, test, verify, repo
+  layout, which reference emulator wins a disagreement. If you find yourself
+  adding a Verilator flag to `Readme.md`, it belongs in `DEVELOPING.md`.
+- **`docs/keyboard.svg` is generated**, by `tools/make-keymap-svg.py` from the
+  tables in `rtl/KEYBOARD.v`. Do not hand-edit it; change the RTL or the
+  generator and re-run.
 - **Reference files in `docs/`**, one per durable topic, each under ~300 lines.
 - When a doc passes ~500 lines, that is a signal it has started accumulating
   narrative. Split the reference out and delete the rest.
