@@ -510,7 +510,12 @@ always @* begin
 	      9'h4b: begin { P0, kdata } = 9'h6c; end // l
 	      9'h4c: begin { P0, kdata } = 9'h3b; end // ;
 	      9'h52: begin { P0, kdata } = 9'h3a; end // '
-	      9'h0e: begin { P0, kdata } = 9'h5b; end // `
+	      // $5d, not $5b. This is the ']' key: ctrl gives GS ($1d), GRAPH gives
+	      // the ']' semigraphic ($ec) and KANA the closing bracket ($a3), all
+	      // at this same scancode. The base table alone said $5b, which is
+	      // '[' -- the same character PC ']' ($5b) already produces, so ']'
+	      // could not be typed at all and one key was a duplicate.
+	      9'h0e: begin { P0, kdata } = 9'h5d; end // `
 
 	      9'h1a: begin { P0, kdata } = 9'h7a; end // z
 	      9'h22: begin { P0, kdata } = 9'h78; end // x

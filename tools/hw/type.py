@@ -9,7 +9,7 @@ M={**{c:k for c,k in zip("1234567890",[2,3,4,5,6,7,8,9,10,11])},
    **{c:k for c,k in zip("asdfghjkl",range(30,39))},
    **{c:k for c,k in zip("zxcvbnm",range(44,51))},
    ',':51,'.':52,'/':53,';':39,':':40,'-':12,'=':13,' ':57}
-SH={'(':9,')':10,'?':53,'"':3,'*':9,'+':13}
+SH={'(':9,')':10,'?':53,'"':3,'*':9,'+':13,'$':5,'#':4,'%':6,'&':7}
 def main(txt, enter):
     ws=websocket.create_connection(WS,timeout=10)
     def k(c,shift=False):
