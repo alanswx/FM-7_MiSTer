@@ -1,0 +1,19 @@
+# b4a8c5c -- sys/yc_out.sv synced to Template_MiSTer 3ea1134, wd1793.sv comment-only.
+# 24,239/41,910 ALMs, 516/553 M10K, 4,097,480 memory bits (identical to 4b447f3),
+# no negative slack in any corner (tightest +0.089 ns, HDMI PLL).
+#
+# PREV_* columns are the OLD CORE CAPTURED IN THIS SESSION from the board's own
+# 4b447f3 backup rbf -- NOT hw-4b447f3.tsv, three of whose rows do not reproduce
+# on the core they describe. See HARDWARE-HANDOFF.md.
+TITLE	WxH	BYTES	LIT_PCT	COLOURS	PREV_LIT_PCT	PREV_COLOURS	NOTE
+00-nodisk	640x200	3681	1.98	2	1.98	2	identical to tsv baseline
+01-Archon	640x200	12026	58.27	5	58.40	4	old core re-measured this session
+02-Thexder	640x200	51444	60.18	7	60.56	7	animation phase
+04-Ys	640x200	33447	32.25	8	32.25	8	identical
+31-drv1	640x200	2605	0.82	2	0.82	2	identical
+46-AVDemo	640x200	9302	72.91	4096	72.91	4096	old core re-measured, exact match
+45-WoodyPoco	640x200	18884	57.27	44	57.27	44	identical
+43-DragonBuster	640x200	8508	22.86	21	57.88	16	animation variance: repeats gave 54.16 / 57.87
+51-Luxsor1	640x200	11080	23.00	16	23.00	16	identical
+52-Luxsor2	640x200	28347	81.92	45	81.92	45	old core re-measured, exact match
+53-PsyOBlade	640x200	18931	17.72	8	18.16	8	animation phase

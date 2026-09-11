@@ -440,13 +440,41 @@ Not characterised past that, and nobody has compared the finished title against
 
 ## Media support
 
-- **Second drive.** Implemented in the core and simulator: OSD slots S0/S1
-  feed independent D77 scanners, and `$fd1d` selects the active drive. The
-  hardware build still needs a Quartus compile and physical two-disk check.
-- **2DD media** and **multi-disk `.d88`**.
+- **2DD media.**
 
-These three together gate a large fraction of the collection — probably the
-highest title-count-per-effort item after the register audit.
+(~~Second drive~~ -- **CLOSED on hardware 2026-09-11.** `FILES"1:"` reads
+drive 1's own media: `Bad File Structure` with Ys Disk B mounted against
+`Drive Not Ready` with the drive empty. The thing that had blocked it for
+months was not tooling -- disk BASIC's `How many disk drives ?` prompt must be
+answered **2** or F-BASIC never addresses drive 1, and every previous capture
+left it unanswered. See `HARDWARE-HANDOFF.md`.)
+
+(Superseded: this list used to read "2DD media **and multi-disk `.d88`**".
+Multi-disk containers landed in `4b447f3` and were verified on hardware --
+`XANADU.D77` presents three different programs and index 0 is byte-identical
+to the standalone dump. What remains of that item is the **1 MB reach limit**:
+the container walk is 20-bit, so the 25 sub-disks past that mark are
+unreachable and an out-of-range index clamps to the last reachable one.
+Widening the address path to 24 bits is costed at ~1 M10K.)
+
+## System ROM sets
+
+Implemented: `boot1.rom` on ioctl index 64 stages ROM sets in SDRAM and
+`ROMLOAD.v` pages the selected one into block RAM at reset, costing no M10K.
+Format and the Secoinsa findings are in `docs/ROMSETS.md`.
+
+Open:
+
+- **Which boot ROM the Secoinsa actually used.** `FM7Secoinsa_GPU.BIN` is
+  byte-identical to the Japanese `TL11_11_M152`, while `FM7Secoinsa_8449.BIN`
+  carries a diverged Spanish 512-byte image at `$FE00` (same code lineage, 56%
+  agreement after correcting a 6-byte insertion at offset 11). The shipped set
+  uses the Japanese one; the Spanish variant sits unwired in
+  `rtl/roms/secoinsa_bootbas.rom`. Ask whoever dumped these.
+- **Spanish keyboard.** The Secoinsa had one; this core's keyboard is
+  JIS-positional by decision. A ROM set does not change key positions.
+- **What the 430 differing F-BASIC bytes actually do.** 24 clusters, located
+  and measured, not yet disassembled.
 
 ---
 

@@ -1,0 +1,19 @@
+# Secoinsa ROM set on the DE10-Nano. Core built from the working tree with
+# ROMLOAD.v; boot.rom and boot1.rom in /media/fat/games/FM-7/ (NOT _Computer --
+# see HARDWARE-HANDOFF.md).
+#
+# GLYPH_* are on-screen glyph rows matching each font ROM byte for byte, out of
+# 24 (three glyphs x 8 rows), sampled every other pixel because the capture is
+# 2x horizontal.
+CAPTURE	WxH	BYTES	LIT_PCT	COLOURS	GLYPH_VS_JP	GLYPH_VS_ES	NOTE
+es-banner0	640x200	3629	1.86	2	-	-	"Copyright (C) 1981 By"
+es-banner1	640x200	3624	1.85	2	-	-	"Copyright (C) 1981 by"  <- Secoinsa F-BASIC
+es-chr0	640x200	4570	2.83	2	24/24	2/24	chr$(191,161,162) = katakana
+es-chr1	640x200	4589	2.86	2	2/24	24/24	chr$(191,161,162) = inverted-?, N-tilde, C-cedilla
+
+# Drive 1, closed on hardware 2026-09-11. 31-drv1.mgl (F-BASIC drive 0,
+# Ys Disk B drive 1) vs 33-drv1-empty.mgl (drive 1 empty). Disk BASIC's
+# "How many disk drives ?" MUST be answered 2 first.
+CAPTURE	DRIVE1	FILES_0	FILES_1
+d1-files0/1	Ys (FM7) (Disk B).d77	directory lists OK	Bad File Structure
+d1-empty1	(nothing mounted)	-	Drive Not Ready

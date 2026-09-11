@@ -1,3 +1,18 @@
+# NOTE -- these rows are correct; an earlier warning here claiming three of them
+# "do not reproduce" was WRONG and has been removed.
+#
+# What actually happened: captures taken on 2026-09-11 read Archon 58%, Luxsor 2
+# 81.9% and the AV demo 72.9% against the 16.63 / 75.37 / 2.48 recorded here,
+# on BOTH this rbf and a newer one. The variable was not the core. It was the
+# KANJI ROM: boot.rom had never been in games/FM-7, so it had never uploaded,
+# and SDRAM held garbage at KANJI_BASE. Copying it there changed those titles'
+# rendering, and b4a8c5c re-measured afterwards gives 17.18 / 29.32 / 19.05 --
+# back in line with these rows.
+#
+# SDRAM CONTENTS PERSIST ACROSS CORE LOADS. Removing boot.rom does not undo an
+# upload from earlier in the same power cycle, which is why a "boot.rom removed"
+# control run showed no change and briefly cleared the kanji ROM of suspicion.
+#
 TITLE	WxH	BYTES	LIT_PCT	COLOURS	PREV_LIT_PCT	PREV_COLOURS
 00-nodisk	640x200	3681	1.98	2	1.98	2
 01-Archon	640x200	15148	16.63	7	16.63	7

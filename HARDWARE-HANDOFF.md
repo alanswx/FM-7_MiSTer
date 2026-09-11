@@ -6,53 +6,180 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
-# REQUEST: run 1942 on the DE10-Nano -- a third-party board shows a broken HUD, sim does not
+# CLOSED: drive 1 reads its own media on hardware
 
-A tester running their own build on a **Senor board** (not a DE10-Nano) reports
-`1942 (1987)(ASCII)(JP).d77` drawing **white noise in the top-right HUD area**.
-This is a request for the one measurement that can attribute it, because
-nothing available on the sim side can.
+The longest-standing open hardware item -- "a second mount, a clean boot, or a
+drive-0 DMA trace does not close this" -- is closed.
 
-**1942 has never been run on the DE10-Nano.** It is in neither
-`results/hw-af63b45.tsv` (30 titles) nor `results/hw-4b447f3.tsv` (18). That is
-the gap: without a DE10-Nano capture there is no way to tell a core bug that
-only appears on hardware from something particular to that board or that build.
+**The blocker was never tooling. It was that disk BASIC asks two questions.**
+`31-drv1.mgl` mounts F-BASIC v3.0 in drive 0 and Ys Disk B in drive 1, and
+booting it stops at `How many disk drives ?`. **F-BASIC does not address drive
+1 at all unless that is answered 2** -- and every previous capture of this MGL
+left it unanswered, which is why the row scored 0.82% lit and proved nothing.
+A second question, `How many disk files(0-15) ?`, follows it.
 
-**In simulation the HUD is correct.** Measured against 77AVEMU `--fm7` at
-matched instants (reference frame = round(N x 1.00608)):
+Answer both, then:
 
-| | f1600 | f1800 | f1980 | f2200 |
-|---|---|---|---|---|
-| our HUD lit pixels (x>=520) | 1724 | 1724 | 1724 | 1724 |
-| reference | 0 | 1853 | 1012 | 1853 |
+| drive 1 contains | `FILES"1:"` prints |
+|---|---|
+| `Ys (FM7) (Disk B).d77` | **`Bad File Structure`** |
+| nothing (`33-drv1-empty.mgl`) | **`Drive Not Ready`** |
 
-Rock steady here, and **91.8 % agreement over lit pixels** with the reference
-whenever both are in steady state. The text reads `1 UP / HI-SCORE / SCORE /
-STAGE / LAST 32` in green and red; the reference draws the same glyphs white.
+Two *different* errors. `Drive Not Ready` is the FDC finding no media;
+`Bad File Structure` is the FDC reading the media and the directory failing to
+parse -- Ys Disk B is a game data disk with no F-BASIC directory on it. The
+second outcome depends on data unique to image 1, which is the recorded pass
+condition. `FILES"0:"` lists the F-BASIC disk correctly in both runs.
 
-**Two things ruled out from this side:**
+**A trap paid for here: the first attempt looked like a pass and was not.**
+It typed `FILES"0:"` and `FILES"1:"` without answering the second question, so
+both went into the `How many disk files` prompt. The two screenshots differed --
+because the *echoed text* differed -- and the md5 check passed. Only opening
+the images showed no `FILES` had ever run. **A diff between two captures is not
+evidence that the thing you intended happened.**
 
-* *The kanji ROM in SDRAM.* That is the one ROM moved off-chip to make the
-  design fit, so a marginal SDRAM on another board is a plausible mechanism for
-  garbled text -- but 1942 **never touches `$fd20-$fd23`**, so it cannot be
-  this.
-* *Trap 76 (77AVEMU's unfaithful `--fm7` video).* The reference renders are
-  640x400, so the reference is in genuine FM-7 mode and the trap does not apply.
+---
 
-**Two measurement traps paid for on the way, both recorded so nobody repeats
-them.** Agreement over the HUD strip first read 93-99 %, which was meaningless:
-the strip is ~93 % black and black-matching-black dominated it -- trap 77, an
-agreement figure means nothing without the coverage beside it. Scoring only
-pixels lit in either image drops it to 91.8 %, and at f1980 to 8.7 %. That 8.7 %
-then looked like a real frame-specific divergence and is **not**: the table
-above shows the REFERENCE's HUD dipping to 1012 lit at that instant while ours
-holds 1724. It is the reference mid-redraw, not us.
+# Hardware: the Secoinsa ROM set WORKS on the DE10-Nano -- and the kanji boot.rom has been in the wrong directory all along
 
-**What would settle it:** one DE10-Nano capture of 1942 at a comparable settle
-time. If the HUD is clean there, the fault is in that tester's board or build
-and not in the core. If it is broken there too, it is ours and the sim is
-hiding it -- which would be the first such case in this campaign and worth
-knowing on its own account.
+Built and deployed the ROM-set core. `boot.rom` and `boot1.rom` copied to
+**`/media/fat/games/FM-7/`**, `00-nodisk.mgl`, `System ROM` row set to 0 then
+1, and in each case `print chr$(191);chr$(161);chr$(162)` typed at the F-BASIC
+prompt. Those three codes are katakana on the Japanese character generator and
+`,` `N-tilde`, `C-cedilla` on the Secoinsa one.
+
+Scoring each on-screen glyph against both font ROMs, byte for byte:
+
+| | Japanese `m153` | Secoinsa CG |
+|---|---|---|
+| Set 0 on the board | **24/24 glyph rows** | 2/24 |
+| Set 1 on the board | 2/24 | **24/24 glyph rows** |
+
+The whole path is proven on silicon: SD card -> ioctl index 64 -> SDRAM
+`$420000` -> ROMLOAD -> block RAM -> sub CPU -> video. The banner corroborates
+it independently: `Copyright (C) 1981 By` on set 0, `by` on set 1, which is the
+F-BASIC difference measured from the ROM diff before any of this was built.
+
+Cost, from the map report rather than an estimate: **516/553 M10K and 4,097,480
+memory bits, both unchanged**, +57 ALMs. Duplicating the ROMs in block RAM
+instead would have cost 34 of the 37 free blocks.
+
+## `HomeDir()` is `games/<core name>`, and the kanji ROM was never in it
+
+The card had exactly one `boot.rom`, in `/media/fat/_Computer/` beside the
+`.rbf`. **No boot-ROM path in `Main_MiSTer` reads that location.** `HomeDir()`
+is `games/<core name>` via `prefixGameDir`, and every boot-ROM lookup is
+`<home>/boot.rom` or `<home>/boot<N>.rom`; the only `_Computer` fallback is
+`<rbf dir>/FM-7.ROM`, a different filename.
+
+So the 128 KB kanji ROM has almost certainly never been uploaded on hardware.
+Nothing caught it because **no title in the hardware suite reads the
+`$fd20-$fd23` kanji window** -- `make kanji-test` covers that path in
+simulation only. `Readme.md`'s install table said "next to the `.rbf`" and has
+been corrected.
+
+Confirmed empirically rather than from the source read: `boot1.rom` placed in
+`games/FM-7/` is picked up and visibly changes the machine.
+
+## Two measurement traps paid for here
+
+1. **Text glyphs are 8 px doubled to 16 px -- the machine is in 40-column
+   mode, and this is NOT a capture artifact.** The simulator's own screenshots
+   show the same doubling at the same coordinates (x=0, y=60, 2x), so a glyph
+   matcher written against `subsys_m153.rom.mem` must sample every other pixel
+   in BOTH environments. One that assumes 1:1 scores the CORRECT font *worse*
+   than the wrong one -- 8/24 for Japanese on the Secoinsa capture, against
+   24/24 once undoubled. The first number said "the Spanish font did not
+   load". It had.
+2. **`pkill -f <pattern>` matches this session's own command line.** A
+   `pkill -f 'obj_dir/Vemu'` whose heredoc contained that string killed the
+   calling shell. Same family as the `pgrep -f 'runtest.sh'` self-match that
+   reported "something is already driving the board" when nothing was. Match on
+   a narrower pattern, or kill by PID.
+
+---
+
+# Hardware: `b4a8c5c` is clean -- and the kanji ROM changes what some titles render
+
+Built and deployed `b4a8c5c` (0 errors; **24,239 / 41,910 ALMs (58%)**,
+**516 / 553 M10K**, 4,097,480 memory bits -- identical to `4b447f3` to the byte,
+no negative slack in any corner). Regression subset, 11 titles: **no blanks, no
+dropped AV toggles, zero regressions.**
+
+## The false alarm, and what it actually was
+
+Archon, Luxsor 1/2 and Psy-O-Blade all came back far from `hw-4b447f3.tsv`
+(Archon 58% lit against a recorded 16.63%). Three repeat captures each showed
+them **stable**, so it was not animation noise. Capturing the old `4b447f3` rbf
+in the same session gave the *same* off-baseline numbers, which looked like
+proof that the TSV was wrong.
+
+It was not. **The variable was the kanji ROM.**
+
+`boot.rom` had never been in `games/FM-7/` on this board -- only in
+`_Computer/`, which no boot-ROM path reads (see the ROM-set section above). So
+the kanji ROM had never uploaded and SDRAM held garbage at `KANJI_BASE`. Once
+it was copied to the right directory, `b4a8c5c` re-measured in the same session
+reads **17.18% / 29.32% / 19.05%** -- back in line with the recorded baseline,
+which was right all along.
+
+| title | no kanji ROM | kanji ROM present | `hw-4b447f3.tsv` |
+|---|---|---|---|
+| 01-Archon | 58.27% | **17.18%** | 16.63% |
+| 51-Luxsor1 | 23.00% | **29.32%** | -- |
+| 53-PsyOBlade | 17.72% | **19.05%** | -- |
+
+So these titles are affected by the kanji window, and the hardware suite has
+been running without the ROM that feeds it.
+
+## The control that was wrong
+
+Moving `boot.rom` away and re-running showed **no change**, which cleared the
+kanji ROM of suspicion for an hour. That control is invalid:
+**SDRAM contents persist across a core load.** The upload from earlier in the
+same power cycle was still sitting at `KANJI_BASE`; removing the file only
+stops the *next* upload. Nothing short of a power cycle clears it.
+
+Three rules follow, and all three were violated getting here:
+
+1. **Check `games/FM-7/` holds `boot.rom` before blaming a build.**
+2. **Stability across repeats does not mean correctness.** Archon read the same
+   value three times and was still in the wrong state entirely.
+3. **Removing an uploaded file is not a control for its absence.** Power-cycle,
+   or accept that you are testing "file absent, data still resident".
+
+(Superseded: this section previously concluded "three rows of `hw-4b447f3.tsv`
+do not reproduce -- the TSV is what is wrong". That was incorrect; the TSV rows
+are right and the board was in a state no user would be in. The warning added
+to that file and to `tools/hw/README.md` trap 12 has been replaced.)
+
+---
+
+# CLOSED: 1942's broken HUD was not the core
+
+A tester on a **Senor board** (not a DE10-Nano) reported
+`1942 (1987)(ASCII)(JP).d77` drawing white noise in the top-right HUD area,
+and this file carried a request for a DE10-Nano capture to attribute it.
+
+**It runs properly on that board now** -- reported by the tester with a
+screenshot, 2026-09-11. So the fault was in that board or that build and not
+in the core, which is one of the two outcomes the request predicted.
+
+What the sim side had measured, kept because it is the reference if this ever
+comes back: the HUD is rock steady at 1724 lit pixels (x>=520) across f1600 /
+f1800 / f1980 / f2200, and agrees with 77AVEMU `--fm7` on **91.8% of lit
+pixels** in steady state. 1942 never touches `$fd20-$fd23`, so the kanji ROM in
+SDRAM could not have been the mechanism.
+
+Two measurement traps were paid for on the way and are worth keeping:
+
+* **An agreement figure means nothing without the coverage beside it** (trap
+  77). Agreement over the HUD strip first read 93-99%, which was meaningless --
+  the strip is ~93% black and black-matching-black dominated it. Scoring only
+  pixels lit in either image drops it to 91.8%.
+* **A frame-specific dip can be the REFERENCE moving, not you.** At f1980 that
+  figure fell to 8.7% and looked like a real divergence. It was 77AVEMU
+  mid-redraw: its HUD dips to 1012 lit at that instant while ours holds 1724.
 
 Regenerate the sim-side evidence with:
 
@@ -61,9 +188,6 @@ cd vsim && ./obj_dir/Vemu --headless --bootrom 0 --machine fm7 \
     --disk "../software/D77/1942 (1987)(ASCII)(JP).d77" \
     --screenshot 1600,1800,1980,2200 --screenshot-prefix /tmp/1942 \
     --stop-at-frame 2210
-refs/local/fm77av_headless refs/local/fm77av-roms \
-    "software/D77/1942 (1987)(ASCII)(JP).d77" 800000000 /tmp/ref.png \
-    --fm7 --stop-at-frame 1992
 ```
 
 ---

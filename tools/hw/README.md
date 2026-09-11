@@ -102,6 +102,23 @@ An MGL that mounts disks needs a `<reset delay="1" hold="1"/>` or they never boo
    set. OS-9 captured through a plain MGL load is a black screen and means
    nothing; drive it with `osdkey.py 2` and it reaches its `Time ?` prompt.
 
+12. **The kanji ROM changes what some titles render, and SDRAM survives a core
+   load.** `boot.rom` belongs in `games/FM-7/`, not beside the `.rbf` --
+   MiSTer's `HomeDir()` is `games/<core name>`. Until 2026-09-11 it had never
+   been in the right place on the test board, so the kanji ROM had never
+   uploaded and SDRAM held garbage at `KANJI_BASE`. Archon, Luxsor 1/2 and
+   Psy-O-Blade all render differently in that state -- Archon 58% lit against
+   17% with the ROM present -- which reads exactly like a core regression.
+
+   **The control that looks obvious is wrong.** Moving `boot.rom` away and
+   re-running does NOT restore the old state: the upload from earlier in the
+   same power cycle is still sitting in SDRAM. Nothing short of a power cycle
+   clears it. That false control cleared the kanji ROM of suspicion for an hour.
+
+   Before blaming a build for a rendering change, check that `games/FM-7/`
+   holds `boot.rom`, and compare against the old rbf captured *in the same
+   session with the same card contents* -- that is what finally attributed it.
+
 ## The game-independent joystick probe
 
 From F-BASIC (`docs/IO_MAP.md`), select stick 0 and read port A:
