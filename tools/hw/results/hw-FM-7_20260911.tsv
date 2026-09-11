@@ -1,0 +1,30 @@
+# RELEASE VALIDATION -- releases/FM-7_20260911.rbf (md5 b67ea775255d9ac743d6942f982b517f),
+# built from 9d08243. Captured with boot.rom AND boot1.rom in /media/fat/games/FM-7/,
+# i.e. the state a correctly-installed user is in (kanji ROM loaded).
+#
+# PREV_* is the rs-* run: the ROM-set build in the SAME card state. Comparing
+# against pre-kanji captures re-creates the false alarm documented in
+# HARDWARE-HANDOFF.md, so do not.
+TITLE	WxH	BYTES	LIT_PCT	COLOURS	PREV_LIT_PCT	PREV_COLOURS	NOTE
+00-nodisk	640x200	3681	1.98	2	1.98	2	identical
+01-Archon	640x200	15091	16.76	7	16.76	7	byte-identical
+02-Thexder	640x200	51577	60.26	7	60.32	7	animation phase
+04-Ys	640x200	33447	32.25	8	32.25	8	byte-identical
+31-drv1	640x200	2573	0.70	2	0.70	2	byte-identical
+43-DragonBuster	640x200	8508	22.86	21	22.86	21	byte-identical
+45-WoodyPoco	640x200	18884	57.27	44	57.27	44	byte-identical
+46-AVDemo	640x200	9302	72.91	4096	72.91	4096	byte-identical
+51-Luxsor1	640x200	20429	29.28	20	29.30	21	animation phase
+52-Luxsor2	640x200	27935	81.82	45	81.82	45	animation phase
+53-PsyOBlade	640x200	20927	19.06	8	19.05	8	animation phase
+
+# Spanish ROM set. Glyph rows matching each font ROM byte for byte, out of 24
+# (three glyphs x 8 rows), sampled every other pixel -- 40-column text is 8 px
+# doubled to 16.
+CAPTURE	GLYPH_VS_JP	GLYPH_VS_ES	NOTE
+rel-es0	24/24	2/24	System ROM = Set 0, katakana
+rel-es1	2/24	24/24	System ROM = Set 1, inverted-?, N-tilde, C-cedilla
+
+# Drive 1.
+CAPTURE	FILES_0	FILES_1
+rel-d1-files0/1	directory lists OK	Bad File Structure (Ys Disk B has no F-BASIC directory)
