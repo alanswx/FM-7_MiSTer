@@ -59,7 +59,7 @@ video chain, which is exactly what the core depends on.
 | `--tape-audio` / `--rewind-at-frame <n>` | The `Tape Audio` and `Tape Rewind` OSD bits. |
 | `--bootrom <0-3>` | The `BootROM` OSD bits: 0 = F-BASIC, 1-3 = the DOS boot ROMs. |
 | `--machine <fm7\|fm77av>` | Machine-family selector matching the OSD. `fm77av` is a bring-up gate and currently holds the core in reset until the AV backend is implemented. |
-| `--key <frame>:<text>` | Types text, or `@NAME` for `SPACE RETURN TAB BS ESC CAPS UP DOWN LEFT RIGHT HOME INS DEL CTRL SHIFT GRAPH KANA BREAK F1`..`F10`. |
+| `--key <frame>:<text>` | Types text, or `@NAME` for `SPACE RETURN TAB BS ESC CAPS UP DOWN LEFT RIGHT HOME INS DEL CTRL SHIFT GRAPH KANA BREAK F1`..`F10`, and the keypad `KP0`..`KP9 KPDOT KPPLUS KPMINUS KPSTAR KPSLASH KPENTER`. `@KP8` is not `@UP`: the same scancode, without the E0 prefix. |
 | `--key-hold <frames>` | Frames to hold each key, default 6. |
 | `--screenshot <n,...>` / `--screenshot-name <path>` | PNG per listed frame / exact path, for scripting. |
 | `--stop-at-frame <n>` | Required for headless runs; otherwise it stops at 100000 frames. |

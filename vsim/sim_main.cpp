@@ -500,6 +500,15 @@ static bool name_to_ps2(const std::string& n, KeyMap& out) {
 		{"F4",{0x0c,false,false}},  {"F5",{0x03,false,false}},  {"F6",{0x0b,false,false}},
 		{"F7",{0x83,false,false}},  {"F8",{0x0a,false,false}},  {"F9",{0x01,false,false}},
 		{"F10",{0x09,false,false}},
+		// Numeric keypad. KP8/KP4/KP6/KP2 share their scancodes with the cursor
+		// keys and differ only in NOT being extended -- sending @UP is not a
+		// substitute for @KP8.
+		{"KP0",{0x70,false,false}}, {"KP1",{0x69,false,false}}, {"KP2",{0x72,false,false}},
+		{"KP3",{0x7a,false,false}}, {"KP4",{0x6b,false,false}}, {"KP5",{0x73,false,false}},
+		{"KP6",{0x74,false,false}}, {"KP7",{0x6c,false,false}}, {"KP8",{0x75,false,false}},
+		{"KP9",{0x7d,false,false}}, {"KPDOT",{0x71,false,false}}, {"KPPLUS",{0x79,false,false}},
+		{"KPMINUS",{0x7b,false,false}}, {"KPSTAR",{0x7c,false,false}},
+		{"KPSLASH",{0x4a,true,false}},  {"KPENTER",{0x5a,true,false}},
 	};
 	std::string u = n;
 	std::transform(u.begin(), u.end(), u.begin(), ::toupper);

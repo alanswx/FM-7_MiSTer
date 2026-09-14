@@ -133,7 +133,7 @@ def main():
 {"".join(parts)}
 <text x="{PAD}" y="{height-52}" class="lg">Alt = GRAPH (semigraphics $80-$FD)   |   Right Alt = KANA, a LOCKING toggle   |   Right Ctrl = BREAK   |   Caps Lock does nothing</text>
 <text x="{PAD}" y="{height-34}" class="lg">PgUp = EL (erase line), PgDn = CLS. F1-F10 are PF1-PF10. Generated from rtl/KEYBOARD.v by tools/make-keymap-svg.py.</text>
-<text x="{PAD}" y="{height-16}" class="lg">The numeric keypad is not mapped, except keypad / which types "/".</text>
+<text x="{PAD}" y="{height-16}" class="lg">The numeric keypad (not drawn) types the same characters as the main keys; keypad Enter = RETURN.</text>
 </svg>
 '''
     open("docs/keyboard.svg","w").write(svg)

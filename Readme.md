@@ -108,7 +108,9 @@ And the special keys:
 | Page Up / Page Down | EL (erase line) / CLS |
 | F1–F10 | PF1–PF10 |
 
-Caps Lock does nothing, and the numeric keypad is not mapped.
+Caps Lock does nothing. The numeric keypad types the same characters as the
+main keys, and keypad Enter is RETURN — which matters for games that steer on
+keypad 8/4/6/2, such as Dig Dug.
 
 ## Joysticks
 

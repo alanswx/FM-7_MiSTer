@@ -145,8 +145,18 @@ always @* begin
     // Our codes are PS/2 sets, so each entry is translated through the same
     // PS/2 -> physical-key correspondence the unshifted table below already
     // establishes. Keys the FM-7 has and a PS/2 keyboard does not -- KANJI,
-    // the JIS \_ key next to right shift, CONVERT/NONCONVERT and the numeric
-    // keypad -- have no entry here, which is why some phy numbers are absent.
+    // the JIS \_ key next to right shift, CONVERT/NONCONVERT, and the keypad's
+    // '=' and ',' (phy $3d, $41) -- have no entry here, which is why some phy
+    // numbers are absent.
+    //
+    // The rest of the numeric keypad (phy $36-$47) IS mapped. PS/2 keypad
+    // 8/4/6/2 send $75/$6b/$74/$72 -- the cursor keys' codes WITHOUT the E0
+    // prefix -- so they only match as the 9-bit {extended, code}. Unmapped,
+    // they fell through every table and strobed a stale kdata, which is why
+    // keypad digits typed nothing and Dig Dug (8/4/6/2 to move) could not be
+    // played. CSP gives every keypad key the same code as its main-keyboard
+    // twin in the plain, shift and kana tables, a distinct semigraphic under
+    // GRAPH, and nothing under CTRL.
 
     // CTRL. For the letters this is just code & $1f; the rest are the JIS
     // punctuation positions that carry the remaining control codes.
@@ -246,11 +256,25 @@ always @* begin
         9'h41: begin { P0, kdata } = 9'h087; end // ,
         9'h49: begin { P0, kdata } = 9'h088; end // .
         9'h4a: begin { P0, kdata } = 9'h097; end // /
-        // The keypad '/' is its own physical key on an FM-7 (phy $37) and
-        // graph_key gives it $91, not the main '/' key's $97. The unshifted
-        // table conflates the two because they both type '/'; under GRAPH they
-        // differ. The rest of the numeric keypad has no PS/2 mapping at all.
+        // The keypad keys are their own physical keys on an FM-7 (phy $36-$47)
+        // and graph_key gives them their own semigraphics -- keypad '/' is $91,
+        // not the main '/' key's $97. The unshifted table types the same
+        // character for both; under GRAPH they differ. graph_shift_key is
+        // identical for the keypad, and neither has an entry for keypad 0 or '.'.
         9'h14a: begin { P0, kdata } = 9'h091; end // keypad /
+        9'h07c: begin { P0, kdata } = 9'h098; end // keypad *
+        9'h079: begin { P0, kdata } = 9'h099; end // keypad +
+        9'h07b: begin { P0, kdata } = 9'h0ee; end // keypad -
+        9'h06c: begin { P0, kdata } = 9'h0e1; end // keypad 7
+        9'h075: begin { P0, kdata } = 9'h0e2; end // keypad 8
+        9'h07d: begin { P0, kdata } = 9'h0e3; end // keypad 9
+        9'h06b: begin { P0, kdata } = 9'h093; end // keypad 4
+        9'h073: begin { P0, kdata } = 9'h08f; end // keypad 5
+        9'h074: begin { P0, kdata } = 9'h092; end // keypad 6
+        9'h069: begin { P0, kdata } = 9'h09a; end // keypad 1
+        9'h072: begin { P0, kdata } = 9'h090; end // keypad 2
+        9'h07a: begin { P0, kdata } = 9'h09b; end // keypad 3
+        9'h15a: begin { P0, kdata } = 9'h00d; end // keypad enter
 
         9'h29: begin { P0, kdata } = 9'h020; end // spacebar
         9'h170: begin { P0, kdata } = 9'h012; end // insert
@@ -300,7 +324,24 @@ always @* begin
         9'h41: begin { P0, kdata } = 9'h0a4; end // , -> ideographic comma
         9'h49: begin { P0, kdata } = 9'h0a1; end // . -> ideographic full stop
         9'h4a: begin { P0, kdata } = 9'h0a5; end // / -> middle dot
+        // The keypad is unaffected by KANA: kana_shift_key gives every keypad
+        // key the same character as the plain table.
         9'h14a: begin { P0, kdata } = 9'h02f; end // keypad / (phy $37) stays '/'
+        9'h07c: begin { P0, kdata } = 9'h02a; end // keypad *
+        9'h079: begin { P0, kdata } = 9'h02b; end // keypad +
+        9'h07b: begin { P0, kdata } = 9'h02d; end // keypad -
+        9'h06c: begin { P0, kdata } = 9'h037; end // keypad 7
+        9'h075: begin { P0, kdata } = 9'h038; end // keypad 8
+        9'h07d: begin { P0, kdata } = 9'h039; end // keypad 9
+        9'h06b: begin { P0, kdata } = 9'h034; end // keypad 4
+        9'h073: begin { P0, kdata } = 9'h035; end // keypad 5
+        9'h074: begin { P0, kdata } = 9'h036; end // keypad 6
+        9'h069: begin { P0, kdata } = 9'h031; end // keypad 1
+        9'h072: begin { P0, kdata } = 9'h032; end // keypad 2
+        9'h07a: begin { P0, kdata } = 9'h033; end // keypad 3
+        9'h070: begin { P0, kdata } = 9'h030; end // keypad 0
+        9'h071: begin { P0, kdata } = 9'h02e; end // keypad .
+        9'h15a: begin { P0, kdata } = 9'h00d; end // keypad enter
 
         9'h66: begin { P0, kdata } = 9'h008; end // backspace
         9'h0d: begin { P0, kdata } = 9'h009; end // tab
@@ -374,6 +415,21 @@ always @* begin
         9'h49: begin { P0, kdata } = 9'h0d9; end // . -> ru
         9'h4a: begin { P0, kdata } = 9'h0d2; end // / -> me
         9'h14a: begin { P0, kdata } = 9'h02f; end // keypad / (phy $37) stays '/'
+        9'h07c: begin { P0, kdata } = 9'h02a; end // keypad *
+        9'h079: begin { P0, kdata } = 9'h02b; end // keypad +
+        9'h07b: begin { P0, kdata } = 9'h02d; end // keypad -
+        9'h06c: begin { P0, kdata } = 9'h037; end // keypad 7
+        9'h075: begin { P0, kdata } = 9'h038; end // keypad 8
+        9'h07d: begin { P0, kdata } = 9'h039; end // keypad 9
+        9'h06b: begin { P0, kdata } = 9'h034; end // keypad 4
+        9'h073: begin { P0, kdata } = 9'h035; end // keypad 5
+        9'h074: begin { P0, kdata } = 9'h036; end // keypad 6
+        9'h069: begin { P0, kdata } = 9'h031; end // keypad 1
+        9'h072: begin { P0, kdata } = 9'h032; end // keypad 2
+        9'h07a: begin { P0, kdata } = 9'h033; end // keypad 3
+        9'h070: begin { P0, kdata } = 9'h030; end // keypad 0
+        9'h071: begin { P0, kdata } = 9'h02e; end // keypad .
+        9'h15a: begin { P0, kdata } = 9'h00d; end // keypad enter
 
         9'h29: begin { P0, kdata } = 9'h020; end // spacebar
         9'h170: begin { P0, kdata } = 9'h012; end // insert
@@ -454,6 +510,25 @@ always @* begin
 
         9'h29: begin { P0, kdata } = 9'h20; end // spacebar
         9'h5a: begin { P0, kdata } = 9'h0d; end // enter
+
+        // The keypad ignores SHIFT: standard_shift_key is identical to
+        // standard_key for phy $36-$47.
+        9'h14a: begin { P0, kdata } = 9'h2f; end // keypad /
+        9'h07c: begin { P0, kdata } = 9'h2a; end // keypad *
+        9'h079: begin { P0, kdata } = 9'h2b; end // keypad +
+        9'h07b: begin { P0, kdata } = 9'h2d; end // keypad -
+        9'h06c: begin { P0, kdata } = 9'h37; end // keypad 7
+        9'h075: begin { P0, kdata } = 9'h38; end // keypad 8
+        9'h07d: begin { P0, kdata } = 9'h39; end // keypad 9
+        9'h06b: begin { P0, kdata } = 9'h34; end // keypad 4
+        9'h073: begin { P0, kdata } = 9'h35; end // keypad 5
+        9'h074: begin { P0, kdata } = 9'h36; end // keypad 6
+        9'h069: begin { P0, kdata } = 9'h31; end // keypad 1
+        9'h072: begin { P0, kdata } = 9'h32; end // keypad 2
+        9'h07a: begin { P0, kdata } = 9'h33; end // keypad 3
+        9'h070: begin { P0, kdata } = 9'h30; end // keypad 0
+        9'h071: begin { P0, kdata } = 9'h2e; end // keypad .
+        9'h15a: begin { P0, kdata } = 9'h0d; end // keypad enter
       endcase
     end
     // normal
@@ -526,8 +601,27 @@ always @* begin
 	      9'h3a: begin { P0, kdata } = 9'h6d; end // m
 	      9'h41: begin { P0, kdata } = 9'h2c; end // ,
 	      9'h49: begin { P0, kdata } = 9'h2e; end // .
-	      9'h14a: begin { P0, kdata } = 9'h2f; end // .
 	      9'h04a: begin { P0, kdata } = 9'h2f; end // / (was '"'; " is shift-2)
+
+	      // Numeric keypad: the same codes as the main-keyboard digits and
+	      // punctuation (CSP standard_key, phy $36-$47). Dig Dug reads 8/4/6/2
+	      // and cannot tell which of the two keys produced them.
+	      9'h14a: begin { P0, kdata } = 9'h2f; end // keypad /
+	      9'h07c: begin { P0, kdata } = 9'h2a; end // keypad *
+	      9'h079: begin { P0, kdata } = 9'h2b; end // keypad +
+	      9'h07b: begin { P0, kdata } = 9'h2d; end // keypad -
+	      9'h06c: begin { P0, kdata } = 9'h37; end // keypad 7
+	      9'h075: begin { P0, kdata } = 9'h38; end // keypad 8
+	      9'h07d: begin { P0, kdata } = 9'h39; end // keypad 9
+	      9'h06b: begin { P0, kdata } = 9'h34; end // keypad 4
+	      9'h073: begin { P0, kdata } = 9'h35; end // keypad 5
+	      9'h074: begin { P0, kdata } = 9'h36; end // keypad 6
+	      9'h069: begin { P0, kdata } = 9'h31; end // keypad 1
+	      9'h072: begin { P0, kdata } = 9'h32; end // keypad 2
+	      9'h07a: begin { P0, kdata } = 9'h33; end // keypad 3
+	      9'h070: begin { P0, kdata } = 9'h30; end // keypad 0
+	      9'h071: begin { P0, kdata } = 9'h2e; end // keypad .
+	      9'h15a: begin { P0, kdata } = 9'h0d; end // keypad enter
 
 	      9'h29: begin { P0, kdata } = 9'h20; end // spacebar
 	      9'h5a: begin { P0, kdata } = 9'h0d; end // enter
