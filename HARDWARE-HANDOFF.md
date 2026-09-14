@@ -6,6 +6,88 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# OPEN: keypad, key repeat and the `$FD01` hold -- simulated, not yet on a board
+
+Three commits on `fdc-d77-support`, split so a failure on the board can be
+bisected. Each is exactly the source of a vsim build that was tested; the
+commit messages carry the numbers.
+
+| commit | change | hardware risk |
+|---|---|---|
+| `87e30cc` | numeric keypad mapped -- table entries only | low, data |
+| `55cf560` | auto-repeat; the key tables now feed a CLKSYS register instead of an inferred latch; a key with no code sends nothing; FM77AV encoder `$04`/`$05` wired | **the latch-to-register change is the section-3 class of docs/REFERENCE.md that simulation cannot see** |
+| `376b571` | `$FD01` keeps the last code after a key release | low, one assignment removed |
+
+Build the tip; bisect only if something below fails.
+
+    cd ~/mister/FM-7_MiSTer
+    git fetch git@github.com:alanswx/FM-7_MiSTer.git fdc-d77-support
+    git checkout 376b571
+    PATH=$HOME/intelFPGA_lite/quartus/bin:$PATH quartus_sh --flow compile FM-7_MiSTer
+
+`boot.rom` goes in `games/FM-7/`, not beside the `.rbf` (section below).
+
+## 1. Keypad, at the F-BASIC prompt
+
+On the keypad type `1234567890/*-+`, then keypad Enter, then keypad `.`.
+
+- **Pass:** the line reads `1234567890/*-+`, Enter answers `Syntax Error`, `.` types `.`.
+- **Before:** digits, `-`, `+`, `.` and Enter typed nothing, and `*` typed `/`. vsim
+  never reproduced `*` -> `/` (it delivered `$FF`), so the stale-latch explanation
+  is unconfirmed -- check `*` by itself.
+
+## 2. Key repeat, at the prompt
+
+| do | expect (vsim) |
+|---|---|
+| hold `a` two seconds | nothing for 0.7 s, then ~14 per second: 20 `a` |
+| hold `a`, press Shift about a second in | repeat stops at once, no capitals: 6 `a` |
+| hold `a`, press `b` about 0.7 s in | one `b`, then `b` repeats after a fresh 0.7 s |
+| Left Ctrl + Shift + `0`, then hold `a` | a single `a` |
+| Left Ctrl + Shift + `1`, then hold `a` | repeats again |
+| hold F1 | `AUTO` once |
+
+**The rate is what only the board can answer.** If MiSTer forwards the PC
+keyboard's typematic as further key-down events, the core drops them (vsim:
+45 injected, still exactly 20 keystrokes). A held key repeating at the PC's
+speed rather than every 0.07 s means that filter is not working on hardware.
+
+## 3. Dig Dug, disk version
+
+`[Compilation] Game 012.d77` in drive 0, Boot ROM BASIC:
+
+1. `How many disk drives ?` -> `1` RETURN; `How many disk files(0-15)?` -> RETURN.
+2. `RUN"DIG DUG"` -- the name in capitals, or `File Not Found`.
+3. At `HIT RETURN KEY !`, RETURN.
+4. **Tap** keypad 4: the player walks left **and keeps walking** after the key is
+   up. Keypad 8/2/6 steer the same way; BREAK (Right Ctrl) pumps. The number-row
+   8/4/6/2 must behave identically.
+
+**Fail** is the pre-fix behaviour: the player turns a pixel and stops, or does
+nothing. The tape (`Dig Dug.t77`, `run""`) is the same program and needs about
+8 minutes to load; run it only if the disk passes.
+
+## 4. Keyboard smoke tests
+
+Because `55cf560` re-times `kdata` on the FPGA: OS-9 at Boot ROM 2 to its `OS9:`
+shell; F-BASIC typing with shifted punctuation (`print "HI!"`); a GRAPH and a
+KANA character; BREAK stopping a running program; one `.t77` `LOAD""`.
+
+## Known, not caused by these commits
+
+The vsim gate is 11 of 12 at all three commits. `disk-Thexder [b]` reads I/O
+862115 against its blessed 862118, and did so on `9033174` in two separate
+builds of the unchanged RTL. Not re-blessed.
+
+## Driving it with tools/hw
+
+Raw Linux keycodes reach the FM-7: `kbdRaw:<code>`, or `kbdRawDown:<code>`, a
+sleep, then `kbdRawUp:<code>` for a real hold, as `osdkey.py:41-42` does.
+Keypad: 7=71 8=72 9=73 -=74 4=75 5=76 6=77 +=78 1=79 2=80 3=81 0=82 .=83
+*=55 /=98 Enter=96.
+
+---
+
 # CLOSED: drive 1 reads its own media on hardware
 
 The longest-standing open hardware item -- "a second mount, a clean boot, or a
