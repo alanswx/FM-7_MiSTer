@@ -54,6 +54,32 @@ do not conflate them.
 split at `fm7_mainmem.cpp:218` is AV40EX-only; the plain FM-7 boot ROM is `$FE00-$FFEF` per
 `fm7_common.h:19`.
 
+### Where they disagree: keyboard auto-repeat (the manual overrules CSP)
+
+Fujitsu's FM-7 System Specifications §1.9.3-1.9.4, p.1-30
+(`refs/fm7-docs/archive-org-fm7-system-specifications`) is the authority here, and
+it contradicts CSP. The repeat is done by the keyboard's MB88401, not the sub CPU.
+
+| | manual | XM7 | CSP |
+|---|---|---|---|
+| delay / interval | 0.7 s / 0.07 s | 700 / 70 ms | 700 / 70 ms |
+| what repeats | the last-pressed key's code | the code latched at the press | re-decoded each time with the modifiers held then |
+| SHIFT or CAP changes, higher mode selected | repeat is cut off | any modifier press cuts it; a SHIFT release does not | keeps repeating, as the new character |
+| new key while one repeats | not stated | restarts the 0.7 s delay | keeps the running schedule |
+| CTRL+SHIFT+0 / 1 | repeat off / on | same | same |
+
+`KEYBOARD.v` follows the manual, and XM7
+(`refs/fm7-docs/xm7-retropc/utf8/VM_keyboard.c.txt`) where the manual is silent;
+the comment on its repeat block carries the line citations. MAME states the same
+700/70 ms "on FM-7" (`fm7.cpp:1826-1827`) and never implemented repeat.
+
+**Trap: the headless reference cannot show repeat at all.** 77AVEMU generates
+repeat in its GUI front end (`fssimplewindow_connection.cpp:441-460`), not in the
+machine, so `refs/local/fm77av_headless ... --fm7 --key 500:A:120` types ONE `a`
+for a two-second hold. That reads exactly like "the FM-7 does not repeat". Count
+repeats in vsim instead -- `keyboard: N strobes` in the run summary is one per
+keystroke delivered -- against the manual's timing.
+
 ### Worked example: 77AVEMU's TRACE LOG is off by one, not its FDC
 
 **This section previously claimed 77AVEMU's sector reads were off by one and that

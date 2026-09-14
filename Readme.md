@@ -112,6 +112,11 @@ Caps Lock does nothing. The numeric keypad types the same characters as the
 main keys, and keypad Enter is RETURN — which matters for games that steer on
 keypad 8/4/6/2, such as Dig Dug.
 
+Held keys repeat the way the FM-7's own keyboard does: the first repeat after
+0.7 s, then every 0.07 s. Function keys don't repeat, and pressing or releasing
+Shift stops a repeat. **Left Ctrl + Shift + 0** turns key repeat off and
+**Left Ctrl + Shift + 1** turns it back on.
+
 ## Joysticks
 
 Two ports, mapped to MiSTer players 1 and 2, with **Button A** and **Button B**.

@@ -19,7 +19,14 @@ module KEYBOARD(
   input fm8_switch,
   output LPMASKn,
   output TMMASK,
-  output KEYINn
+  output KEYINn,
+  // FM77AV encoder commands $04 (repeat on/off) and $05 (repeat timing),
+  // decoded in AVKEYBOARD.v. Idle on the FM-7.
+  input RPT_MODE_STB,
+  input RPT_MODE_ON,
+  input RPT_TIME_STB,
+  input [7:0] RPT_DELAY,
+  input [7:0] RPT_INTERVAL
 );
 
 reg press_btn;
@@ -34,6 +41,12 @@ reg [2:0] m77;
 reg m132;
 reg [3:0] modif;
 reg input_strobe;
+
+// Auto-repeat and host-typematic filter state; the logic is with key_stb below.
+reg  [8:0] rpt_code = 9'h000;       // PS/2 code of the key whose code repeats
+reg  [8:0] last_press = 9'h000;
+reg        last_press_v = 1'b0;
+wire       dup_press = press_btn && last_press_v && (code == last_press);
 
 // $FD00: b7 is the keycode's 9th bit, b0 is the machine-speed / FM-8 switch,
 // and b6:1 are UNDRIVEN and therefore read 1 -- they read 0 here and now do
@@ -118,7 +131,7 @@ always @(posedge CLKSYS) begin
       // (keyboard.cpp:117-125, alongside CAPS which behaves the same way).
       // Holding it would be wrong -- software expects kana mode to persist
       // across keystrokes until it is pressed again.
-      9'h111: if (press_btn) kana_h <= ~kana_h;   // alt right -> KANA (lock)
+      9'h111: if (press_btn && !dup_press) kana_h <= ~kana_h;   // alt right -> KANA (lock)
       9'h114:         break_h <= press_btn;       // ctrl right -> BREAK
     endcase
   end
@@ -130,7 +143,17 @@ end
 // BREAKn into FIRQn and reports it, so wiring the key here is the whole fix.
 assign BREAKn = ~break_h;
 
+// Table lookup: a pure function of the key event and the modifier state. NO_KEY
+// is not a code any table produces -- the PF keys are $101-$10a -- and means
+// "no entry in this mode": such a key sends nothing. This used to be an
+// inferred latch, so a key with no entry strobed whatever it last held.
+localparam [8:0] NO_KEY = 9'h1ff;
+reg        lk_P0;
+reg  [7:0] lk_kdata;
+wire       lk_hit = ({ lk_P0, lk_kdata } != NO_KEY);
+
 always @* begin
+  { lk_P0, lk_kdata } = NO_KEY;
 
   if (input_strobe) begin
 
@@ -162,38 +185,38 @@ always @* begin
     // punctuation positions that carry the remaining control codes.
     if (ctrl_h && press_btn) begin
       case (code)
-        9'h15: begin { P0, kdata } = 9'h11; end // ctrl-Q
-        9'h1d: begin { P0, kdata } = 9'h17; end // ctrl-W
-        9'h24: begin { P0, kdata } = 9'h05; end // ctrl-E
-        9'h2d: begin { P0, kdata } = 9'h12; end // ctrl-R
-        9'h2c: begin { P0, kdata } = 9'h14; end // ctrl-T
-        9'h35: begin { P0, kdata } = 9'h19; end // ctrl-Y
-        9'h3c: begin { P0, kdata } = 9'h15; end // ctrl-U
-        9'h43: begin { P0, kdata } = 9'h09; end // ctrl-I
-        9'h44: begin { P0, kdata } = 9'h0f; end // ctrl-O
-        9'h4d: begin { P0, kdata } = 9'h10; end // ctrl-P
-        9'h1c: begin { P0, kdata } = 9'h01; end // ctrl-A
-        9'h1b: begin { P0, kdata } = 9'h13; end // ctrl-S
-        9'h23: begin { P0, kdata } = 9'h04; end // ctrl-D
-        9'h2b: begin { P0, kdata } = 9'h06; end // ctrl-F
-        9'h34: begin { P0, kdata } = 9'h07; end // ctrl-G
-        9'h33: begin { P0, kdata } = 9'h08; end // ctrl-H
-        9'h3b: begin { P0, kdata } = 9'h0a; end // ctrl-J
-        9'h42: begin { P0, kdata } = 9'h0b; end // ctrl-K
-        9'h4b: begin { P0, kdata } = 9'h0c; end // ctrl-L
-        9'h1a: begin { P0, kdata } = 9'h1a; end // ctrl-Z
-        9'h22: begin { P0, kdata } = 9'h18; end // ctrl-X
-        9'h21: begin { P0, kdata } = 9'h03; end // ctrl-C
-        9'h2a: begin { P0, kdata } = 9'h16; end // ctrl-V
-        9'h32: begin { P0, kdata } = 9'h02; end // ctrl-B
-        9'h31: begin { P0, kdata } = 9'h0e; end // ctrl-N
-        9'h3a: begin { P0, kdata } = 9'h0d; end // ctrl-M
+        9'h15: begin { lk_P0, lk_kdata } = 9'h11; end // ctrl-Q
+        9'h1d: begin { lk_P0, lk_kdata } = 9'h17; end // ctrl-W
+        9'h24: begin { lk_P0, lk_kdata } = 9'h05; end // ctrl-E
+        9'h2d: begin { lk_P0, lk_kdata } = 9'h12; end // ctrl-R
+        9'h2c: begin { lk_P0, lk_kdata } = 9'h14; end // ctrl-T
+        9'h35: begin { lk_P0, lk_kdata } = 9'h19; end // ctrl-Y
+        9'h3c: begin { lk_P0, lk_kdata } = 9'h15; end // ctrl-U
+        9'h43: begin { lk_P0, lk_kdata } = 9'h09; end // ctrl-I
+        9'h44: begin { lk_P0, lk_kdata } = 9'h0f; end // ctrl-O
+        9'h4d: begin { lk_P0, lk_kdata } = 9'h10; end // ctrl-P
+        9'h1c: begin { lk_P0, lk_kdata } = 9'h01; end // ctrl-A
+        9'h1b: begin { lk_P0, lk_kdata } = 9'h13; end // ctrl-S
+        9'h23: begin { lk_P0, lk_kdata } = 9'h04; end // ctrl-D
+        9'h2b: begin { lk_P0, lk_kdata } = 9'h06; end // ctrl-F
+        9'h34: begin { lk_P0, lk_kdata } = 9'h07; end // ctrl-G
+        9'h33: begin { lk_P0, lk_kdata } = 9'h08; end // ctrl-H
+        9'h3b: begin { lk_P0, lk_kdata } = 9'h0a; end // ctrl-J
+        9'h42: begin { lk_P0, lk_kdata } = 9'h0b; end // ctrl-K
+        9'h4b: begin { lk_P0, lk_kdata } = 9'h0c; end // ctrl-L
+        9'h1a: begin { lk_P0, lk_kdata } = 9'h1a; end // ctrl-Z
+        9'h22: begin { lk_P0, lk_kdata } = 9'h18; end // ctrl-X
+        9'h21: begin { lk_P0, lk_kdata } = 9'h03; end // ctrl-C
+        9'h2a: begin { lk_P0, lk_kdata } = 9'h16; end // ctrl-V
+        9'h32: begin { lk_P0, lk_kdata } = 9'h02; end // ctrl-B
+        9'h31: begin { lk_P0, lk_kdata } = 9'h0e; end // ctrl-N
+        9'h3a: begin { lk_P0, lk_kdata } = 9'h0d; end // ctrl-M
 
-        9'h54: begin { P0, kdata } = 9'h00; end // ctrl-@ -> NUL
-        9'h5b: begin { P0, kdata } = 9'h1b; end // ctrl-[ -> ESC
-        9'h0e: begin { P0, kdata } = 9'h1d; end // ctrl-] -> GS
-        9'h4e: begin { P0, kdata } = 9'h1e; end // ctrl-- -> RS
-        9'h55: begin { P0, kdata } = 9'h1c; end // ctrl-^ -> FS
+        9'h54: begin { lk_P0, lk_kdata } = 9'h00; end // ctrl-@ -> NUL
+        9'h5b: begin { lk_P0, lk_kdata } = 9'h1b; end // ctrl-[ -> ESC
+        9'h0e: begin { lk_P0, lk_kdata } = 9'h1d; end // ctrl-] -> GS
+        9'h4e: begin { lk_P0, lk_kdata } = 9'h1e; end // ctrl-- -> RS
+        9'h55: begin { lk_P0, lk_kdata } = 9'h1c; end // ctrl-^ -> FS
       endcase
     end
 
@@ -203,104 +226,104 @@ always @* begin
     // duplicating a 50-entry table.
     else if (graph_h && press_btn) begin
       case (code)
-        9'h16: begin { P0, kdata } = 9'h0f9; end // 1
-        9'h1e: begin { P0, kdata } = 9'h0fa; end // 2
-        9'h26: begin { P0, kdata } = 9'h0fb; end // 3
-        9'h25: begin { P0, kdata } = 9'h0fc; end // 4
-        9'h2e: begin { P0, kdata } = 9'h0f2; end // 5
-        9'h36: begin { P0, kdata } = 9'h0f3; end // 6
-        9'h3d: begin { P0, kdata } = 9'h0f4; end // 7
-        9'h3e: begin { P0, kdata } = 9'h0f5; end // 8
-        9'h46: begin { P0, kdata } = 9'h0f6; end // 9
-        9'h45: begin { P0, kdata } = 9'h0f7; end // 0
-        9'h4e: begin { P0, kdata } = 9'h08c; end // -
-        9'h55: begin { P0, kdata } = 9'h08b; end // ^
-        9'h5d: begin { P0, kdata } = 9'h0f1; end // \
-        9'h66: begin { P0, kdata } = 9'h008; end // backspace
-        9'h0d: begin { P0, kdata } = 9'h009; end // tab
+        9'h16: begin { lk_P0, lk_kdata } = 9'h0f9; end // 1
+        9'h1e: begin { lk_P0, lk_kdata } = 9'h0fa; end // 2
+        9'h26: begin { lk_P0, lk_kdata } = 9'h0fb; end // 3
+        9'h25: begin { lk_P0, lk_kdata } = 9'h0fc; end // 4
+        9'h2e: begin { lk_P0, lk_kdata } = 9'h0f2; end // 5
+        9'h36: begin { lk_P0, lk_kdata } = 9'h0f3; end // 6
+        9'h3d: begin { lk_P0, lk_kdata } = 9'h0f4; end // 7
+        9'h3e: begin { lk_P0, lk_kdata } = 9'h0f5; end // 8
+        9'h46: begin { lk_P0, lk_kdata } = 9'h0f6; end // 9
+        9'h45: begin { lk_P0, lk_kdata } = 9'h0f7; end // 0
+        9'h4e: begin { lk_P0, lk_kdata } = 9'h08c; end // -
+        9'h55: begin { lk_P0, lk_kdata } = 9'h08b; end // ^
+        9'h5d: begin { lk_P0, lk_kdata } = 9'h0f1; end // \
+        9'h66: begin { lk_P0, lk_kdata } = 9'h008; end // backspace
+        9'h0d: begin { lk_P0, lk_kdata } = 9'h009; end // tab
 
-        9'h15: begin { P0, kdata } = 9'h0fd; end // q
-        9'h1d: begin { P0, kdata } = 9'h0f8; end // w
-        9'h24: begin { P0, kdata } = 9'h0e4; end // e
-        9'h2d: begin { P0, kdata } = 9'h0e5; end // r
-        9'h2c: begin { P0, kdata } = 9'h09c; end // t
-        9'h35: begin { P0, kdata } = 9'h09d; end // y
-        9'h3c: begin { P0, kdata } = 9'h0f0; end // u
-        9'h43: begin { P0, kdata } = 9'h0e8; end // i
-        9'h44: begin { P0, kdata } = 9'h0e9; end // o
-        9'h4d: begin { P0, kdata } = 9'h08d; end // p
-        9'h54: begin { P0, kdata } = 9'h08a; end // @
-        9'h5b: begin { P0, kdata } = 9'h0ed; end // [
-        9'h5a: begin { P0, kdata } = 9'h00d; end // enter
+        9'h15: begin { lk_P0, lk_kdata } = 9'h0fd; end // q
+        9'h1d: begin { lk_P0, lk_kdata } = 9'h0f8; end // w
+        9'h24: begin { lk_P0, lk_kdata } = 9'h0e4; end // e
+        9'h2d: begin { lk_P0, lk_kdata } = 9'h0e5; end // r
+        9'h2c: begin { lk_P0, lk_kdata } = 9'h09c; end // t
+        9'h35: begin { lk_P0, lk_kdata } = 9'h09d; end // y
+        9'h3c: begin { lk_P0, lk_kdata } = 9'h0f0; end // u
+        9'h43: begin { lk_P0, lk_kdata } = 9'h0e8; end // i
+        9'h44: begin { lk_P0, lk_kdata } = 9'h0e9; end // o
+        9'h4d: begin { lk_P0, lk_kdata } = 9'h08d; end // p
+        9'h54: begin { lk_P0, lk_kdata } = 9'h08a; end // @
+        9'h5b: begin { lk_P0, lk_kdata } = 9'h0ed; end // [
+        9'h5a: begin { lk_P0, lk_kdata } = 9'h00d; end // enter
 
-        9'h1c: begin { P0, kdata } = 9'h095; end // a
-        9'h1b: begin { P0, kdata } = 9'h096; end // s
-        9'h23: begin { P0, kdata } = 9'h0e6; end // d
-        9'h2b: begin { P0, kdata } = 9'h0e7; end // f
-        9'h34: begin { P0, kdata } = 9'h09e; end // g
-        9'h33: begin { P0, kdata } = 9'h09f; end // h
-        9'h3b: begin { P0, kdata } = 9'h0ea; end // j
-        9'h42: begin { P0, kdata } = 9'h0eb; end // k
-        9'h4b: begin { P0, kdata } = 9'h08e; end // l
-        9'h4c: begin { P0, kdata } = 9'h099; end // ;
-        9'h52: begin { P0, kdata } = 9'h094; end // :
-        9'h0e: begin { P0, kdata } = 9'h0ec; end // ]
+        9'h1c: begin { lk_P0, lk_kdata } = 9'h095; end // a
+        9'h1b: begin { lk_P0, lk_kdata } = 9'h096; end // s
+        9'h23: begin { lk_P0, lk_kdata } = 9'h0e6; end // d
+        9'h2b: begin { lk_P0, lk_kdata } = 9'h0e7; end // f
+        9'h34: begin { lk_P0, lk_kdata } = 9'h09e; end // g
+        9'h33: begin { lk_P0, lk_kdata } = 9'h09f; end // h
+        9'h3b: begin { lk_P0, lk_kdata } = 9'h0ea; end // j
+        9'h42: begin { lk_P0, lk_kdata } = 9'h0eb; end // k
+        9'h4b: begin { lk_P0, lk_kdata } = 9'h08e; end // l
+        9'h4c: begin { lk_P0, lk_kdata } = 9'h099; end // ;
+        9'h52: begin { lk_P0, lk_kdata } = 9'h094; end // :
+        9'h0e: begin { lk_P0, lk_kdata } = 9'h0ec; end // ]
 
-        9'h1a: begin { P0, kdata } = 9'h080; end // z
-        9'h22: begin { P0, kdata } = 9'h081; end // x
-        9'h21: begin { P0, kdata } = 9'h082; end // c
-        9'h2a: begin { P0, kdata } = 9'h083; end // v
-        9'h32: begin { P0, kdata } = 9'h084; end // b
-        9'h31: begin { P0, kdata } = 9'h085; end // n
-        9'h3a: begin { P0, kdata } = 9'h086; end // m
-        9'h41: begin { P0, kdata } = 9'h087; end // ,
-        9'h49: begin { P0, kdata } = 9'h088; end // .
-        9'h4a: begin { P0, kdata } = 9'h097; end // /
+        9'h1a: begin { lk_P0, lk_kdata } = 9'h080; end // z
+        9'h22: begin { lk_P0, lk_kdata } = 9'h081; end // x
+        9'h21: begin { lk_P0, lk_kdata } = 9'h082; end // c
+        9'h2a: begin { lk_P0, lk_kdata } = 9'h083; end // v
+        9'h32: begin { lk_P0, lk_kdata } = 9'h084; end // b
+        9'h31: begin { lk_P0, lk_kdata } = 9'h085; end // n
+        9'h3a: begin { lk_P0, lk_kdata } = 9'h086; end // m
+        9'h41: begin { lk_P0, lk_kdata } = 9'h087; end // ,
+        9'h49: begin { lk_P0, lk_kdata } = 9'h088; end // .
+        9'h4a: begin { lk_P0, lk_kdata } = 9'h097; end // /
         // The keypad keys are their own physical keys on an FM-7 (phy $36-$47)
         // and graph_key gives them their own semigraphics -- keypad '/' is $91,
         // not the main '/' key's $97. The unshifted table types the same
         // character for both; under GRAPH they differ. graph_shift_key is
         // identical for the keypad, and neither has an entry for keypad 0 or '.'.
-        9'h14a: begin { P0, kdata } = 9'h091; end // keypad /
-        9'h07c: begin { P0, kdata } = 9'h098; end // keypad *
-        9'h079: begin { P0, kdata } = 9'h099; end // keypad +
-        9'h07b: begin { P0, kdata } = 9'h0ee; end // keypad -
-        9'h06c: begin { P0, kdata } = 9'h0e1; end // keypad 7
-        9'h075: begin { P0, kdata } = 9'h0e2; end // keypad 8
-        9'h07d: begin { P0, kdata } = 9'h0e3; end // keypad 9
-        9'h06b: begin { P0, kdata } = 9'h093; end // keypad 4
-        9'h073: begin { P0, kdata } = 9'h08f; end // keypad 5
-        9'h074: begin { P0, kdata } = 9'h092; end // keypad 6
-        9'h069: begin { P0, kdata } = 9'h09a; end // keypad 1
-        9'h072: begin { P0, kdata } = 9'h090; end // keypad 2
-        9'h07a: begin { P0, kdata } = 9'h09b; end // keypad 3
-        9'h15a: begin { P0, kdata } = 9'h00d; end // keypad enter
+        9'h14a: begin { lk_P0, lk_kdata } = 9'h091; end // keypad /
+        9'h07c: begin { lk_P0, lk_kdata } = 9'h098; end // keypad *
+        9'h079: begin { lk_P0, lk_kdata } = 9'h099; end // keypad +
+        9'h07b: begin { lk_P0, lk_kdata } = 9'h0ee; end // keypad -
+        9'h06c: begin { lk_P0, lk_kdata } = 9'h0e1; end // keypad 7
+        9'h075: begin { lk_P0, lk_kdata } = 9'h0e2; end // keypad 8
+        9'h07d: begin { lk_P0, lk_kdata } = 9'h0e3; end // keypad 9
+        9'h06b: begin { lk_P0, lk_kdata } = 9'h093; end // keypad 4
+        9'h073: begin { lk_P0, lk_kdata } = 9'h08f; end // keypad 5
+        9'h074: begin { lk_P0, lk_kdata } = 9'h092; end // keypad 6
+        9'h069: begin { lk_P0, lk_kdata } = 9'h09a; end // keypad 1
+        9'h072: begin { lk_P0, lk_kdata } = 9'h090; end // keypad 2
+        9'h07a: begin { lk_P0, lk_kdata } = 9'h09b; end // keypad 3
+        9'h15a: begin { lk_P0, lk_kdata } = 9'h00d; end // keypad enter
 
-        9'h29: begin { P0, kdata } = 9'h020; end // spacebar
-        9'h170: begin { P0, kdata } = 9'h012; end // insert
-        9'h17d: begin { P0, kdata } = 9'h005; end // page up  (EL)
-        9'h17a: begin { P0, kdata } = 9'h00c; end // page down (CLS)
-        9'h171: begin { P0, kdata } = 9'h07f; end // delete
-        9'h16c: begin { P0, kdata } = 9'h00b; end // home
+        9'h29: begin { lk_P0, lk_kdata } = 9'h020; end // spacebar
+        9'h170: begin { lk_P0, lk_kdata } = 9'h012; end // insert
+        9'h17d: begin { lk_P0, lk_kdata } = 9'h005; end // page up  (EL)
+        9'h17a: begin { lk_P0, lk_kdata } = 9'h00c; end // page down (CLS)
+        9'h171: begin { lk_P0, lk_kdata } = 9'h07f; end // delete
+        9'h16c: begin { lk_P0, lk_kdata } = 9'h00b; end // home
 
         // The four cursor keys are the only entries where graph_shift_key
         // differs from graph_key.
-        9'h175: begin { P0, kdata } = shift_h ? 9'h019 : 9'h01e; end // up
-        9'h172: begin { P0, kdata } = shift_h ? 9'h01a : 9'h01f; end // down
-        9'h16b: begin { P0, kdata } = shift_h ? 9'h002 : 9'h01d; end // left
-        9'h174: begin { P0, kdata } = shift_h ? 9'h006 : 9'h01c; end // right
+        9'h175: begin { lk_P0, lk_kdata } = shift_h ? 9'h019 : 9'h01e; end // up
+        9'h172: begin { lk_P0, lk_kdata } = shift_h ? 9'h01a : 9'h01f; end // down
+        9'h16b: begin { lk_P0, lk_kdata } = shift_h ? 9'h002 : 9'h01d; end // left
+        9'h174: begin { lk_P0, lk_kdata } = shift_h ? 9'h006 : 9'h01c; end // right
 
         // graph_shift_key has no function-key entries at all.
-        9'h05: begin if (!shift_h) { P0, kdata } = 9'h101; end // f1
-        9'h06: begin if (!shift_h) { P0, kdata } = 9'h102; end // f2
-        9'h04: begin if (!shift_h) { P0, kdata } = 9'h103; end // f3
-        9'h0c: begin if (!shift_h) { P0, kdata } = 9'h104; end // f4
-        9'h03: begin if (!shift_h) { P0, kdata } = 9'h105; end // f5
-        9'h0b: begin if (!shift_h) { P0, kdata } = 9'h106; end // f6
-        9'h83: begin if (!shift_h) { P0, kdata } = 9'h107; end // f7
-        9'h0a: begin if (!shift_h) { P0, kdata } = 9'h108; end // f8
-        9'h01: begin if (!shift_h) { P0, kdata } = 9'h109; end // f9
-        9'h09: begin if (!shift_h) { P0, kdata } = 9'h10a; end // f10
+        9'h05: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h101; end // f1
+        9'h06: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h102; end // f2
+        9'h04: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h103; end // f3
+        9'h0c: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h104; end // f4
+        9'h03: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h105; end // f5
+        9'h0b: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h106; end // f6
+        9'h83: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h107; end // f7
+        9'h0a: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h108; end // f8
+        9'h01: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h109; end // f9
+        9'h09: begin if (!shift_h) { lk_P0, lk_kdata } = 9'h10a; end // f10
       endcase
     end
 
@@ -309,149 +332,149 @@ always @* begin
     // and much smaller table, so it is kept separate.
     else if (kana_h && shift_h && press_btn) begin
       case (code)
-        9'h26: begin { P0, kdata } = 9'h0a7; end // 3 -> small a
-        9'h25: begin { P0, kdata } = 9'h0a9; end // 4 -> small i
-        9'h2e: begin { P0, kdata } = 9'h0aa; end // 5 -> small u
-        9'h36: begin { P0, kdata } = 9'h0ab; end // 6 -> small e
-        9'h3d: begin { P0, kdata } = 9'h0ac; end // 7 -> small o
-        9'h3e: begin { P0, kdata } = 9'h0ad; end // 8 -> small ya
-        9'h46: begin { P0, kdata } = 9'h0ae; end // 9 -> small yu
-        9'h45: begin { P0, kdata } = 9'h0a6; end // 0 -> small wo
-        9'h24: begin { P0, kdata } = 9'h0a8; end // e -> small yo
-        9'h5b: begin { P0, kdata } = 9'h0a2; end // [ -> opening bracket
-        9'h0e: begin { P0, kdata } = 9'h0a3; end // ] -> closing bracket
-        9'h1a: begin { P0, kdata } = 9'h0af; end // z -> small tsu
-        9'h41: begin { P0, kdata } = 9'h0a4; end // , -> ideographic comma
-        9'h49: begin { P0, kdata } = 9'h0a1; end // . -> ideographic full stop
-        9'h4a: begin { P0, kdata } = 9'h0a5; end // / -> middle dot
+        9'h26: begin { lk_P0, lk_kdata } = 9'h0a7; end // 3 -> small a
+        9'h25: begin { lk_P0, lk_kdata } = 9'h0a9; end // 4 -> small i
+        9'h2e: begin { lk_P0, lk_kdata } = 9'h0aa; end // 5 -> small u
+        9'h36: begin { lk_P0, lk_kdata } = 9'h0ab; end // 6 -> small e
+        9'h3d: begin { lk_P0, lk_kdata } = 9'h0ac; end // 7 -> small o
+        9'h3e: begin { lk_P0, lk_kdata } = 9'h0ad; end // 8 -> small ya
+        9'h46: begin { lk_P0, lk_kdata } = 9'h0ae; end // 9 -> small yu
+        9'h45: begin { lk_P0, lk_kdata } = 9'h0a6; end // 0 -> small wo
+        9'h24: begin { lk_P0, lk_kdata } = 9'h0a8; end // e -> small yo
+        9'h5b: begin { lk_P0, lk_kdata } = 9'h0a2; end // [ -> opening bracket
+        9'h0e: begin { lk_P0, lk_kdata } = 9'h0a3; end // ] -> closing bracket
+        9'h1a: begin { lk_P0, lk_kdata } = 9'h0af; end // z -> small tsu
+        9'h41: begin { lk_P0, lk_kdata } = 9'h0a4; end // , -> ideographic comma
+        9'h49: begin { lk_P0, lk_kdata } = 9'h0a1; end // . -> ideographic full stop
+        9'h4a: begin { lk_P0, lk_kdata } = 9'h0a5; end // / -> middle dot
         // The keypad is unaffected by KANA: kana_shift_key gives every keypad
         // key the same character as the plain table.
-        9'h14a: begin { P0, kdata } = 9'h02f; end // keypad / (phy $37) stays '/'
-        9'h07c: begin { P0, kdata } = 9'h02a; end // keypad *
-        9'h079: begin { P0, kdata } = 9'h02b; end // keypad +
-        9'h07b: begin { P0, kdata } = 9'h02d; end // keypad -
-        9'h06c: begin { P0, kdata } = 9'h037; end // keypad 7
-        9'h075: begin { P0, kdata } = 9'h038; end // keypad 8
-        9'h07d: begin { P0, kdata } = 9'h039; end // keypad 9
-        9'h06b: begin { P0, kdata } = 9'h034; end // keypad 4
-        9'h073: begin { P0, kdata } = 9'h035; end // keypad 5
-        9'h074: begin { P0, kdata } = 9'h036; end // keypad 6
-        9'h069: begin { P0, kdata } = 9'h031; end // keypad 1
-        9'h072: begin { P0, kdata } = 9'h032; end // keypad 2
-        9'h07a: begin { P0, kdata } = 9'h033; end // keypad 3
-        9'h070: begin { P0, kdata } = 9'h030; end // keypad 0
-        9'h071: begin { P0, kdata } = 9'h02e; end // keypad .
-        9'h15a: begin { P0, kdata } = 9'h00d; end // keypad enter
+        9'h14a: begin { lk_P0, lk_kdata } = 9'h02f; end // keypad / (phy $37) stays '/'
+        9'h07c: begin { lk_P0, lk_kdata } = 9'h02a; end // keypad *
+        9'h079: begin { lk_P0, lk_kdata } = 9'h02b; end // keypad +
+        9'h07b: begin { lk_P0, lk_kdata } = 9'h02d; end // keypad -
+        9'h06c: begin { lk_P0, lk_kdata } = 9'h037; end // keypad 7
+        9'h075: begin { lk_P0, lk_kdata } = 9'h038; end // keypad 8
+        9'h07d: begin { lk_P0, lk_kdata } = 9'h039; end // keypad 9
+        9'h06b: begin { lk_P0, lk_kdata } = 9'h034; end // keypad 4
+        9'h073: begin { lk_P0, lk_kdata } = 9'h035; end // keypad 5
+        9'h074: begin { lk_P0, lk_kdata } = 9'h036; end // keypad 6
+        9'h069: begin { lk_P0, lk_kdata } = 9'h031; end // keypad 1
+        9'h072: begin { lk_P0, lk_kdata } = 9'h032; end // keypad 2
+        9'h07a: begin { lk_P0, lk_kdata } = 9'h033; end // keypad 3
+        9'h070: begin { lk_P0, lk_kdata } = 9'h030; end // keypad 0
+        9'h071: begin { lk_P0, lk_kdata } = 9'h02e; end // keypad .
+        9'h15a: begin { lk_P0, lk_kdata } = 9'h00d; end // keypad enter
 
-        9'h66: begin { P0, kdata } = 9'h008; end // backspace
-        9'h0d: begin { P0, kdata } = 9'h009; end // tab
-        9'h5a: begin { P0, kdata } = 9'h00d; end // enter
-        9'h29: begin { P0, kdata } = 9'h020; end // spacebar
-        9'h170: begin { P0, kdata } = 9'h012; end // insert
-        9'h17d: begin { P0, kdata } = 9'h005; end // page up
-        9'h17a: begin { P0, kdata } = 9'h00c; end // page down
-        9'h171: begin { P0, kdata } = 9'h07f; end // delete
-        9'h16c: begin { P0, kdata } = 9'h00b; end // home
-        9'h175: begin { P0, kdata } = 9'h019; end // up
-        9'h172: begin { P0, kdata } = 9'h01a; end // down
-        9'h16b: begin { P0, kdata } = 9'h002; end // left
-        9'h174: begin { P0, kdata } = 9'h006; end // right
+        9'h66: begin { lk_P0, lk_kdata } = 9'h008; end // backspace
+        9'h0d: begin { lk_P0, lk_kdata } = 9'h009; end // tab
+        9'h5a: begin { lk_P0, lk_kdata } = 9'h00d; end // enter
+        9'h29: begin { lk_P0, lk_kdata } = 9'h020; end // spacebar
+        9'h170: begin { lk_P0, lk_kdata } = 9'h012; end // insert
+        9'h17d: begin { lk_P0, lk_kdata } = 9'h005; end // page up
+        9'h17a: begin { lk_P0, lk_kdata } = 9'h00c; end // page down
+        9'h171: begin { lk_P0, lk_kdata } = 9'h07f; end // delete
+        9'h16c: begin { lk_P0, lk_kdata } = 9'h00b; end // home
+        9'h175: begin { lk_P0, lk_kdata } = 9'h019; end // up
+        9'h172: begin { lk_P0, lk_kdata } = 9'h01a; end // down
+        9'h16b: begin { lk_P0, lk_kdata } = 9'h002; end // left
+        9'h174: begin { lk_P0, lk_kdata } = 9'h006; end // right
       endcase
     end
 
     else if (kana_h && press_btn) begin
       case (code)
-        9'h16: begin { P0, kdata } = 9'h0c7; end // 1 -> nu
-        9'h1e: begin { P0, kdata } = 9'h0cc; end // 2 -> fu
-        9'h26: begin { P0, kdata } = 9'h0b1; end // 3 -> a
-        9'h25: begin { P0, kdata } = 9'h0b3; end // 4 -> u
-        9'h2e: begin { P0, kdata } = 9'h0b4; end // 5 -> e
-        9'h36: begin { P0, kdata } = 9'h0b5; end // 6 -> o
-        9'h3d: begin { P0, kdata } = 9'h0d4; end // 7 -> ya
-        9'h3e: begin { P0, kdata } = 9'h0d5; end // 8 -> yu
-        9'h46: begin { P0, kdata } = 9'h0d6; end // 9 -> yo
-        9'h45: begin { P0, kdata } = 9'h0dc; end // 0 -> wa
-        9'h4e: begin { P0, kdata } = 9'h0ce; end // - -> ho
-        9'h55: begin { P0, kdata } = 9'h0cd; end // ^ -> he
-        9'h5d: begin { P0, kdata } = 9'h0b0; end // \ -> prolonged sound mark
-        9'h66: begin { P0, kdata } = 9'h008; end // backspace
-        9'h0d: begin { P0, kdata } = 9'h009; end // tab
+        9'h16: begin { lk_P0, lk_kdata } = 9'h0c7; end // 1 -> nu
+        9'h1e: begin { lk_P0, lk_kdata } = 9'h0cc; end // 2 -> fu
+        9'h26: begin { lk_P0, lk_kdata } = 9'h0b1; end // 3 -> a
+        9'h25: begin { lk_P0, lk_kdata } = 9'h0b3; end // 4 -> u
+        9'h2e: begin { lk_P0, lk_kdata } = 9'h0b4; end // 5 -> e
+        9'h36: begin { lk_P0, lk_kdata } = 9'h0b5; end // 6 -> o
+        9'h3d: begin { lk_P0, lk_kdata } = 9'h0d4; end // 7 -> ya
+        9'h3e: begin { lk_P0, lk_kdata } = 9'h0d5; end // 8 -> yu
+        9'h46: begin { lk_P0, lk_kdata } = 9'h0d6; end // 9 -> yo
+        9'h45: begin { lk_P0, lk_kdata } = 9'h0dc; end // 0 -> wa
+        9'h4e: begin { lk_P0, lk_kdata } = 9'h0ce; end // - -> ho
+        9'h55: begin { lk_P0, lk_kdata } = 9'h0cd; end // ^ -> he
+        9'h5d: begin { lk_P0, lk_kdata } = 9'h0b0; end // \ -> prolonged sound mark
+        9'h66: begin { lk_P0, lk_kdata } = 9'h008; end // backspace
+        9'h0d: begin { lk_P0, lk_kdata } = 9'h009; end // tab
 
-        9'h15: begin { P0, kdata } = 9'h0c0; end // q -> ta
-        9'h1d: begin { P0, kdata } = 9'h0c3; end // w -> te
-        9'h24: begin { P0, kdata } = 9'h0b2; end // e -> i
-        9'h2d: begin { P0, kdata } = 9'h0bd; end // r -> su
-        9'h2c: begin { P0, kdata } = 9'h0b6; end // t -> ka
-        9'h35: begin { P0, kdata } = 9'h0dd; end // y -> n
-        9'h3c: begin { P0, kdata } = 9'h0c5; end // u -> na
-        9'h43: begin { P0, kdata } = 9'h0c6; end // i -> ni
-        9'h44: begin { P0, kdata } = 9'h0d7; end // o -> ra
-        9'h4d: begin { P0, kdata } = 9'h0be; end // p -> se
-        9'h54: begin { P0, kdata } = 9'h0de; end // @ -> voiced mark
-        9'h5b: begin { P0, kdata } = 9'h0df; end // [ -> semi-voiced mark
-        9'h5a: begin { P0, kdata } = 9'h00d; end // enter
+        9'h15: begin { lk_P0, lk_kdata } = 9'h0c0; end // q -> ta
+        9'h1d: begin { lk_P0, lk_kdata } = 9'h0c3; end // w -> te
+        9'h24: begin { lk_P0, lk_kdata } = 9'h0b2; end // e -> i
+        9'h2d: begin { lk_P0, lk_kdata } = 9'h0bd; end // r -> su
+        9'h2c: begin { lk_P0, lk_kdata } = 9'h0b6; end // t -> ka
+        9'h35: begin { lk_P0, lk_kdata } = 9'h0dd; end // y -> n
+        9'h3c: begin { lk_P0, lk_kdata } = 9'h0c5; end // u -> na
+        9'h43: begin { lk_P0, lk_kdata } = 9'h0c6; end // i -> ni
+        9'h44: begin { lk_P0, lk_kdata } = 9'h0d7; end // o -> ra
+        9'h4d: begin { lk_P0, lk_kdata } = 9'h0be; end // p -> se
+        9'h54: begin { lk_P0, lk_kdata } = 9'h0de; end // @ -> voiced mark
+        9'h5b: begin { lk_P0, lk_kdata } = 9'h0df; end // [ -> semi-voiced mark
+        9'h5a: begin { lk_P0, lk_kdata } = 9'h00d; end // enter
 
-        9'h1c: begin { P0, kdata } = 9'h0c1; end // a -> chi
-        9'h1b: begin { P0, kdata } = 9'h0c4; end // s -> to
-        9'h23: begin { P0, kdata } = 9'h0bc; end // d -> shi
-        9'h2b: begin { P0, kdata } = 9'h0ca; end // f -> ha
-        9'h34: begin { P0, kdata } = 9'h0b7; end // g -> ki
-        9'h33: begin { P0, kdata } = 9'h0b8; end // h -> ku
-        9'h3b: begin { P0, kdata } = 9'h0cf; end // j -> ma
-        9'h42: begin { P0, kdata } = 9'h0c9; end // k -> no
-        9'h4b: begin { P0, kdata } = 9'h0d8; end // l -> ri
-        9'h4c: begin { P0, kdata } = 9'h0da; end // ; -> re
-        9'h52: begin { P0, kdata } = 9'h0b9; end // : -> ke
-        9'h0e: begin { P0, kdata } = 9'h0d1; end // ] -> mu
+        9'h1c: begin { lk_P0, lk_kdata } = 9'h0c1; end // a -> chi
+        9'h1b: begin { lk_P0, lk_kdata } = 9'h0c4; end // s -> to
+        9'h23: begin { lk_P0, lk_kdata } = 9'h0bc; end // d -> shi
+        9'h2b: begin { lk_P0, lk_kdata } = 9'h0ca; end // f -> ha
+        9'h34: begin { lk_P0, lk_kdata } = 9'h0b7; end // g -> ki
+        9'h33: begin { lk_P0, lk_kdata } = 9'h0b8; end // h -> ku
+        9'h3b: begin { lk_P0, lk_kdata } = 9'h0cf; end // j -> ma
+        9'h42: begin { lk_P0, lk_kdata } = 9'h0c9; end // k -> no
+        9'h4b: begin { lk_P0, lk_kdata } = 9'h0d8; end // l -> ri
+        9'h4c: begin { lk_P0, lk_kdata } = 9'h0da; end // ; -> re
+        9'h52: begin { lk_P0, lk_kdata } = 9'h0b9; end // : -> ke
+        9'h0e: begin { lk_P0, lk_kdata } = 9'h0d1; end // ] -> mu
 
-        9'h1a: begin { P0, kdata } = 9'h0c2; end // z -> tsu
-        9'h22: begin { P0, kdata } = 9'h0bb; end // x -> sa
-        9'h21: begin { P0, kdata } = 9'h0bf; end // c -> so
-        9'h2a: begin { P0, kdata } = 9'h0cb; end // v -> hi
-        9'h32: begin { P0, kdata } = 9'h0ba; end // b -> ko
-        9'h31: begin { P0, kdata } = 9'h0d0; end // n -> mi
-        9'h3a: begin { P0, kdata } = 9'h0d3; end // m -> mo
-        9'h41: begin { P0, kdata } = 9'h0c8; end // , -> ne
-        9'h49: begin { P0, kdata } = 9'h0d9; end // . -> ru
-        9'h4a: begin { P0, kdata } = 9'h0d2; end // / -> me
-        9'h14a: begin { P0, kdata } = 9'h02f; end // keypad / (phy $37) stays '/'
-        9'h07c: begin { P0, kdata } = 9'h02a; end // keypad *
-        9'h079: begin { P0, kdata } = 9'h02b; end // keypad +
-        9'h07b: begin { P0, kdata } = 9'h02d; end // keypad -
-        9'h06c: begin { P0, kdata } = 9'h037; end // keypad 7
-        9'h075: begin { P0, kdata } = 9'h038; end // keypad 8
-        9'h07d: begin { P0, kdata } = 9'h039; end // keypad 9
-        9'h06b: begin { P0, kdata } = 9'h034; end // keypad 4
-        9'h073: begin { P0, kdata } = 9'h035; end // keypad 5
-        9'h074: begin { P0, kdata } = 9'h036; end // keypad 6
-        9'h069: begin { P0, kdata } = 9'h031; end // keypad 1
-        9'h072: begin { P0, kdata } = 9'h032; end // keypad 2
-        9'h07a: begin { P0, kdata } = 9'h033; end // keypad 3
-        9'h070: begin { P0, kdata } = 9'h030; end // keypad 0
-        9'h071: begin { P0, kdata } = 9'h02e; end // keypad .
-        9'h15a: begin { P0, kdata } = 9'h00d; end // keypad enter
+        9'h1a: begin { lk_P0, lk_kdata } = 9'h0c2; end // z -> tsu
+        9'h22: begin { lk_P0, lk_kdata } = 9'h0bb; end // x -> sa
+        9'h21: begin { lk_P0, lk_kdata } = 9'h0bf; end // c -> so
+        9'h2a: begin { lk_P0, lk_kdata } = 9'h0cb; end // v -> hi
+        9'h32: begin { lk_P0, lk_kdata } = 9'h0ba; end // b -> ko
+        9'h31: begin { lk_P0, lk_kdata } = 9'h0d0; end // n -> mi
+        9'h3a: begin { lk_P0, lk_kdata } = 9'h0d3; end // m -> mo
+        9'h41: begin { lk_P0, lk_kdata } = 9'h0c8; end // , -> ne
+        9'h49: begin { lk_P0, lk_kdata } = 9'h0d9; end // . -> ru
+        9'h4a: begin { lk_P0, lk_kdata } = 9'h0d2; end // / -> me
+        9'h14a: begin { lk_P0, lk_kdata } = 9'h02f; end // keypad / (phy $37) stays '/'
+        9'h07c: begin { lk_P0, lk_kdata } = 9'h02a; end // keypad *
+        9'h079: begin { lk_P0, lk_kdata } = 9'h02b; end // keypad +
+        9'h07b: begin { lk_P0, lk_kdata } = 9'h02d; end // keypad -
+        9'h06c: begin { lk_P0, lk_kdata } = 9'h037; end // keypad 7
+        9'h075: begin { lk_P0, lk_kdata } = 9'h038; end // keypad 8
+        9'h07d: begin { lk_P0, lk_kdata } = 9'h039; end // keypad 9
+        9'h06b: begin { lk_P0, lk_kdata } = 9'h034; end // keypad 4
+        9'h073: begin { lk_P0, lk_kdata } = 9'h035; end // keypad 5
+        9'h074: begin { lk_P0, lk_kdata } = 9'h036; end // keypad 6
+        9'h069: begin { lk_P0, lk_kdata } = 9'h031; end // keypad 1
+        9'h072: begin { lk_P0, lk_kdata } = 9'h032; end // keypad 2
+        9'h07a: begin { lk_P0, lk_kdata } = 9'h033; end // keypad 3
+        9'h070: begin { lk_P0, lk_kdata } = 9'h030; end // keypad 0
+        9'h071: begin { lk_P0, lk_kdata } = 9'h02e; end // keypad .
+        9'h15a: begin { lk_P0, lk_kdata } = 9'h00d; end // keypad enter
 
-        9'h29: begin { P0, kdata } = 9'h020; end // spacebar
-        9'h170: begin { P0, kdata } = 9'h012; end // insert
-        9'h17d: begin { P0, kdata } = 9'h005; end // page up
-        9'h17a: begin { P0, kdata } = 9'h00c; end // page down
-        9'h171: begin { P0, kdata } = 9'h07f; end // delete
-        9'h16c: begin { P0, kdata } = 9'h00b; end // home
-        9'h175: begin { P0, kdata } = 9'h01e; end // up
-        9'h172: begin { P0, kdata } = 9'h01f; end // down
-        9'h16b: begin { P0, kdata } = 9'h01d; end // left
-        9'h174: begin { P0, kdata } = 9'h01c; end // right
+        9'h29: begin { lk_P0, lk_kdata } = 9'h020; end // spacebar
+        9'h170: begin { lk_P0, lk_kdata } = 9'h012; end // insert
+        9'h17d: begin { lk_P0, lk_kdata } = 9'h005; end // page up
+        9'h17a: begin { lk_P0, lk_kdata } = 9'h00c; end // page down
+        9'h171: begin { lk_P0, lk_kdata } = 9'h07f; end // delete
+        9'h16c: begin { lk_P0, lk_kdata } = 9'h00b; end // home
+        9'h175: begin { lk_P0, lk_kdata } = 9'h01e; end // up
+        9'h172: begin { lk_P0, lk_kdata } = 9'h01f; end // down
+        9'h16b: begin { lk_P0, lk_kdata } = 9'h01d; end // left
+        9'h174: begin { lk_P0, lk_kdata } = 9'h01c; end // right
 
-        9'h05: begin { P0, kdata } = 9'h101; end // f1
-        9'h06: begin { P0, kdata } = 9'h102; end // f2
-        9'h04: begin { P0, kdata } = 9'h103; end // f3
-        9'h0c: begin { P0, kdata } = 9'h104; end // f4
-        9'h03: begin { P0, kdata } = 9'h105; end // f5
-        9'h0b: begin { P0, kdata } = 9'h106; end // f6
-        9'h83: begin { P0, kdata } = 9'h107; end // f7
-        9'h0a: begin { P0, kdata } = 9'h108; end // f8
-        9'h01: begin { P0, kdata } = 9'h109; end // f9
-        9'h09: begin { P0, kdata } = 9'h10a; end // f10
+        9'h05: begin { lk_P0, lk_kdata } = 9'h101; end // f1
+        9'h06: begin { lk_P0, lk_kdata } = 9'h102; end // f2
+        9'h04: begin { lk_P0, lk_kdata } = 9'h103; end // f3
+        9'h0c: begin { lk_P0, lk_kdata } = 9'h104; end // f4
+        9'h03: begin { lk_P0, lk_kdata } = 9'h105; end // f5
+        9'h0b: begin { lk_P0, lk_kdata } = 9'h106; end // f6
+        9'h83: begin { lk_P0, lk_kdata } = 9'h107; end // f7
+        9'h0a: begin { lk_P0, lk_kdata } = 9'h108; end // f8
+        9'h01: begin { lk_P0, lk_kdata } = 9'h109; end // f9
+        9'h09: begin { lk_P0, lk_kdata } = 9'h10a; end // f10
       endcase
     end
 
@@ -459,201 +482,187 @@ always @* begin
     // what the FM-7 keyboard MCU sends, i.e. plain ASCII for these keys.
     else if (shift_h && press_btn) begin
       case (code)
-        9'h1c: begin { P0, kdata } = 9'h41; end // A
-        9'h32: begin { P0, kdata } = 9'h42; end // B
-        9'h21: begin { P0, kdata } = 9'h43; end // C
-        9'h23: begin { P0, kdata } = 9'h44; end // D
-        9'h24: begin { P0, kdata } = 9'h45; end // E
-        9'h2b: begin { P0, kdata } = 9'h46; end // F
-        9'h34: begin { P0, kdata } = 9'h47; end // G
-        9'h33: begin { P0, kdata } = 9'h48; end // H
-        9'h43: begin { P0, kdata } = 9'h49; end // I
-        9'h3b: begin { P0, kdata } = 9'h4a; end // J
-        9'h42: begin { P0, kdata } = 9'h4b; end // K
-        9'h4b: begin { P0, kdata } = 9'h4c; end // L
-        9'h3a: begin { P0, kdata } = 9'h4d; end // M
-        9'h31: begin { P0, kdata } = 9'h4e; end // N
-        9'h44: begin { P0, kdata } = 9'h4f; end // O
-        9'h4d: begin { P0, kdata } = 9'h50; end // P
-        9'h15: begin { P0, kdata } = 9'h51; end // Q
-        9'h2d: begin { P0, kdata } = 9'h52; end // R
-        9'h1b: begin { P0, kdata } = 9'h53; end // S
-        9'h2c: begin { P0, kdata } = 9'h54; end // T
-        9'h3c: begin { P0, kdata } = 9'h55; end // U
-        9'h2a: begin { P0, kdata } = 9'h56; end // V
-        9'h1d: begin { P0, kdata } = 9'h57; end // W
-        9'h22: begin { P0, kdata } = 9'h58; end // X
-        9'h35: begin { P0, kdata } = 9'h59; end // Y
-        9'h1a: begin { P0, kdata } = 9'h5a; end // Z
+        9'h1c: begin { lk_P0, lk_kdata } = 9'h41; end // A
+        9'h32: begin { lk_P0, lk_kdata } = 9'h42; end // B
+        9'h21: begin { lk_P0, lk_kdata } = 9'h43; end // C
+        9'h23: begin { lk_P0, lk_kdata } = 9'h44; end // D
+        9'h24: begin { lk_P0, lk_kdata } = 9'h45; end // E
+        9'h2b: begin { lk_P0, lk_kdata } = 9'h46; end // F
+        9'h34: begin { lk_P0, lk_kdata } = 9'h47; end // G
+        9'h33: begin { lk_P0, lk_kdata } = 9'h48; end // H
+        9'h43: begin { lk_P0, lk_kdata } = 9'h49; end // I
+        9'h3b: begin { lk_P0, lk_kdata } = 9'h4a; end // J
+        9'h42: begin { lk_P0, lk_kdata } = 9'h4b; end // K
+        9'h4b: begin { lk_P0, lk_kdata } = 9'h4c; end // L
+        9'h3a: begin { lk_P0, lk_kdata } = 9'h4d; end // M
+        9'h31: begin { lk_P0, lk_kdata } = 9'h4e; end // N
+        9'h44: begin { lk_P0, lk_kdata } = 9'h4f; end // O
+        9'h4d: begin { lk_P0, lk_kdata } = 9'h50; end // P
+        9'h15: begin { lk_P0, lk_kdata } = 9'h51; end // Q
+        9'h2d: begin { lk_P0, lk_kdata } = 9'h52; end // R
+        9'h1b: begin { lk_P0, lk_kdata } = 9'h53; end // S
+        9'h2c: begin { lk_P0, lk_kdata } = 9'h54; end // T
+        9'h3c: begin { lk_P0, lk_kdata } = 9'h55; end // U
+        9'h2a: begin { lk_P0, lk_kdata } = 9'h56; end // V
+        9'h1d: begin { lk_P0, lk_kdata } = 9'h57; end // W
+        9'h22: begin { lk_P0, lk_kdata } = 9'h58; end // X
+        9'h35: begin { lk_P0, lk_kdata } = 9'h59; end // Y
+        9'h1a: begin { lk_P0, lk_kdata } = 9'h5a; end // Z
 
         // JIS number row: 1..9 give ! " # $ % & ' ( ) ; shift-0 is unassigned.
-        9'h16: begin { P0, kdata } = 9'h21; end // !
-        9'h1e: begin { P0, kdata } = 9'h22; end // "
-        9'h26: begin { P0, kdata } = 9'h23; end // #
-        9'h25: begin { P0, kdata } = 9'h24; end // $
-        9'h2e: begin { P0, kdata } = 9'h25; end // %
-        9'h36: begin { P0, kdata } = 9'h26; end // &
-        9'h3d: begin { P0, kdata } = 9'h27; end // '
-        9'h3e: begin { P0, kdata } = 9'h28; end // (
-        9'h46: begin { P0, kdata } = 9'h29; end // )
+        9'h16: begin { lk_P0, lk_kdata } = 9'h21; end // !
+        9'h1e: begin { lk_P0, lk_kdata } = 9'h22; end // "
+        9'h26: begin { lk_P0, lk_kdata } = 9'h23; end // #
+        9'h25: begin { lk_P0, lk_kdata } = 9'h24; end // $
+        9'h2e: begin { lk_P0, lk_kdata } = 9'h25; end // %
+        9'h36: begin { lk_P0, lk_kdata } = 9'h26; end // &
+        9'h3d: begin { lk_P0, lk_kdata } = 9'h27; end // '
+        9'h3e: begin { lk_P0, lk_kdata } = 9'h28; end // (
+        9'h46: begin { lk_P0, lk_kdata } = 9'h29; end // )
 
-        9'h4e: begin { P0, kdata } = 9'h3d; end // - -> =
-        9'h55: begin { P0, kdata } = 9'h7e; end // ^ -> ~
-        9'h5d: begin { P0, kdata } = 9'h7c; end // \ -> |
-        9'h54: begin { P0, kdata } = 9'h60; end // @ -> `
-        9'h5b: begin { P0, kdata } = 9'h7b; end // [ -> {
-        9'h4c: begin { P0, kdata } = 9'h2b; end // ; -> +
-        9'h52: begin { P0, kdata } = 9'h2a; end // : -> *
-        9'h41: begin { P0, kdata } = 9'h3c; end // , -> <
-        9'h49: begin { P0, kdata } = 9'h3e; end // . -> >
-        9'h4a: begin { P0, kdata } = 9'h3f; end // / -> ?
+        9'h4e: begin { lk_P0, lk_kdata } = 9'h3d; end // - -> =
+        9'h55: begin { lk_P0, lk_kdata } = 9'h7e; end // ^ -> ~
+        9'h5d: begin { lk_P0, lk_kdata } = 9'h7c; end // \ -> |
+        9'h54: begin { lk_P0, lk_kdata } = 9'h60; end // @ -> `
+        9'h5b: begin { lk_P0, lk_kdata } = 9'h7b; end // [ -> {
+        9'h4c: begin { lk_P0, lk_kdata } = 9'h2b; end // ; -> +
+        9'h52: begin { lk_P0, lk_kdata } = 9'h2a; end // : -> *
+        9'h41: begin { lk_P0, lk_kdata } = 9'h3c; end // , -> <
+        9'h49: begin { lk_P0, lk_kdata } = 9'h3e; end // . -> >
+        9'h4a: begin { lk_P0, lk_kdata } = 9'h3f; end // / -> ?
 
-        9'h29: begin { P0, kdata } = 9'h20; end // spacebar
-        9'h5a: begin { P0, kdata } = 9'h0d; end // enter
+        9'h29: begin { lk_P0, lk_kdata } = 9'h20; end // spacebar
+        9'h5a: begin { lk_P0, lk_kdata } = 9'h0d; end // enter
 
         // The keypad ignores SHIFT: standard_shift_key is identical to
         // standard_key for phy $36-$47.
-        9'h14a: begin { P0, kdata } = 9'h2f; end // keypad /
-        9'h07c: begin { P0, kdata } = 9'h2a; end // keypad *
-        9'h079: begin { P0, kdata } = 9'h2b; end // keypad +
-        9'h07b: begin { P0, kdata } = 9'h2d; end // keypad -
-        9'h06c: begin { P0, kdata } = 9'h37; end // keypad 7
-        9'h075: begin { P0, kdata } = 9'h38; end // keypad 8
-        9'h07d: begin { P0, kdata } = 9'h39; end // keypad 9
-        9'h06b: begin { P0, kdata } = 9'h34; end // keypad 4
-        9'h073: begin { P0, kdata } = 9'h35; end // keypad 5
-        9'h074: begin { P0, kdata } = 9'h36; end // keypad 6
-        9'h069: begin { P0, kdata } = 9'h31; end // keypad 1
-        9'h072: begin { P0, kdata } = 9'h32; end // keypad 2
-        9'h07a: begin { P0, kdata } = 9'h33; end // keypad 3
-        9'h070: begin { P0, kdata } = 9'h30; end // keypad 0
-        9'h071: begin { P0, kdata } = 9'h2e; end // keypad .
-        9'h15a: begin { P0, kdata } = 9'h0d; end // keypad enter
+        9'h14a: begin { lk_P0, lk_kdata } = 9'h2f; end // keypad /
+        9'h07c: begin { lk_P0, lk_kdata } = 9'h2a; end // keypad *
+        9'h079: begin { lk_P0, lk_kdata } = 9'h2b; end // keypad +
+        9'h07b: begin { lk_P0, lk_kdata } = 9'h2d; end // keypad -
+        9'h06c: begin { lk_P0, lk_kdata } = 9'h37; end // keypad 7
+        9'h075: begin { lk_P0, lk_kdata } = 9'h38; end // keypad 8
+        9'h07d: begin { lk_P0, lk_kdata } = 9'h39; end // keypad 9
+        9'h06b: begin { lk_P0, lk_kdata } = 9'h34; end // keypad 4
+        9'h073: begin { lk_P0, lk_kdata } = 9'h35; end // keypad 5
+        9'h074: begin { lk_P0, lk_kdata } = 9'h36; end // keypad 6
+        9'h069: begin { lk_P0, lk_kdata } = 9'h31; end // keypad 1
+        9'h072: begin { lk_P0, lk_kdata } = 9'h32; end // keypad 2
+        9'h07a: begin { lk_P0, lk_kdata } = 9'h33; end // keypad 3
+        9'h070: begin { lk_P0, lk_kdata } = 9'h30; end // keypad 0
+        9'h071: begin { lk_P0, lk_kdata } = 9'h2e; end // keypad .
+        9'h15a: begin { lk_P0, lk_kdata } = 9'h0d; end // keypad enter
       endcase
     end
     // normal
     else if (press_btn) begin
 		  case (code)
-	      9'h76: begin { P0, kdata } = 9'h1b; end // esc ??
-	      9'h05: begin { P0, kdata } = 9'h101; end // f1
-	      9'h06: begin { P0, kdata } = 9'h102; end // f2
-	      9'h04: begin { P0, kdata } = 9'h103; end // f3
-	      9'h0c: begin { P0, kdata } = 9'h104; end // f4
-	      9'h03: begin { P0, kdata } = 9'h105; end // f5
-	      9'h0b: begin { P0, kdata } = 9'h106; end // f6
-	      9'h83: begin { P0, kdata } = 9'h107; end // f7
-	      9'h0a: begin { P0, kdata } = 9'h108; end // f8
-	      9'h01: begin { P0, kdata } = 9'h109; end // f9
-	      9'h09: begin { P0, kdata } = 9'h10a; end // f10
+	      9'h76: begin { lk_P0, lk_kdata } = 9'h1b; end // esc ??
+	      9'h05: begin { lk_P0, lk_kdata } = 9'h101; end // f1
+	      9'h06: begin { lk_P0, lk_kdata } = 9'h102; end // f2
+	      9'h04: begin { lk_P0, lk_kdata } = 9'h103; end // f3
+	      9'h0c: begin { lk_P0, lk_kdata } = 9'h104; end // f4
+	      9'h03: begin { lk_P0, lk_kdata } = 9'h105; end // f5
+	      9'h0b: begin { lk_P0, lk_kdata } = 9'h106; end // f6
+	      9'h83: begin { lk_P0, lk_kdata } = 9'h107; end // f7
+	      9'h0a: begin { lk_P0, lk_kdata } = 9'h108; end // f8
+	      9'h01: begin { lk_P0, lk_kdata } = 9'h109; end // f9
+	      9'h09: begin { lk_P0, lk_kdata } = 9'h10a; end // f10
 
-	      9'h16: begin { P0, kdata } = 9'h31; end // 1
-	      9'h1e: begin { P0, kdata } = 9'h32; end // 2
-	      9'h26: begin { P0, kdata } = 9'h33; end // 3
-	      9'h25: begin { P0, kdata } = 9'h34; end // 4
-	      9'h2e: begin { P0, kdata } = 9'h35; end // 5
-	      9'h36: begin { P0, kdata } = 9'h36; end // 6
-	      9'h3d: begin { P0, kdata } = 9'h37; end // 7
-	      9'h3e: begin { P0, kdata } = 9'h38; end // 8
-	      9'h46: begin { P0, kdata } = 9'h39; end // 9
-	      9'h45: begin { P0, kdata } = 9'h30; end // 0
-				9'h4e: begin { P0, kdata } = 9'h2d; end // -
-	      9'h55: begin { P0, kdata } = 9'h5e; end // =
-	      9'h5d: begin { P0, kdata } = 9'h5c; end // \
+	      9'h16: begin { lk_P0, lk_kdata } = 9'h31; end // 1
+	      9'h1e: begin { lk_P0, lk_kdata } = 9'h32; end // 2
+	      9'h26: begin { lk_P0, lk_kdata } = 9'h33; end // 3
+	      9'h25: begin { lk_P0, lk_kdata } = 9'h34; end // 4
+	      9'h2e: begin { lk_P0, lk_kdata } = 9'h35; end // 5
+	      9'h36: begin { lk_P0, lk_kdata } = 9'h36; end // 6
+	      9'h3d: begin { lk_P0, lk_kdata } = 9'h37; end // 7
+	      9'h3e: begin { lk_P0, lk_kdata } = 9'h38; end // 8
+	      9'h46: begin { lk_P0, lk_kdata } = 9'h39; end // 9
+	      9'h45: begin { lk_P0, lk_kdata } = 9'h30; end // 0
+				9'h4e: begin { lk_P0, lk_kdata } = 9'h2d; end // -
+	      9'h55: begin { lk_P0, lk_kdata } = 9'h5e; end // =
+	      9'h5d: begin { lk_P0, lk_kdata } = 9'h5c; end // \
 
 
-	      9'h15: begin { P0, kdata } = 9'h71; end // q
-	      9'h1d: begin { P0, kdata } = 9'h77; end // w
-	      9'h24: begin { P0, kdata } = 9'h65; end // e
-	      9'h2d: begin { P0, kdata } = 9'h72; end // r
-	      9'h2c: begin { P0, kdata } = 9'h74; end // t
-	      9'h35: begin { P0, kdata } = 9'h79; end // y
-	      9'h3c: begin { P0, kdata } = 9'h75; end // u
-	      9'h43: begin { P0, kdata } = 9'h69; end // i
-	      9'h44: begin { P0, kdata } = 9'h6f; end // o
-	      9'h4d: begin { P0, kdata } = 9'h70; end // p
-	      9'h54: begin { P0, kdata } = 9'h40; end // [
-	      9'h5b: begin { P0, kdata } = 9'h5b; end // ]
+	      9'h15: begin { lk_P0, lk_kdata } = 9'h71; end // q
+	      9'h1d: begin { lk_P0, lk_kdata } = 9'h77; end // w
+	      9'h24: begin { lk_P0, lk_kdata } = 9'h65; end // e
+	      9'h2d: begin { lk_P0, lk_kdata } = 9'h72; end // r
+	      9'h2c: begin { lk_P0, lk_kdata } = 9'h74; end // t
+	      9'h35: begin { lk_P0, lk_kdata } = 9'h79; end // y
+	      9'h3c: begin { lk_P0, lk_kdata } = 9'h75; end // u
+	      9'h43: begin { lk_P0, lk_kdata } = 9'h69; end // i
+	      9'h44: begin { lk_P0, lk_kdata } = 9'h6f; end // o
+	      9'h4d: begin { lk_P0, lk_kdata } = 9'h70; end // p
+	      9'h54: begin { lk_P0, lk_kdata } = 9'h40; end // [
+	      9'h5b: begin { lk_P0, lk_kdata } = 9'h5b; end // ]
 
-		    9'h1c: begin { P0, kdata } = 9'h61; end // a
-	      9'h1b: begin { P0, kdata } = 9'h73; end // s
-	      9'h23: begin { P0, kdata } = 9'h64; end // d
-	      9'h2b: begin { P0, kdata } = 9'h66; end // f
-	      9'h34: begin { P0, kdata } = 9'h67; end // g
-	      9'h33: begin { P0, kdata } = 9'h68; end // h
-	      9'h3b: begin { P0, kdata } = 9'h6a; end // j
-	      9'h42: begin { P0, kdata } = 9'h6b; end // k
-	      9'h4b: begin { P0, kdata } = 9'h6c; end // l
-	      9'h4c: begin { P0, kdata } = 9'h3b; end // ;
-	      9'h52: begin { P0, kdata } = 9'h3a; end // '
+		    9'h1c: begin { lk_P0, lk_kdata } = 9'h61; end // a
+	      9'h1b: begin { lk_P0, lk_kdata } = 9'h73; end // s
+	      9'h23: begin { lk_P0, lk_kdata } = 9'h64; end // d
+	      9'h2b: begin { lk_P0, lk_kdata } = 9'h66; end // f
+	      9'h34: begin { lk_P0, lk_kdata } = 9'h67; end // g
+	      9'h33: begin { lk_P0, lk_kdata } = 9'h68; end // h
+	      9'h3b: begin { lk_P0, lk_kdata } = 9'h6a; end // j
+	      9'h42: begin { lk_P0, lk_kdata } = 9'h6b; end // k
+	      9'h4b: begin { lk_P0, lk_kdata } = 9'h6c; end // l
+	      9'h4c: begin { lk_P0, lk_kdata } = 9'h3b; end // ;
+	      9'h52: begin { lk_P0, lk_kdata } = 9'h3a; end // '
 	      // $5d, not $5b. This is the ']' key: ctrl gives GS ($1d), GRAPH gives
 	      // the ']' semigraphic ($ec) and KANA the closing bracket ($a3), all
 	      // at this same scancode. The base table alone said $5b, which is
 	      // '[' -- the same character PC ']' ($5b) already produces, so ']'
 	      // could not be typed at all and one key was a duplicate.
-	      9'h0e: begin { P0, kdata } = 9'h5d; end // `
+	      9'h0e: begin { lk_P0, lk_kdata } = 9'h5d; end // `
 
-	      9'h1a: begin { P0, kdata } = 9'h7a; end // z
-	      9'h22: begin { P0, kdata } = 9'h78; end // x
-	      9'h21: begin { P0, kdata } = 9'h63; end // c
-	      9'h2a: begin { P0, kdata } = 9'h76; end // v
-		    9'h32: begin { P0, kdata } = 9'h62; end // b
-	      9'h31: begin { P0, kdata } = 9'h6e; end // n
-	      9'h3a: begin { P0, kdata } = 9'h6d; end // m
-	      9'h41: begin { P0, kdata } = 9'h2c; end // ,
-	      9'h49: begin { P0, kdata } = 9'h2e; end // .
-	      9'h04a: begin { P0, kdata } = 9'h2f; end // / (was '"'; " is shift-2)
+	      9'h1a: begin { lk_P0, lk_kdata } = 9'h7a; end // z
+	      9'h22: begin { lk_P0, lk_kdata } = 9'h78; end // x
+	      9'h21: begin { lk_P0, lk_kdata } = 9'h63; end // c
+	      9'h2a: begin { lk_P0, lk_kdata } = 9'h76; end // v
+		    9'h32: begin { lk_P0, lk_kdata } = 9'h62; end // b
+	      9'h31: begin { lk_P0, lk_kdata } = 9'h6e; end // n
+	      9'h3a: begin { lk_P0, lk_kdata } = 9'h6d; end // m
+	      9'h41: begin { lk_P0, lk_kdata } = 9'h2c; end // ,
+	      9'h49: begin { lk_P0, lk_kdata } = 9'h2e; end // .
+	      9'h04a: begin { lk_P0, lk_kdata } = 9'h2f; end // / (was '"'; " is shift-2)
 
 	      // Numeric keypad: the same codes as the main-keyboard digits and
 	      // punctuation (CSP standard_key, phy $36-$47). Dig Dug reads 8/4/6/2
 	      // and cannot tell which of the two keys produced them.
-	      9'h14a: begin { P0, kdata } = 9'h2f; end // keypad /
-	      9'h07c: begin { P0, kdata } = 9'h2a; end // keypad *
-	      9'h079: begin { P0, kdata } = 9'h2b; end // keypad +
-	      9'h07b: begin { P0, kdata } = 9'h2d; end // keypad -
-	      9'h06c: begin { P0, kdata } = 9'h37; end // keypad 7
-	      9'h075: begin { P0, kdata } = 9'h38; end // keypad 8
-	      9'h07d: begin { P0, kdata } = 9'h39; end // keypad 9
-	      9'h06b: begin { P0, kdata } = 9'h34; end // keypad 4
-	      9'h073: begin { P0, kdata } = 9'h35; end // keypad 5
-	      9'h074: begin { P0, kdata } = 9'h36; end // keypad 6
-	      9'h069: begin { P0, kdata } = 9'h31; end // keypad 1
-	      9'h072: begin { P0, kdata } = 9'h32; end // keypad 2
-	      9'h07a: begin { P0, kdata } = 9'h33; end // keypad 3
-	      9'h070: begin { P0, kdata } = 9'h30; end // keypad 0
-	      9'h071: begin { P0, kdata } = 9'h2e; end // keypad .
-	      9'h15a: begin { P0, kdata } = 9'h0d; end // keypad enter
+	      9'h14a: begin { lk_P0, lk_kdata } = 9'h2f; end // keypad /
+	      9'h07c: begin { lk_P0, lk_kdata } = 9'h2a; end // keypad *
+	      9'h079: begin { lk_P0, lk_kdata } = 9'h2b; end // keypad +
+	      9'h07b: begin { lk_P0, lk_kdata } = 9'h2d; end // keypad -
+	      9'h06c: begin { lk_P0, lk_kdata } = 9'h37; end // keypad 7
+	      9'h075: begin { lk_P0, lk_kdata } = 9'h38; end // keypad 8
+	      9'h07d: begin { lk_P0, lk_kdata } = 9'h39; end // keypad 9
+	      9'h06b: begin { lk_P0, lk_kdata } = 9'h34; end // keypad 4
+	      9'h073: begin { lk_P0, lk_kdata } = 9'h35; end // keypad 5
+	      9'h074: begin { lk_P0, lk_kdata } = 9'h36; end // keypad 6
+	      9'h069: begin { lk_P0, lk_kdata } = 9'h31; end // keypad 1
+	      9'h072: begin { lk_P0, lk_kdata } = 9'h32; end // keypad 2
+	      9'h07a: begin { lk_P0, lk_kdata } = 9'h33; end // keypad 3
+	      9'h070: begin { lk_P0, lk_kdata } = 9'h30; end // keypad 0
+	      9'h071: begin { lk_P0, lk_kdata } = 9'h2e; end // keypad .
+	      9'h15a: begin { lk_P0, lk_kdata } = 9'h0d; end // keypad enter
 
-	      9'h29: begin { P0, kdata } = 9'h20; end // spacebar
-	      9'h5a: begin { P0, kdata } = 9'h0d; end // enter
-	      9'h0d: begin { P0, kdata } = 9'h09; end // tab
-	      9'h66: begin { P0, kdata } = 9'h08; end // backspace
-	      9'h175: begin { P0, kdata } = 9'h1e; end // up
-	      9'h174: begin { P0, kdata } = 9'h1c; end // right
-	      9'h16b: begin { P0, kdata } = 9'h1d; end // left
-	      9'h172: begin { P0, kdata } = 9'h1f; end // down
-	      9'h58: begin { P0, kdata } = 9'h00; end // caps lock ?
-	      9'h16c: begin { P0, kdata } = 9'h0b; end // home
-	      9'h17d: begin { P0, kdata } = 9'h00; end // page up ?
-	      9'h17a: begin { P0, kdata } = 9'h00; end // page down ?
-	      9'h170: begin { P0, kdata } = 9'h12; end // insert
-	      9'h171: begin { P0, kdata } = 9'h7f; end // delete
+	      9'h29: begin { lk_P0, lk_kdata } = 9'h20; end // spacebar
+	      9'h5a: begin { lk_P0, lk_kdata } = 9'h0d; end // enter
+	      9'h0d: begin { lk_P0, lk_kdata } = 9'h09; end // tab
+	      9'h66: begin { lk_P0, lk_kdata } = 9'h08; end // backspace
+	      9'h175: begin { lk_P0, lk_kdata } = 9'h1e; end // up
+	      9'h174: begin { lk_P0, lk_kdata } = 9'h1c; end // right
+	      9'h16b: begin { lk_P0, lk_kdata } = 9'h1d; end // left
+	      9'h172: begin { lk_P0, lk_kdata } = 9'h1f; end // down
+	      9'h58: begin { lk_P0, lk_kdata } = 9'h00; end // caps lock ?
+	      9'h16c: begin { lk_P0, lk_kdata } = 9'h0b; end // home
+	      9'h17d: begin { lk_P0, lk_kdata } = 9'h00; end // page up ?
+	      9'h17a: begin { lk_P0, lk_kdata } = 9'h00; end // page down ?
+	      9'h170: begin { lk_P0, lk_kdata } = 9'h12; end // insert
+	      9'h171: begin { lk_P0, lk_kdata } = 9'h7f; end // delete
 	      // 9'h114: BREAKn = ~press_btn; // ctrl right => break
 		  endcase
 	  end
-
-		else begin
-			// $FD01 idles at $FF, not $00. 77AVEMU initialises lastKeyCode to
-			// 0xFF and says why, in four places: "Death Force Expects non-zero
-			// read from $FD01 on reset"
-			// (fm77avkeyboard.h:66, fm77avkeyboard.cpp:218,754,796).
-			//
-			// Shounen Mike is the same class. Its main-CPU $FDxx stream runs in
-			// exact lockstep with the reference -- same port, same value, same
-			// PC -- for 20593 distinct accesses, and the FIRST thing the two
-			// machines disagree about is `LDA $FD01` at pc=$610B on frame 10,
-			// where the reference reads $FF and this returned $00.
-			{ P0, kdata } <= 9'h0ff;
-		end
 
 	end
 end
@@ -737,11 +746,148 @@ end
 // the CPU acknowledges the previous one is not silently dropped.
 wire is_modifier = (code == 9'h012) || (code == 9'h059) ||  // shift L/R
                    (code == 9'h014) || (code == 9'h114) ||  // ctrl L/R
-                   (code == 9'h011) || (code == 9'h111);    // alt L/R
+                   (code == 9'h011) || (code == 9'h111) ||  // alt L/R
+                   (code == 9'h058);                        // caps lock
+wire is_shift    = (code == 9'h012) || (code == 9'h059);
 
-reg key_stb;
-always @(posedge CLKSYS)
-  key_stb <= input_strobe & press_btn & ~is_modifier;
+// Auto-repeat. The keyboard's own MB88401 does this, not the sub CPU, and
+// Fujitsu's FM-7 System Specifications (refs/fm7-docs/
+// archive-org-fm7-system-specifications, sections 1.9.3-1.9.4, p.1-30) says:
+//
+//   * Every key except the PF keys repeats: its code again 0.7 s after the
+//     press, then every 0.07 s.
+//   * With several keys down, the LAST key pressed generates its code until
+//     that key is released or the mode changes.
+//   * Repeat is cut off when the key is released, when a higher-priority mode
+//     is selected, or when SHIFT or CAP changes.
+//   * CTRL+SHIFT+0 stops the repeat function and CTRL+SHIFT+1 resumes it.
+//
+// What the manual leaves open is taken from XM7, the emulator that agrees with
+// it (refs/fm7-docs/xm7-retropc/utf8/VM_keyboard.c.txt):
+//
+//   * A repeat re-sends the code latched at the press; nothing is decoded
+//     again (keyboard_event, :2466-2485).
+//   * A new key restarts the 0.7 s delay. A PF key, or a key with no code in
+//     the current mode, cancels the repeat (keyboard_make, :2701-2723).
+//   * ANY modifier press cancels it: modifiers return no code (:2110-2113) and
+//     take that same path. XM7 does not cancel on a SHIFT RELEASE; the manual
+//     says a change of SHIFT does, and that is followed here.
+//   * Only releasing the repeating key stops it, and an older key still held
+//     does not take over (keyboard_break, :2815-2818).
+//   * FM77AV encoder $04 (00 on, 01 off) and $05 (delay, then interval, in
+//     10 ms; a zero in either restores 0.7 s / 0.07 s), :1602-1640, arriving
+//     from AVKEYBOARD.v.
+//
+// CSP is NOT followed here, although it is the primary authority elsewhere: it
+// decodes each repeat afresh with the modifiers held at that moment and moves a
+// running repeat to a new key without restarting the delay
+// (keyboard.cpp:448-457, :504), which the manual contradicts. 77AVEMU repeats
+// only in its GUI front end (fssimplewindow_connection.cpp:441-460) -- its
+// headless build types ONE character for a key held two seconds. MAME gives the
+// same 700 ms / 70 ms "on FM-7" (fm7.cpp:1826-1827) and never implemented it.
+//
+// Separately, MiSTer may pass the PC keyboard's own typematic repeats through
+// as further make events. Those must not reach the machine, or a held key would
+// repeat at the PC's rate: dup_press drops a make for the key that was already
+// the last one pressed until some key is released, as CSP's older_vk does
+// (keyboard.cpp:346, :252).
+reg        key_stb;
+reg        rpt_en;                 // CTRL+SHIFT+0/1, encoder $04
+reg [11:0] rpt_delay_ms;           // 700, or up to 255 x 10 from encoder $05
+reg [11:0] rpt_int_ms;             // 70
+reg        rpt_run, rpt_first, rpt_pend;
+reg [11:0] rpt_ms;
+reg        rpt_P0;
+reg  [7:0] rpt_kdata;
+reg [15:0] ms_div = 16'd0;
+wire       ms_tick     = (ms_div == 16'd47999);      // 1 ms of 48 MHz CLKSYS
+wire       rpt_key_on  = shift_h && ctrl_h && ((code == 9'h016) || (code == 9'h069)); // 1
+wire       rpt_key_off = shift_h && ctrl_h && ((code == 9'h045) || (code == 9'h070)); // 0
+wire       key_press   = input_strobe &  press_btn & ~dup_press;
+wire       key_release = input_strobe & ~press_btn;
+
+always @(posedge CLKSYS) begin
+  key_stb <= 1'b0;
+  ms_div  <= ms_tick ? 16'd0 : ms_div + 16'd1;
+  if (~RESETBn) begin
+    last_press_v <= 1'b0;
+    rpt_en       <= 1'b1;
+    rpt_delay_ms <= 12'd700;
+    rpt_int_ms   <= 12'd70;
+    rpt_run      <= 1'b0;
+    rpt_first    <= 1'b0;
+    rpt_pend     <= 1'b0;
+    rpt_ms       <= 12'd0;
+  end
+  else begin
+    if (RPT_MODE_STB) begin
+      rpt_en <= RPT_MODE_ON;
+      if (!RPT_MODE_ON) begin rpt_run <= 1'b0; rpt_pend <= 1'b0; end
+    end
+    if (RPT_TIME_STB) begin
+      if ((RPT_DELAY == 8'd0) || (RPT_INTERVAL == 8'd0)) begin
+        rpt_delay_ms <= 12'd700;
+        rpt_int_ms   <= 12'd70;
+      end
+      else begin
+        rpt_delay_ms <= {4'd0, RPT_DELAY}    * 12'd10;
+        rpt_int_ms   <= {4'd0, RPT_INTERVAL} * 12'd10;
+      end
+    end
+
+    if (rpt_run && ms_tick) begin
+      if (rpt_ms == (rpt_first ? rpt_delay_ms : rpt_int_ms) - 12'd1) begin
+        rpt_ms    <= 12'd0;
+        rpt_first <= 1'b0;
+        rpt_pend  <= 1'b1;
+      end
+      else rpt_ms <= rpt_ms + 12'd1;
+    end
+
+    if (key_release) begin
+      last_press_v <= 1'b0;
+      // $FD01 idles at $FF, not $00. 77AVEMU initialises lastKeyCode to
+      // 0xFF and says why, in four places: "Death Force Expects non-zero
+      // read from $FD01 on reset"
+      // (fm77avkeyboard.h:66, fm77avkeyboard.cpp:218,754,796).
+      //
+      // Shounen Mike is the same class. Its main-CPU $FDxx stream runs in
+      // exact lockstep with the reference -- same port, same value, same
+      // PC -- for 20593 distinct accesses, and the FIRST thing the two
+      // machines disagree about is `LDA $FD01` at pc=$610B on frame 10,
+      // where the reference reads $FF and this returned $00.
+      { P0, kdata } <= 9'h0ff;
+      if (is_shift || (code == rpt_code)) begin
+        rpt_run  <= 1'b0;
+        rpt_pend <= 1'b0;
+      end
+    end
+    else if (key_press) begin
+      last_press   <= code;
+      last_press_v <= 1'b1;
+      // Every press ends a running repeat; only a key with a code starts one.
+      rpt_run  <= 1'b0;
+      rpt_pend <= 1'b0;
+      if (is_modifier) ;
+      else if (rpt_key_on)  rpt_en <= 1'b1;
+      else if (rpt_key_off) rpt_en <= 1'b0;
+      else if (lk_hit) begin
+        { P0, kdata }         <= { lk_P0, lk_kdata };
+        key_stb               <= 1'b1;
+        rpt_code              <= code;
+        { rpt_P0, rpt_kdata } <= { lk_P0, lk_kdata };
+        rpt_run               <= rpt_en & ~lk_P0;    // PF keys never repeat
+        rpt_first             <= 1'b1;
+        rpt_ms                <= 12'd0;
+      end
+    end
+    else if (rpt_pend) begin
+      rpt_pend      <= 1'b0;
+      { P0, kdata } <= { rpt_P0, rpt_kdata };
+      key_stb       <= 1'b1;
+    end
+  end
+end
 
 // One main-CPU or sub-CPU read produces two decode strobes: a Q-phase pulse
 // followed by the E-phase pulse where the 6809 actually latches the data. The

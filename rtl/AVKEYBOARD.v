@@ -40,7 +40,13 @@ module AVKEYBOARD(
   // then drives the encoder from the main side, so these registers have to be
   // readable from an address that is not on the sub bus at all.
   input  [7:0] MMR_ADDR,
-  output [7:0] MMR_DOUT
+  output [7:0] MMR_DOUT,
+  // $04 and $05 act on the key repeat, which is KEYBOARD.v's job.
+  output reg       RPT_MODE_STB,
+  output reg       RPT_MODE_ON,
+  output reg       RPT_TIME_STB,
+  output reg [7:0] RPT_DELAY,
+  output reg [7:0] RPT_INTERVAL
 );
 
 wire io_window = machine_av && (SADDRBUS[15:8] == 8'hd4);
@@ -166,6 +172,11 @@ always @(posedge CLKSYS) begin
     leds              <= 8'd0;
     screen_mode       <= 8'd0; // computer only
     brightness        <= 8'd0;
+    RPT_MODE_STB      <= 1'b0;
+    RPT_MODE_ON       <= 1'b1;
+    RPT_TIME_STB      <= 1'b0;
+    RPT_DELAY         <= 8'd0;
+    RPT_INTERVAL      <= 8'd0;
     command_pending   <= 1'b0;
     param_n           <= 4'd0;
     param_need        <= 4'd0;
@@ -181,6 +192,8 @@ always @(posedge CLKSYS) begin
     rtc_hour          <= 8'h00;
   end
   else begin
+    RPT_MODE_STB <= 1'b0;
+    RPT_TIME_STB <= 1'b0;
     if (acknowledge_timer != 13'd0)
       acknowledge_timer <= acknowledge_timer - 13'd1;
     if (data_timer != 13'd0)
@@ -230,8 +243,19 @@ always @(posedge CLKSYS) begin
         case (command)
           8'h00: if (SDATA_in <= 8'd2) mode <= SDATA_in;
           8'h02: if (SDATA_in <= 8'd3) leds <= SDATA_in;
-          8'h04: ; // repeat enable/disable, accepted
-          8'h05: ; // repeat start time and interval, accepted as a stub
+          // $04: 00 repeat on, 01 off, anything else ignored (XM7
+          // key_set_repeat, VM_keyboard.c.txt:1602-1615; CSP keyboard.cpp:777-798).
+          8'h04: if (SDATA_in < 8'd2) begin
+                   RPT_MODE_ON  <= (SDATA_in == 8'd0);
+                   RPT_MODE_STB <= 1'b1;
+                 end
+          // $05: delay, then interval, each in 10 ms. KEYBOARD.v restores
+          // 700/70 when either is zero (XM7 key_set_time, :1627-1640; CSP :800-822).
+          8'h05: if (param_n == 4'd0) RPT_DELAY <= SDATA_in;
+                 else begin
+                   RPT_INTERVAL <= SDATA_in;
+                   RPT_TIME_STB <= 1'b1;
+                 end
           8'h80:
             // $00 reads the clock, $01 sets it and takes seven more bytes,
             // anything else is illegal and ends the command

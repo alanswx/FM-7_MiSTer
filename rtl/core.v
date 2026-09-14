@@ -1035,6 +1035,9 @@ SDECODE u_SDECODE(
   .SDRAMV3n  ( SDRAMV3n  )
 );
 
+wire       AV_RPT_MODE_STB, AV_RPT_MODE_ON, AV_RPT_TIME_STB;
+wire [7:0] AV_RPT_DELAY, AV_RPT_INTERVAL;
+
 AVKEYBOARD u_AVKEYBOARD(
   .CLKSYS     ( CLKSYS       ),
   .RESETBn    ( RESETBn      ),
@@ -1046,7 +1049,12 @@ AVKEYBOARD u_AVKEYBOARD(
   .DOUT       ( AV_KBD_dout ),
   .SEL        ( AV_KBD_sel   ),
   .MMR_ADDR   ( AV_SUBIO_ADDR ),
-  .MMR_DOUT   ( AV_KBD_mmr_dout )
+  .MMR_DOUT   ( AV_KBD_mmr_dout ),
+  .RPT_MODE_STB ( AV_RPT_MODE_STB ),
+  .RPT_MODE_ON  ( AV_RPT_MODE_ON  ),
+  .RPT_TIME_STB ( AV_RPT_TIME_STB ),
+  .RPT_DELAY    ( AV_RPT_DELAY    ),
+  .RPT_INTERVAL ( AV_RPT_INTERVAL )
 );
 
 SMEM u_SMEM(
@@ -1368,7 +1376,12 @@ KEYBOARD KEYBOARD(
   .fm8_switch ( fm8_switch   ),
   .LPMASKn    ( LPMASKn      ),
   .TMMASK     ( TMMASK       ),
-  .KEYINn     ( KEYINn       )
+  .KEYINn     ( KEYINn       ),
+  .RPT_MODE_STB ( AV_RPT_MODE_STB ),
+  .RPT_MODE_ON  ( AV_RPT_MODE_ON  ),
+  .RPT_TIME_STB ( AV_RPT_TIME_STB ),
+  .RPT_DELAY    ( AV_RPT_DELAY    ),
+  .RPT_INTERVAL ( AV_RPT_INTERVAL )
 );
 
 

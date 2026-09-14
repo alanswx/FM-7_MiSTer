@@ -352,6 +352,12 @@ static std::vector<KeyAction> key_actions;
 // can fall between two samples and be lost.
 static int key_hold_frames = 6;
 
+// Host-keyboard typematic, for testing the core's filter for it: while a key is
+// held, send it again as a further make event D frames after the press and then
+// every I frames, the way a PC keyboard (and possibly MiSTer) does. 0 = off.
+static int key_typematic_delay = 0, key_typematic_interval = 0;
+static int key_typematic_events = 0;   // reported, so a no-op injection cannot pass for a filter
+
 struct PendingKey { int frame; uint16_t code; bool extended; bool down; };
 static std::vector<PendingKey> pending_keys;
 
@@ -589,6 +595,9 @@ static void schedule_key_action(const KeyAction& a) {
 		bool need_shift = km.shift && !shift_held;
 		if (need_shift) pending_keys.push_back({f, 0x12, false, true});
 		pending_keys.push_back({f + (need_shift ? 1 : 0), km.code, km.extended, true});
+		if (key_typematic_interval > 0)
+			for (int t = f + (need_shift ? 1 : 0) + key_typematic_delay; t < f + key_hold_frames; t += key_typematic_interval)
+				{ pending_keys.push_back({t, km.code, km.extended, true}); key_typematic_events++; }
 		pending_keys.push_back({f + key_hold_frames, km.code, km.extended, false});
 		if (need_shift) pending_keys.push_back({f + key_hold_frames + 1, 0x12, false, false});
 		// Gap between characters so the machine sees a clean release. KEYBOARD.v
@@ -809,6 +818,8 @@ static void print_usage(const char* argv0) {
 	printf("                                   LEFT RIGHT HOME INS DEL CTRL SHIFT\n");
 	printf("                                   GRAPH KANA BREAK F1..F10\n");
 	printf("  --key-hold <frames>       Frames to hold each key (default 6)\n");
+	printf("  --key-typematic <d>:<i>   While a key is held, resend its make code after\n");
+	printf("                            d frames, then every i frames (host typematic)\n");
 	printf("  --joystick <frame>:<b>[:<hold>]\n");
 	printf("                            Press joystick 1 buttons at <frame> and release\n");
 	printf("                            after <hold> frames. Buttons are '+'-separated:\n");
@@ -891,6 +902,7 @@ static int parse_args(int argc, char** argv) {
 			else printf("Error: --machine needs fm7 or fm77av\n");
 		}
 		else if (a == "--key-hold")        { const char* v = next(); if (v) key_hold_frames = atoi(v); }
+		else if (a == "--key-typematic")   { const char* v = next(); if (v && sscanf(v, "%d:%d", &key_typematic_delay, &key_typematic_interval) != 2) printf("Error: --key-typematic needs <delay>:<interval> in frames\n"); }
 		else if (a == "--stop-at-frame")   { const char* v = next(); if (v) stop_at_frame = atoi(v); }
 		else if (a == "--reset-at-frame")  { const char* v = next(); if (v) reset_at_frame = atoi(v); }
 		else if (a == "--rewind-at-frame") { const char* v = next(); if (v) tape_rewind_frame = atoi(v); }
@@ -1755,6 +1767,8 @@ int main(int argc, char** argv, char** env) {
 	}
 
 	for (const KeyAction& a : key_actions) schedule_key_action(a);
+	if (key_typematic_interval > 0)
+		printf("key-typematic: %d extra make events scheduled\n", key_typematic_events);
 	// SimInput drains its queue on a cycle timer. A frame is ~805k clk_sys
 	// cycles, so this is short enough that a whole frame's press/release events
 	// land inside that frame.
