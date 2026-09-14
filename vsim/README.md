@@ -61,7 +61,7 @@ video chain, which is exactly what the core depends on.
 | `--machine <fm7\|fm77av>` | Machine-family selector matching the OSD. `fm77av` is a bring-up gate and currently holds the core in reset until the AV backend is implemented. |
 | `--key <frame>:<text>` | Types text, or `@NAME` for `SPACE RETURN TAB BS ESC CAPS UP DOWN LEFT RIGHT HOME INS DEL CTRL SHIFT GRAPH KANA BREAK F1`..`F10`, and the keypad `KP0`..`KP9 KPDOT KPPLUS KPMINUS KPSTAR KPSLASH KPENTER`. `@KP8` is not `@UP`: the same scancode, without the E0 prefix. |
 | `--key-hold <frames>` | Frames to hold each key, default 6. |
-| `--key-typematic <d>:<i>` | While a key is held, resend its make code after *d* frames and then every *i*, as a PC keyboard's typematic does. The core must ignore these -- `KEYBOARD.v` repeats at the FM-7's own 0.7 s / 0.07 s -- so a 120-frame hold still delivers 20 keystrokes with or without it. |
+| `--key-typematic <d>:<i>` | While a key is held, resend its make code after *d* frames and then every *i*, as a PC keyboard's typematic does. The core must ignore these -- `KEYBOARD.v` repeats at the FM-7's own 0.7 s / 0.07 s -- so a 120-frame hold still delivers 20 keystrokes with or without it. On MiSTer this tests a guard, not a live path: Main_MiSTer does not forward key repeats to a core that leaves `hps_io`'s `PS2WE` unset, as this one does (`user_io.cpp:4070`). |
 | `--screenshot <n,...>` / `--screenshot-name <path>` | PNG per listed frame / exact path, for scripting. |
 | `--stop-at-frame <n>` | Required for headless runs; otherwise it stops at 100000 frames. |
 | `--trace-cpu [file]` | Disassemble every main-CPU instruction as it retires. See below. |

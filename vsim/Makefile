@@ -474,6 +474,13 @@ avkeyboard-test: avkeyboard_tb.sv ../rtl/AVKEYBOARD.v
 		--top-module avkeyboard_tb avkeyboard_tb.sv ../rtl/AVKEYBOARD.v
 	/tmp/fm7-avkeyboard-obj/Vavkeyboard_tb
 
+# Directed check for the FM-7 key tables, the $FD01 hold and reset, and the
+# auto-repeat timer. About two simulated seconds, so it takes a little while.
+keyboard-test: keyboard_tb.sv ../rtl/KEYBOARD.v
+	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-keyboard-obj \
+		--top-module keyboard_tb keyboard_tb.sv ../rtl/KEYBOARD.v
+	/tmp/fm7-keyboard-obj/Vkeyboard_tb
+
 # Directed check for the AV character-generator aperture and $D430 bank.
 smem-test: smem-test.sv ../rtl/SMEM.v ../rtl/ram.v ../rtl/rom.v ../rtl/rom_loadable.v
 	verilator --binary --timing -Wno-fatal --Mdir /tmp/fm7-smem-obj \
@@ -507,7 +514,7 @@ avpixel-test: avpixel_tb.sv ../rtl/AVPIXEL.v
 av-boot-test: all av_boot_test.sh
 	bash av_boot_test.sh
 
-.PHONY: all run test clean clean-shots avmem-test crtram-test avkeyboard-test smem-test mb60h010-test pal-test avpixel-test avhdraw-test sound-test kanji-test av-boot-test
+.PHONY: all run test clean clean-shots avmem-test crtram-test avkeyboard-test keyboard-test smem-test mb60h010-test pal-test avpixel-test avhdraw-test sound-test kanji-test av-boot-test
 
 # Disassembler self-check. Standalone -- no Verilator, no core.
 distest: dis6809_test.cpp dis6809.cpp dis6809.h

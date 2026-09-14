@@ -6,6 +6,39 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
+# OPEN: key tables and `$FD01` on reset -- simulated, not yet on a board
+
+One commit on `fdc-d77-support`: key-table entries checked against the Fujitsu
+manuals (`docs/REFERENCE.md`, "CTRL on `^` and `¥`"), `$FD01` back to `$FF` on a
+reset, and the repeat timer's compare. Pinned by `make keyboard-test` in `vsim/`,
+which fails 23 checks on the previous RTL. Table entries, one reset assignment and
+one `==` made `>=`: low hardware risk.
+
+At the F-BASIC prompt, `10 PRINT ASC(INPUT$(1)):GOTO 10`, `RUN`, press each key
+(BREAK stops it):
+
+| press | expect | was |
+|---|---|---|
+| Page Up / Page Down | 5 / 12 | 0 / 0 |
+| Shift + Esc / Backspace / Tab / Ins / Del / Home | 27 / 8 / 9 / 18 / 127 / 11 | nothing |
+| Shift + Page Up / Page Down | 5 / 12 | nothing |
+| Shift + Up / Left / Down / Right | 25 / 2 / 26 / 6 | nothing |
+| Shift + `` ` `` | 125 (`}`) | nothing |
+| Left Ctrl + `=` (the `^` key) / Left Ctrl + `\` (the `¥` key) | 30 / 28 | 28 / nothing |
+| Left Ctrl + `-` | nothing | 30 |
+| Left Alt (GRAPH) + Esc; Right Alt (KANA on) + Esc | 27; 27 | nothing |
+
+The reset value cannot be seen from BASIC -- typing the check changes it. It is
+simulation-only unless a title that reads `$FD01` at boot (Shounen Mike) is booted
+after typing something and pressing OSD Reset.
+
+**The typematic question below is answered from source, no board needed:**
+Main_MiSTer `user_io_kbd()` returns on a key repeat unless the core sets `hps_io`'s
+`PS2WE` (`user_io.cpp:4070` at release 20260912), and this core does not. A physical
+keyboard's repeats never reach `KEYBOARD.v`.
+
+---
+
 # CLOSED: keypad, key repeat and the `$FD01` hold work on the DE10-Nano
 
 `87e30cc` (keypad), `55cf560` (auto-repeat) and `376b571` (`$FD01` hold), built
@@ -29,12 +62,12 @@ M10K, no negative slack). Everything on the checklist passes. Data:
 - **No regressions:** the 11-title subset, the Secoinsa ROM set (24/24 both
   ways) and drive 1 are unchanged.
 
-**Still open -- the one thing the harness cannot reach:** whether a real PC
+**Was open -- the one thing the harness cannot reach:** whether a real PC
 keyboard's typematic repeats are filtered. The mrext virtual keyboard reports
 `EV=3` in `/proc/bus/input/devices` -- no `EV_REP` -- so a held key is exactly one
-key-down and nothing the harness sends can exercise the filter. Hold a key on a
-physical keyboard: it should repeat every ~0.07 s after 0.7 s, not at the PC's
-rate.
+key-down and nothing the harness sends can exercise the filter. **Answered from
+Main_MiSTer's source instead** (see the OPEN section above): repeats are dropped
+before they reach this core, so the filter is a guard, not a live path.
 
 Two traps from this run:
 

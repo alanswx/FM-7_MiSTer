@@ -80,6 +80,28 @@ for a two-second hold. That reads exactly like "the FM-7 does not repeat". Count
 repeats in vsim instead -- `keyboard: N strobes` in the run summary is one per
 keystroke delivered -- against the manual's timing.
 
+### Where they disagree: CTRL on `^` and `¥` (the manual overrules XM7 and CSP)
+
+The control-mode key drawing, System Specifications §1.9.9 p.1-34, marks `@ [ ] ^ ¥ _`
+beside the letters, and says the code sent is the displayed character less `$40`. So
+CTRL+`^` is `$1E`, CTRL+`¥` is `$1C`, and CTRL+`-` sends nothing. XM7's
+`ctrl_key_table` (`VM_keyboard.c.txt:98-132`) puts `$1E` on `-` (phy `$0C`) and `$1C`
+on `^` (phy `$0D`) -- one key to the left -- and CSP copies XM7. `KEYBOARD.v` follows
+the drawing. That table's CTRL+SHIFT+O = `$09` is not followed either: the drawing says
+SHIFT has no effect in control mode.
+
+**Where XM7 is right and the drawings are silent:** SHIFT on the four cursor keys sends
+`$19` `$02` `$1A` `$06`, though those keys carry no upper legend. F-BASIC Phase III
+Table 3·6·1 (printed p.220) is the evidence: the sub-system's graphic cursor moves 20
+dots on exactly those codes. The rest of the SHIFT layer -- ESC, BS, TAB, INS, DEL,
+HOME, EL, CLS send their plain codes -- is what the §1.9.6 drawing implies and what
+XM7's `norm_key_table` has.
+
+**Compare the tables by script, not by eye.** `tools/cmp-keytables.py` maps every
+`KEYBOARD.v` table onto XM7's through the phy numbers; the differences it prints should
+be exactly the ones above, plus Caps Lock's `$00` entry, which `is_modifier` never lets
+through. `make keyboard-test` in `vsim/` pins the entries that were wrong.
+
 ### Worked example: 77AVEMU's TRACE LOG is off by one, not its FDC
 
 **This section previously claimed 77AVEMU's sector reads were off by one and that

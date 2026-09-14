@@ -52,6 +52,10 @@ reg [8:0] code;
 // the one poll that fell inside that 6-frame press read $34 and the next 195
 // read $FF, and Dig Dug never left the centre of the screen (Game 012.d77,
 // 34 x $0D / 69 x $34 once the reset was removed).
+//
+// FM-Techknow says the same of the real machine (5-1-5, p.118): unlike the key
+// input buffer, this register keeps the last key's code until another key is
+// pressed. A machine reset does put it back to $FF -- see the repeat block.
 reg [7:0] kdata = 8'hff;
 reg P0 = 0;
 reg [2:0] m77;
@@ -232,8 +236,14 @@ always @* begin
         9'h54: begin { lk_P0, lk_kdata } = 9'h00; end // ctrl-@ -> NUL
         9'h5b: begin { lk_P0, lk_kdata } = 9'h1b; end // ctrl-[ -> ESC
         9'h0e: begin { lk_P0, lk_kdata } = 9'h1d; end // ctrl-] -> GS
-        9'h4e: begin { lk_P0, lk_kdata } = 9'h1e; end // ctrl-- -> RS
-        9'h55: begin { lk_P0, lk_kdata } = 9'h1c; end // ctrl-^ -> FS
+        // CTRL sends the key's displayed code less $40, and the control-mode drawing
+        // marks '@ [ ] ^ yen _' beside the letters (System Specifications 1.9.9
+        // p.1-34): '^' ($5E) is RS, yen ($5C) is FS, and '-' ($2D) sends nothing.
+        // XM7's ctrl_key_table, which CSP copies, puts both codes one key to the left,
+        // on '-' and '^'; the manual's drawing wins. ('_' is on the JIS ro key, which
+        // is not mapped.)
+        9'h55: begin { lk_P0, lk_kdata } = 9'h1e; end // ctrl-^ -> RS
+        9'h5d: begin { lk_P0, lk_kdata } = 9'h1c; end // ctrl-yen -> FS
       endcase
     end
 
@@ -243,6 +253,9 @@ always @* begin
     // duplicating a 50-entry table.
     else if (graph_h && press_btn) begin
       case (code)
+        // ESC is drawn on the GRAPH layout (1.9.8 p.1-33), and XM7 gives it $1B in
+        // every mode, shifted or not. It used to be in the plain table only.
+        9'h76: begin { lk_P0, lk_kdata } = 9'h01b; end // esc
         9'h16: begin { lk_P0, lk_kdata } = 9'h0f9; end // 1
         9'h1e: begin { lk_P0, lk_kdata } = 9'h0fa; end // 2
         9'h26: begin { lk_P0, lk_kdata } = 9'h0fb; end // 3
@@ -349,6 +362,7 @@ always @* begin
     // and much smaller table, so it is kept separate.
     else if (kana_h && shift_h && press_btn) begin
       case (code)
+        9'h76: begin { lk_P0, lk_kdata } = 9'h01b; end // esc
         9'h26: begin { lk_P0, lk_kdata } = 9'h0a7; end // 3 -> small a
         9'h25: begin { lk_P0, lk_kdata } = 9'h0a9; end // 4 -> small i
         9'h2e: begin { lk_P0, lk_kdata } = 9'h0aa; end // 5 -> small u
@@ -401,6 +415,7 @@ always @* begin
 
     else if (kana_h && press_btn) begin
       case (code)
+        9'h76: begin { lk_P0, lk_kdata } = 9'h01b; end // esc
         9'h16: begin { lk_P0, lk_kdata } = 9'h0c7; end // 1 -> nu
         9'h1e: begin { lk_P0, lk_kdata } = 9'h0cc; end // 2 -> fu
         9'h26: begin { lk_P0, lk_kdata } = 9'h0b1; end // 3 -> a
@@ -542,6 +557,7 @@ always @* begin
         9'h5d: begin { lk_P0, lk_kdata } = 9'h7c; end // \ -> |
         9'h54: begin { lk_P0, lk_kdata } = 9'h60; end // @ -> `
         9'h5b: begin { lk_P0, lk_kdata } = 9'h7b; end // [ -> {
+        9'h0e: begin { lk_P0, lk_kdata } = 9'h7d; end // ] -> }
         9'h4c: begin { lk_P0, lk_kdata } = 9'h2b; end // ; -> +
         9'h52: begin { lk_P0, lk_kdata } = 9'h2a; end // : -> *
         9'h41: begin { lk_P0, lk_kdata } = 9'h3c; end // , -> <
@@ -569,6 +585,25 @@ always @* begin
         9'h070: begin { lk_P0, lk_kdata } = 9'h30; end // keypad 0
         9'h071: begin { lk_P0, lk_kdata } = 9'h2e; end // keypad .
         9'h15a: begin { lk_P0, lk_kdata } = 9'h0d; end // keypad enter
+
+        // ESC, BS, TAB and the editing keys have no upper legend, and SHIFT gives a
+        // key's upper legend (1.9.6 p.1-32), so SHIFT leaves their code alone -- all
+        // but the four cursor keys, which SHIFT turns into $19/$02/$1A/$06. F-BASIC's
+        // sub-system acts on those as 20-dot cursor moves (F-BASIC Phase III Table
+        // 3-6-1, printed p.220). XM7's norm_key_table agrees with every entry below;
+        // they all used to send nothing while SHIFT was held.
+        9'h76: begin { lk_P0, lk_kdata } = 9'h1b; end // esc
+        9'h66: begin { lk_P0, lk_kdata } = 9'h08; end // backspace
+        9'h0d: begin { lk_P0, lk_kdata } = 9'h09; end // tab
+        9'h170: begin { lk_P0, lk_kdata } = 9'h12; end // insert
+        9'h171: begin { lk_P0, lk_kdata } = 9'h7f; end // delete
+        9'h16c: begin { lk_P0, lk_kdata } = 9'h0b; end // home
+        9'h17d: begin { lk_P0, lk_kdata } = 9'h05; end // page up (EL)
+        9'h17a: begin { lk_P0, lk_kdata } = 9'h0c; end // page down (CLS)
+        9'h175: begin { lk_P0, lk_kdata } = 9'h19; end // up
+        9'h16b: begin { lk_P0, lk_kdata } = 9'h02; end // left
+        9'h172: begin { lk_P0, lk_kdata } = 9'h1a; end // down
+        9'h174: begin { lk_P0, lk_kdata } = 9'h06; end // right
       endcase
     end
     // normal
@@ -673,8 +708,10 @@ always @* begin
 	      9'h172: begin { lk_P0, lk_kdata } = 9'h1f; end // down
 	      9'h58: begin { lk_P0, lk_kdata } = 9'h00; end // caps lock ?
 	      9'h16c: begin { lk_P0, lk_kdata } = 9'h0b; end // home
-	      9'h17d: begin { lk_P0, lk_kdata } = 9'h00; end // page up ?
-	      9'h17a: begin { lk_P0, lk_kdata } = 9'h00; end // page down ?
+	      // EL and CLS are $05 and $0C in the character code table (1.9.5 p.1-31), as
+	      // the GRAPH and KANA tables above already had. These sent $00.
+	      9'h17d: begin { lk_P0, lk_kdata } = 9'h05; end // page up = EL
+	      9'h17a: begin { lk_P0, lk_kdata } = 9'h0c; end // page down = CLS
 	      9'h170: begin { lk_P0, lk_kdata } = 9'h12; end // insert
 	      9'h171: begin { lk_P0, lk_kdata } = 9'h7f; end // delete
 	      // 9'h114: BREAKn = ~press_btn; // ctrl right => break
@@ -803,11 +840,14 @@ wire is_shift    = (code == 9'h012) || (code == 9'h059);
 // headless build types ONE character for a key held two seconds. MAME gives the
 // same 700 ms / 70 ms "on FM-7" (fm7.cpp:1826-1827) and never implemented it.
 //
-// Separately, MiSTer may pass the PC keyboard's own typematic repeats through
-// as further make events. Those must not reach the machine, or a held key would
-// repeat at the PC's rate: dup_press drops a make for the key that was already
-// the last one pressed until some key is released, as CSP's older_vk does
-// (keyboard.cpp:346, :252).
+// Separately, a PC keyboard's own typematic repeats must not reach the machine,
+// or a held key would repeat at the PC's rate. Main_MiSTer does not send them to
+// this core: user_io_kbd() returns on a repeat (press == 2) unless the core set
+// hps_io's PS2WE, and this one does not (user_io.cpp:4070, release 20260912).
+// dup_press stays as the guard all the same -- it also keeps a duplicate make
+// from toggling KANA. It drops a make for the key that was already the last one
+// pressed until some key is released, as CSP's older_vk does (keyboard.cpp:346,
+// :252).
 reg        key_stb;
 reg        rpt_en;                 // CTRL+SHIFT+0/1, encoder $04
 reg [11:0] rpt_delay_ms;           // 700, or up to 255 x 10 from encoder $05
@@ -827,6 +867,15 @@ always @(posedge CLKSYS) begin
   key_stb <= 1'b0;
   ms_div  <= ms_tick ? 16'd0 : ms_div + 16'd1;
   if (~RESETBn) begin
+    // Back to the power-on value. The manuals do not say, but every reference
+    // resets it: XM7's keyboard_reset makes key_fm7 non-zero "for Death Force"
+    // (VM_keyboard.c.txt:1444-1446), as do CSP's KEYBOARD::reset()
+    // (keyboard.cpp:653) and 77AVEMU's Reset() (fm77avkeyboard.cpp:219). Now that
+    // a release no longer clears it, an OSD reset after typing would otherwise
+    // leave $FD01 holding the last key -- $0D after RETURN -- for a title that
+    // reads it at boot. Bit 8 stays 0 as at power-on; XM7 and CSP set it, 77AVEMU
+    // does not.
+    { P0, kdata } <= 9'h0ff;
     last_press_v <= 1'b0;
     rpt_en       <= 1'b1;
     rpt_delay_ms <= 12'd700;
@@ -853,7 +902,10 @@ always @(posedge CLKSYS) begin
     end
 
     if (rpt_run && ms_tick) begin
-      if (rpt_ms == (rpt_first ? rpt_delay_ms : rpt_int_ms) - 12'd1) begin
+      // >=, not ==. An encoder $05 can shorten the time while a key is held, and a
+      // count already past the new value would run on until the 12-bit counter
+      // wrapped: up to four seconds with no repeat.
+      if (rpt_ms >= (rpt_first ? rpt_delay_ms : rpt_int_ms) - 12'd1) begin
         rpt_ms    <= 12'd0;
         rpt_first <= 1'b0;
         rpt_pend  <= 1'b1;
