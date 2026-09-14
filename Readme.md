@@ -110,7 +110,9 @@ And the special keys:
 
 Caps Lock does nothing. The numeric keypad types the same characters as the
 main keys, and keypad Enter is RETURN — which matters for games that steer on
-keypad 8/4/6/2, such as Dig Dug.
+keypad 8/4/6/2, such as Dig Dug. The FM-7 keyboard never reports a key being
+released, so in games like that a tap sets the direction and the character keeps
+going until you press another key.
 
 Held keys repeat the way the FM-7's own keyboard does: the first repeat after
 0.7 s, then every 0.07 s. Function keys don't repeat, and pressing or releasing

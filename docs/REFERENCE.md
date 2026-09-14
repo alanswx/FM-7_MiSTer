@@ -1591,6 +1591,19 @@ confident wrong answer at least once:
     two AV sets. **`cohort.py` identifies a disk by content hash for exactly
     this reason; prose should quote the same thing it does.**
 
+88. **A key that works on a title screen says nothing about in-game input.** Dig
+    Dug's attract loop reads `$FD01` in a tight loop, so RETURN always started the
+    game; gameplay polls it at `pc=$6D9F` only about every 12 frames. This core
+    reset `$FD01` to `$FF` on every key release, so a 6-frame tap was seen by at
+    most one poll and every later poll read `$FF` -- Dig Dug turned a pixel and
+    stopped, with the keypad fixed and with the main-row digits alike. Three
+    36,000-frame tape runs showed only that; the answer came from comparing the
+    POLLED VALUE on both machines (77AVEMU `--trace-io` against vsim `--trace-io`,
+    reads at one PC): 69 x `$34` there, 1 x `$34` then 195 x `$FF` here. When a
+    key "sometimes" works, find the reader and its cadence before touching the
+    encoder. Test Dig Dug from `[Compilation] Game 012.d77` (`RUN"DIG DUG"`, in
+    play by frame ~3400), not the tape, which needs ~28,000 frames to load.
+
 And one more: **a null result from one title says nothing about a register, only about that
 title** — Ys reads `$fd04` once in 900 frames; OS-9 drives the same path 578 times.
 

@@ -31,10 +31,27 @@ module KEYBOARD(
 
 reg press_btn;
 reg [8:0] code;
-// Power-on value $FF, not $00 -- and this initialiser is what a title reads,
-// not the idle branch of the always @* block below: that block only
-// re-evaluates when something in its sensitivity list moves, so before the
-// first key event kdata keeps whatever it was declared with.
+// $FD01 / $D401: the last key code, $FF from power-on until the first key.
+//
+// $FF, not $00. 77AVEMU initialises lastKeyCode to 0xFF and says why, in four
+// places: "Death Force Expects non-zero read from $FD01 on reset"
+// (fm77avkeyboard.h:66, fm77avkeyboard.cpp:218,754,796). Shounen Mike is the
+// same class: its main-CPU $FDxx stream runs in lockstep with the reference for
+// 20593 accesses, and the FIRST disagreement is `LDA $FD01` at pc=$610B on
+// frame 10, where the reference reads $FF and this returned $00.
+//
+// And it HOLDS the last code after the key is released. The FM-7 keyboard sends
+// nothing on a release, and both references leave the register alone then: CSP
+// changes keycode_7 only when a code is delivered (keyboard.cpp:569), 77AVEMU
+// sets lastKeyCode only on a press (fm77avkeyboard.cpp:365,445). This core used
+// to reset it on every release -- to $00, later to $FF (794d016, whose evidence
+// was only ever about the power-on read above). Dig Dug depends on the hold: it
+// steers by polling $FD01 at pc=$6D9F about every 12 frames. On 77AVEMU, a
+// RETURN released 600 frames earlier still reads $0D there on every poll, and
+// after a 6-frame tap on keypad 4 every poll reads $34. Here, with the reset,
+// the one poll that fell inside that 6-frame press read $34 and the next 195
+// read $FF, and Dig Dug never left the centre of the screen (Game 012.d77,
+// 34 x $0D / 69 x $34 once the reset was removed).
 reg [7:0] kdata = 8'hff;
 reg P0 = 0;
 reg [2:0] m77;
@@ -846,17 +863,8 @@ always @(posedge CLKSYS) begin
 
     if (key_release) begin
       last_press_v <= 1'b0;
-      // $FD01 idles at $FF, not $00. 77AVEMU initialises lastKeyCode to
-      // 0xFF and says why, in four places: "Death Force Expects non-zero
-      // read from $FD01 on reset"
-      // (fm77avkeyboard.h:66, fm77avkeyboard.cpp:218,754,796).
-      //
-      // Shounen Mike is the same class. Its main-CPU $FDxx stream runs in
-      // exact lockstep with the reference -- same port, same value, same
-      // PC -- for 20593 distinct accesses, and the FIRST thing the two
-      // machines disagree about is `LDA $FD01` at pc=$610B on frame 10,
-      // where the reference reads $FF and this returned $00.
-      { P0, kdata } <= 9'h0ff;
+      // A release leaves kdata alone: $FD01 keeps the last code. See the
+      // declaration of kdata for why.
       if (is_shift || (code == rpt_code)) begin
         rpt_run  <= 1'b0;
         rpt_pend <= 1'b0;
