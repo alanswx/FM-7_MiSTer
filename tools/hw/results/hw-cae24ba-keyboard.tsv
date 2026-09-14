@@ -1,0 +1,51 @@
+# Board validation of the keyboard commits 87e30cc (keypad), 55cf560 (auto-repeat)
+# and 376b571 ($FD01 hold), built at cae24ba -> releases/FM-7_20260914.rbf
+# (md5 db4d71bbc476716b54bad519e048abde). 24,360 ALMs, 516/553 M10K, no negative
+# slack. boot.rom and boot1.rom in games/FM-7/ (kanji loaded).
+#
+# Keys driven with tools/hw/rawkeys.py. The mrext virtual keyboard has no EV_REP,
+# so every held key is ONE key-down: any repeat below is the core's own.
+#
+# Repeat counts are exact -- decoded cell by cell against subsys_m153.rom.mem.
+
+TEST	RESULT	EXPECTED (vsim / checklist)
+keypad line	1234567890/*-+	1234567890/*-+
+keypad Enter	Syntax Error	Syntax Error
+keypad .	.	.
+keypad * alone	*	* (was / on hardware before the fix)
+hold A 2.0 s	20 a	20 a
+hold A, Shift at 1 s	7 a, stops, no capitals	6 a
+hold A, B at 0.7 s	2 a then 14 b	one b, then b repeats
+Ctrl+Shift+0, hold A	1 a	1 a
+Ctrl+Shift+1, hold A	20 a	repeats
+hold F1	AUTO once	AUTO once
+print "HI!"	HI!	HI!
+GRAPH+A, KANA+A	semigraphic, katakana	one of each
+10 goto 10 / run / BREAK	Break In 10	stops
+OS-9, Boot ROM 2	Welcome / Time ?	OS9 shell
+tape LOAD"" (Elevator)	Found: STR / Ready	loads
+
+# Dig Dug from [Compilation] Game 012.d77, RUN"DIG DUG"
+CAPTURE	BYTES	RESULT
+dd-kp4-1s / ddr-row4-1s	10592 / 10592	one tap, player keeps walking left
+dd-kp4-4s / ddr-row4-4s	9597 / 9597	reached the left edge, score 50
+# keypad 4 and number-row 4 give the same frames at start, +1 s and +4 s.
+
+# Regression subset, same card state as hw-FM-7_20260911.tsv
+TITLE	LIT_PCT	COLOURS	PREV_LIT_PCT	NOTE
+00-nodisk	1.98	2	1.98	identical
+01-Archon	17.68	7	16.76	animation phase
+02-Thexder	60.39	7	60.26	animation phase
+04-Ys	32.25	8	32.25	identical
+31-drv1	0.70	2	0.70	identical
+43-DragonBuster	23.25	21	22.86	animation phase
+45-WoodyPoco	57.27	44	57.27	identical
+46-AVDemo	72.91	4096	72.91	identical
+51-Luxsor1	29.28	20	29.28	identical
+52-Luxsor2	81.82	44	81.82	animation phase
+53-PsyOBlade	19.05	8	19.06	identical
+Spanish set 0 / 1	24/24 JP	24/24 ES	-	both directions
+drive 1 FILES"1:"	Bad File Structure	-	-	unchanged
+
+# NOT TESTED: whether a real PC keyboard's typematic repeats are filtered. The
+# harness cannot send them (no EV_REP). Needs a physical keyboard on the board.

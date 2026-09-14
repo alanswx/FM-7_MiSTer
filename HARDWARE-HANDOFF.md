@@ -6,85 +6,49 @@ sections below are in the order they were written and are kept as history.
 
 ---
 
-# OPEN: keypad, key repeat and the `$FD01` hold -- simulated, not yet on a board
+# CLOSED: keypad, key repeat and the `$FD01` hold work on the DE10-Nano
 
-Three commits on `fdc-d77-support`, split so a failure on the board can be
-bisected. Each is exactly the source of a vsim build that was tested; the
-commit messages carry the numbers.
+`87e30cc` (keypad), `55cf560` (auto-repeat) and `376b571` (`$FD01` hold), built
+at `cae24ba` and shipped as `releases/FM-7_20260914.rbf` (24,360 ALMs, 516/553
+M10K, no negative slack). Everything on the checklist passes. Data:
+`tools/hw/results/hw-cae24ba-keyboard.tsv`.
 
-| commit | change | hardware risk |
-|---|---|---|
-| `87e30cc` | numeric keypad mapped -- table entries only | low, data |
-| `55cf560` | auto-repeat; the key tables now feed a CLKSYS register instead of an inferred latch; a key with no code sends nothing; FM77AV encoder `$04`/`$05` wired | **the latch-to-register change is the section-3 class of docs/REFERENCE.md that simulation cannot see** |
-| `376b571` | `$FD01` keeps the last code after a key release | low, one assignment removed |
+- **Keypad:** `1234567890/*-+` types exactly; keypad Enter submits; `.` types.
+  `*` on its own types `*`, not the `/` seen on hardware before the fix.
+- **Auto-repeat matches vsim.** Hold A 2 s: 20 `a`. Repeat off (Ctrl+Shift+0):
+  1 `a`. Back on (Ctrl+Shift+1): 20. F1 gives `AUTO` once. Shift stops repeat
+  with no capitals; a second key takes over and repeats after its own delay.
+  The Shift and A-then-B counts came out one higher than vsim (7 vs 6, 2 `a`
+  before the `b`s) -- the harness's websocket timing landing on a repeat
+  boundary, not a behaviour difference.
+- **Dig Dug steers.** One tap of keypad 4 and the player walks to the left edge
+  and keeps going after the key is up. Number-row 4 gives **the same frames**
+  at start, +1 s and +4 s.
+- **Smoke:** `print "HI!"`, a GRAPH and a KANA character, BREAK stopping
+  `10 goto 10`, OS-9 to `Time ?`, a tape `LOAD""` to `Found:` -- all fine.
+- **No regressions:** the 11-title subset, the Secoinsa ROM set (24/24 both
+  ways) and drive 1 are unchanged.
 
-Build the tip; bisect only if something below fails.
+**Still open -- the one thing the harness cannot reach:** whether a real PC
+keyboard's typematic repeats are filtered. The mrext virtual keyboard reports
+`EV=3` in `/proc/bus/input/devices` -- no `EV_REP` -- so a held key is exactly one
+key-down and nothing the harness sends can exercise the filter. Hold a key on a
+physical keyboard: it should repeat every ~0.07 s after 0.7 s, not at the PC's
+rate.
 
-    cd ~/mister/FM-7_MiSTer
-    git fetch git@github.com:alanswx/FM-7_MiSTer.git fdc-d77-support
-    git checkout 376b571
-    PATH=$HOME/intelFPGA_lite/quartus/bin:$PATH quartus_sh --flow compile FM-7_MiSTer
+Two traps from this run:
 
-`boot.rom` goes in `games/FM-7/`, not beside the `.rbf` (section below).
+1. **A capture taken after GAME OVER tests nothing.** The first number-row
+   check ran after the enemy had already caught the player, so its screenshot
+   said nothing about steering. Re-run from a fresh game, repeating the keypad
+   sequence exactly so the two are comparable frame for frame.
+2. **Count characters by decoding, not by eye.** Each cell is 8 px doubled to
+   16; matching it against `subsys_m153.rom.mem` turns a capture into text and
+   gives exact repeat counts.
 
-## 1. Keypad, at the F-BASIC prompt
-
-On the keypad type `1234567890/*-+`, then keypad Enter, then keypad `.`.
-
-- **Pass:** the line reads `1234567890/*-+`, Enter answers `Syntax Error`, `.` types `.`.
-- **Before:** digits, `-`, `+`, `.` and Enter typed nothing, and `*` typed `/`. vsim
-  never reproduced `*` -> `/` (it delivered `$FF`), so the stale-latch explanation
-  is unconfirmed -- check `*` by itself.
-
-## 2. Key repeat, at the prompt
-
-| do | expect (vsim) |
-|---|---|
-| hold `a` two seconds | nothing for 0.7 s, then ~14 per second: 20 `a` |
-| hold `a`, press Shift about a second in | repeat stops at once, no capitals: 6 `a` |
-| hold `a`, press `b` about 0.7 s in | one `b`, then `b` repeats after a fresh 0.7 s |
-| Left Ctrl + Shift + `0`, then hold `a` | a single `a` |
-| Left Ctrl + Shift + `1`, then hold `a` | repeats again |
-| hold F1 | `AUTO` once |
-
-**The rate is what only the board can answer.** If MiSTer forwards the PC
-keyboard's typematic as further key-down events, the core drops them (vsim:
-45 injected, still exactly 20 keystrokes). A held key repeating at the PC's
-speed rather than every 0.07 s means that filter is not working on hardware.
-
-## 3. Dig Dug, disk version
-
-`[Compilation] Game 012.d77` in drive 0, Boot ROM BASIC:
-
-1. `How many disk drives ?` -> `1` RETURN; `How many disk files(0-15)?` -> RETURN.
-2. `RUN"DIG DUG"` -- the name in capitals, or `File Not Found`.
-3. At `HIT RETURN KEY !`, RETURN.
-4. **Tap** keypad 4: the player walks left **and keeps walking** after the key is
-   up. Keypad 8/2/6 steer the same way; BREAK (Right Ctrl) pumps. The number-row
-   8/4/6/2 must behave identically.
-
-**Fail** is the pre-fix behaviour: the player turns a pixel and stops, or does
-nothing. The tape (`Dig Dug.t77`, `run""`) is the same program and needs about
-8 minutes to load; run it only if the disk passes.
-
-## 4. Keyboard smoke tests
-
-Because `55cf560` re-times `kdata` on the FPGA: OS-9 at Boot ROM 2 to its `OS9:`
-shell; F-BASIC typing with shifted punctuation (`print "HI!"`); a GRAPH and a
-KANA character; BREAK stopping a running program; one `.t77` `LOAD""`.
-
-## Known, not caused by these commits
-
-The vsim gate is 11 of 12 at all three commits. `disk-Thexder [b]` reads I/O
-862115 against its blessed 862118, and did so on `9033174` in two separate
-builds of the unchanged RTL. Not re-blessed.
-
-## Driving it with tools/hw
-
-Raw Linux keycodes reach the FM-7: `kbdRaw:<code>`, or `kbdRawDown:<code>`, a
-sleep, then `kbdRawUp:<code>` for a real hold, as `osdkey.py:41-42` does.
-Keypad: 7=71 8=72 9=73 -=74 4=75 5=76 6=77 +=78 1=79 2=80 3=81 0=82 .=83
-*=55 /=98 Enter=96.
+Keys for this, with real holds and chords: `tools/hw/rawkeys.py` (`t:` tap,
+`h:CODE:SEC` hold, `d:`/`u:` down/up, `s:` sleep). Keypad codes: 7=71 8=72 9=73
+-=74 4=75 5=76 6=77 +=78 1=79 2=80 3=81 0=82 .=83 *=55 /=98 Enter=96.
 
 ---
 
