@@ -91,23 +91,18 @@ localparam CONF_STR = {
   "T[8],Tape Rewind;",
   "O[9],Tape Audio,Off,On;",
   "O[11:10],Boot ROM,0 disk,1 alt,2 dos-a,3 empty;",
-  "O[12],Machine,FM-7,FM77AV (experimental);",
+  "O[12],Machine,FM-7,FM77AV;",
   // Which system ROM set to page in from the uploaded boot1.rom. Does nothing
   // unless that file is present -- with no file the machine runs the ROMs
   // baked into the .rbf, which are set 0's. Changing this resets the machine:
   // swapping the BASIC ROM under a running interpreter is not a thing.
-  "O[19],System ROM,Set 0,Set 1;",
+  "O[19],System ROM,Japanese,Spanish;",
   "-;",
   "O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
   "-;",
   "T[0],Reset;",
   "R[0],Reset and close OSD;",
-  // J1/jn MUST stay last, after the reset entries. MiSTer reserves a menu slot
-  // where J1 appears in the string but DRAWS the joystick item ("Fire mode.")
-  // at the bottom of the OSD, so every entry after J1 has its action shifted
-  // one item earlier than its label. With J1 in the middle, selecting "Reset"
-  // ran "Aspect ratio". Every working core puts these last -- RX78.sv and
-  // Arcade-Asteroids.sv both go R0,Reset / J1 / jn / V,v.
+  // J1/jn MUST stay last, after the reset entries. 
   "J1,Button A,Button B;",
   "jn,A,B;",
   "v,4;",
